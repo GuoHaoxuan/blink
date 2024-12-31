@@ -1,3 +1,7 @@
+mod search;
+
 fn main() {
-    println!("Hello, world!");
+    let results = search::calculate("xxxxxxxx");
+    println!("Lenth of results: {}", results.len());
+    println!("{:#?}", results);
 }
