@@ -3,7 +3,7 @@ use super::trigger::Trigger;
 
 use itertools::Itertools;
 
-pub fn search(
+pub fn search_light_curve(
     light_curve_prefix_sum: &[u32],
     start: f64,
     bin_size: f64,
