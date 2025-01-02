@@ -1,9 +1,10 @@
+use super::light_curve;
 use super::poisson::poisson_isf_cached;
 use super::trigger::Trigger;
 
 use itertools::Itertools;
 
-pub fn search_light_curve(
+fn search_by_light_curve(
     light_curve_prefix_sum: &[u32],
     start: f64,
     bin_size: f64,
@@ -47,7 +48,7 @@ pub fn search_light_curve(
         .collect()
 }
 
-pub fn search_raw(
+fn search_by_raw(
     time: &[f64],
     start: f64,
     stop: f64,
@@ -110,4 +111,76 @@ pub fn search_raw(
     }
 
     result
+}
+
+fn estimate_light_curve_time(duration: f64, bin_size: f64) -> f64 {
+    let bins = (duration / bin_size).ceil();
+    bins / 500_000.0
+}
+
+fn estimate_raw_time(time: &[f64]) -> f64 {
+    time.len() as f64 / 50_000.0
+}
+
+fn search_auto(
+    time: &[f64],
+    start: f64,
+    stop: f64,
+    bin_size: f64,
+    num_neighbors: usize,
+    fp_year: f64,
+    min_count: u32,
+) -> Vec<Trigger> {
+    if estimate_light_curve_time(stop - start, bin_size) < estimate_raw_time(time) {
+        let lc = light_curve::light_curve(time, start, stop, bin_size);
+        let prefix_sum = light_curve::prefix_sum(&lc);
+        search_by_light_curve(
+            &prefix_sum,
+            start,
+            bin_size,
+            num_neighbors,
+            fp_year,
+            min_count,
+        )
+    } else {
+        search_by_raw(
+            time,
+            start,
+            stop,
+            bin_size,
+            num_neighbors,
+            fp_year,
+            min_count,
+        )
+    }
+}
+
+pub fn search_all(
+    time: &[f64],
+    start: f64,
+    stop: f64,
+    num_neighbors: usize,
+    fp_year: f64,
+    min_count: u32,
+) -> Vec<Trigger> {
+    let mut results = Vec::new();
+    let mut bin_size = 10e-6;
+
+    while bin_size < 1e-3 {
+        results.extend((0..4).flat_map(|shift| {
+            let shift = shift as f64 / 4.0 * bin_size;
+            search_auto(
+                time,
+                start + shift,
+                stop,
+                bin_size,
+                num_neighbors,
+                fp_year,
+                min_count,
+            )
+        }));
+        bin_size *= 2.0;
+    }
+    results.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap());
+    results
 }

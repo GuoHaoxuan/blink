@@ -17,10 +17,10 @@ pub struct Record {
 }
 
 impl Record {
-    pub fn new(trigger: &Trigger, start: Epoch) -> Record {
+    pub fn new(trigger: &Trigger, date_obs: Epoch) -> Record {
         Record {
-            start: start + (trigger.start * 1e6).round().microseconds(),
-            stop: start + (trigger.stop * 1e6).round().microseconds(),
+            start: date_obs + (trigger.start * 1e6).round().microseconds(),
+            stop: date_obs + (trigger.stop * 1e6).round().microseconds(),
             bin_size_min: (trigger.bin_size_min * 1e6).round().microseconds(),
             bin_size_max: (trigger.bin_size_max * 1e6).round().microseconds(),
             bin_size_best: (trigger.bin_size_best * 1e6).round().microseconds(),
