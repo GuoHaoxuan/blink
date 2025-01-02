@@ -1,4 +1,4 @@
-pub mod algorithm;
+pub mod algorithms;
 pub mod light_curve;
 pub mod poisson;
 pub mod record;
@@ -41,9 +41,16 @@ pub fn calculate(filename: &str) -> Vec<record::Record> {
             if time_estimated_light_curve < time_estimated_direct {
                 let lc = light_curve::light_curve(&time, shift, stop - start, bin_size);
                 let prefix_sum = light_curve::prefix_sum(&lc);
-                algorithm::search_light_curve(&prefix_sum, shift, bin_size, 100, fp_year, min_count)
+                algorithms::search_light_curve(
+                    &prefix_sum,
+                    shift,
+                    bin_size,
+                    100,
+                    fp_year,
+                    min_count,
+                )
             } else {
-                algorithm::search_raw(
+                algorithms::search_raw(
                     &time,
                     shift,
                     stop - start,
