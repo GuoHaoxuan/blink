@@ -23,6 +23,7 @@ pub fn calculate(filename: &str) -> Vec<record::Record> {
         .zip(channel)
         .filter(|&(_, c)| c >= 38)
         .map(|(&t, _)| t - start)
+        .dedup_by(|a, b| (a - b).abs() < 1e-9)
         .collect();
 
     let mut results = Vec::new();

@@ -1,9 +1,9 @@
 use hifitime::prelude::*;
 use hifitime::{Duration, Epoch};
+use std::fmt::Debug;
 
 use super::trigger::Trigger;
 
-#[derive(Debug)]
 pub struct Record {
     pub start: Epoch,
     pub stop: Epoch,
@@ -29,5 +29,18 @@ impl Record {
             average: trigger.average,
             fp_year: trigger.fp_year,
         }
+    }
+}
+
+impl Debug for Record {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        format!(
+            "{} + {}, {}>{:.2}",
+            self.start.to_isoformat(),
+            (self.stop - self.start),
+            self.count,
+            self.average,
+        )
+        .fmt(f)
     }
 }
