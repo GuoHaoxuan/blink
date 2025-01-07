@@ -18,7 +18,10 @@ fn get_fermi_nai_filenames(epoch: Epoch) -> Vec<String> {
         .map(|i| {
             format!(
                 "glg_tte_n0_{:02}{:02}{:02}_{:02x}z_v\\d{{2}}\\.fit\\.gz",
-                y, m, d, i
+                y % 100,
+                m,
+                d,
+                i
             )
         })
         .inspect(|x| println!("{}", x))
