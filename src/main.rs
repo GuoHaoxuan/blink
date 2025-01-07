@@ -1,8 +1,57 @@
 mod search;
 
+use regex::Regex;
+use std::str::FromStr;
+
+use hifitime::prelude::*;
 use polars::prelude::*;
 use search::calculate_fermi_nai;
 
+fn get_fermi_nai_filenames(epoch: Epoch) -> Vec<String> {
+    let folder = format!(
+        "{}",
+        Formatter::new(
+            epoch,
+            Format::from_str(
+                "/gecamfs/Exchange/GSDC/missions/FTP/fermi/data/gbm/daily/%Y/%m/%d/current",
+            )
+            .unwrap()
+        )
+    );
+    (0..12)
+        .map(|i| format!("glg_tte_n0_%y%m%d_{:02x}z_v\\d{{2}}\\.fit\\.gz", i))
+        .map(|x| {
+            Regex::new(&format!(
+                "{}",
+                Formatter::new(epoch, Format::from_str(&x).unwrap())
+            ))
+            .unwrap()
+        })
+        .flat_map(|re| {
+            let mut max_version = None;
+            for entry in std::fs::read_dir(&folder).unwrap() {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
+                    if re.is_match(filename) {
+                        let version = filename
+                            .split('_')
+                            .last()
+                            .and_then(|s| s.strip_prefix('v'))
+                            .and_then(|s| s.strip_suffix(".fit.gz"))
+                            .and_then(|s| s.parse::<u32>().ok());
+                        if let Some(version) = version {
+                            if max_version.map_or(true, |v| version > v) {
+                                max_version = Some(version);
+                            }
+                        }
+                    }
+                }
+            }
+            max_version.map_or_else(Vec::new, |v| vec![format!("{}v{:02}.fit.gz", folder, v)])
+        })
+        .collect::<Vec<_>>()
+}
 fn main() {
     let filenames = [
         "current/glg_tte_n0_230101_00z_v00.fit.gz",

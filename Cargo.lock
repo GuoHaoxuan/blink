@@ -195,6 +195,7 @@ dependencies = [
  "itertools",
  "plotters",
  "polars",
+ "regex",
  "statrs",
 ]
 
