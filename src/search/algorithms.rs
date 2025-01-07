@@ -39,7 +39,6 @@ fn search_by_light_curve(
                     start + (i + 1) as f64 * bin_size,
                     count,
                     average,
-                    fp_year,
                 ))
             } else {
                 None
@@ -95,13 +94,7 @@ fn search_by_raw(
                 &mut cache,
             );
             if count >= threshold {
-                result.push(Trigger::new(
-                    cursor,
-                    cursor + bin_size,
-                    count,
-                    average,
-                    fp_year,
-                ));
+                result.push(Trigger::new(cursor, cursor + bin_size, count, average));
             }
         }
         if bin_stop == time.len() {

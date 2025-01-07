@@ -1,4 +1,3 @@
-use super::poisson::poisson_isf;
 use statrs::distribution::{DiscreteCDF, Poisson};
 use std::fmt::Debug;
 
@@ -12,11 +11,10 @@ pub struct Trigger {
     pub delay: f64,
     pub count: u32,
     pub average: f64,
-    pub fp_year: f64,
 }
 
 impl Trigger {
-    pub fn new(start: f64, stop: f64, count: u32, average: f64, fp_year: f64) -> Trigger {
+    pub fn new(start: f64, stop: f64, count: u32, average: f64) -> Trigger {
         let bin_size = stop - start;
         Trigger {
             start,
@@ -27,7 +25,6 @@ impl Trigger {
             delay: 0.0,
             count,
             average,
-            fp_year,
         }
     }
 
@@ -52,18 +49,10 @@ impl Trigger {
                 count: other.count,
                 average: other.average,
                 bin_size_best: other.bin_size_best,
-                fp_year: other.fp_year,
                 delay: other.start - res.start,
                 ..res
             };
         }
         res
-    }
-
-    pub fn threshold(&self) -> u32 {
-        poisson_isf(
-            self.fp_year / (3600.0 * 24.0 * 365.0 / (self.stop - self.start)),
-            self.average,
-        )
     }
 }
