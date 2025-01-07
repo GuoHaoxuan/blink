@@ -9,7 +9,7 @@ use polars::prelude::*;
 use search::calculate_fermi_nai;
 
 fn get_fermi_nai_filenames(epoch: Epoch) -> Vec<String> {
-    let (y, m, d, ..) = epoch.to_gregorian_utc();
+    let (y, m, d, h, ..) = epoch.to_gregorian_utc();
     let folder = format!(
         "/gecamfs/Exchange/GSDC/missions/FTP/fermi/data/gbm/daily/{:04}/{:02}/{:02}/current",
         y, m, d
@@ -17,11 +17,12 @@ fn get_fermi_nai_filenames(epoch: Epoch) -> Vec<String> {
     (0..12)
         .map(|i| {
             format!(
-                "glg_tte_n0_{:02}{:02}{:02}_{:02x}z_v\\d{{2}}\\.fit\\.gz",
+                "glg_tte_n{:x}_{:02}{:02}{:02}_{:02}z_v\\d{{2}}\\.fit\\.gz",
+                i,
                 y % 100,
                 m,
                 d,
-                i
+                h,
             )
         })
         .inspect(|x| println!("{}", x))
