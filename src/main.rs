@@ -8,25 +8,19 @@ use polars::prelude::*;
 use search::calculate_fermi_nai;
 
 fn get_fermi_nai_filenames(epoch: Epoch) -> Vec<String> {
+    let (y, m, d, ..) = epoch.to_gregorian_utc();
     let folder = format!(
-        "{}",
-        Formatter::new(
-            epoch,
-            Format::from_str(
-                "/gecamfs/Exchange/GSDC/missions/FTP/fermi/data/gbm/daily/%Y/%m/%d/current",
-            )
-            .unwrap()
-        )
+        "/gecamfs/Exchange/GSDC/missions/FTP/fermi/data/gbm/daily/{:04}/{:02}/{:02}/current",
+        y, m, d
     );
     (0..12)
-        .map(|i| format!("glg_tte_n0_%y%m%d_{:02x}z_v\\d{{2}}\\.fit\\.gz", i))
-        .map(|x| {
-            Regex::new(&format!(
-                "{}",
-                Formatter::new(epoch, Format::from_str(&x).unwrap())
-            ))
-            .unwrap()
+        .map(|i| {
+            format!(
+                "glg_tte_n0_{:02}{:02}{:02}_{:02x}z_v\\d{{2}}\\.fit\\.gz",
+                y, m, d, i
+            )
         })
+        .map(|x| Regex::new(&x).unwrap())
         .flat_map(|re| {
             let mut max_version = None;
             for entry in std::fs::read_dir(&folder).unwrap() {
