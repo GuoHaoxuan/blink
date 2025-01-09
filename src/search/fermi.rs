@@ -2,6 +2,7 @@ use core::str::FromStr;
 use fitsio::{hdu::FitsHdu, FitsFile};
 use hifitime::prelude::*;
 use itertools::Itertools;
+use regex::Regex;
 
 use super::{algorithms::search_all, record::Record};
 
@@ -155,4 +156,56 @@ fn time(fptrs: &mut [FitsFile], events: &[FitsHdu]) -> Vec<Vec<f64>> {
         .zip(fptrs.iter_mut())
         .map(|(events, fptr)| events.read_col::<f64>(fptr, "TIME").unwrap())
         .collect::<Vec<_>>()
+}
+
+fn get_fermi_nai_filenames(epoch: &Epoch) -> Vec<String> {
+    let (y, m, d, h, ..) = epoch.to_gregorian_utc();
+    let folder = format!(
+        "/gecamfs/Exchange/GSDC/missions/FTP/fermi/data/gbm/daily/{:04}/{:02}/{:02}/current",
+        y, m, d
+    );
+    (0..12)
+        .map(|i| {
+            format!(
+                "glg_tte_n{:x}_{:02}{:02}{:02}_{:02}z_v\\d{{2}}\\.fit\\.gz",
+                i,
+                y % 100,
+                m,
+                d,
+                h,
+            )
+        })
+        .map(|x| Regex::new(&x).unwrap())
+        .map(|re| {
+            std::fs::read_dir(&folder)
+                .unwrap()
+                .map(|x| x.unwrap())
+                .map(|x| x.path())
+                .filter(|x| x.is_file())
+                .map(|x| x.file_name().unwrap().to_str().unwrap().to_string())
+                .filter(|x| re.is_match(x))
+                .max_by(|a, b| {
+                    let extract = |x: &str| {
+                        x.split('_')
+                            .last()
+                            .unwrap()
+                            .strip_prefix('v')
+                            .unwrap()
+                            .strip_suffix(".fit.gz")
+                            .unwrap()
+                            .parse::<u32>()
+                            .unwrap()
+                    };
+                    extract(a).cmp(&extract(b))
+                })
+                .unwrap()
+        })
+        .map(|x| format!("{}/{}", folder, x))
+        .collect::<Vec<_>>()
+}
+
+pub fn process(epoch: &Epoch) -> Vec<Record> {
+    let filenames = get_fermi_nai_filenames(&epoch);
+    let filenames_str: Vec<&str> = filenames.iter().map(|s| s.as_str()).collect();
+    calculate_fermi_nai(&filenames_str)
 }
