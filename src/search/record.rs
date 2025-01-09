@@ -1,5 +1,5 @@
 use hifitime::prelude::*;
-use hifitime::{Duration, Epoch};
+use rusqlite::{Connection, Result};
 
 use super::trigger::Trigger;
 
@@ -26,5 +26,36 @@ impl Record {
             count: trigger.count,
             average: trigger.average,
         }
+    }
+
+    pub fn save(&self, conn: &Connection) -> Result<()> {
+        conn.execute(
+            "
+                INSERT INTO
+                    records (
+                        start,
+                        stop,
+                        bin_size_min,
+                        bin_size_max,
+                        bin_size_best,
+                        delay,
+                        count,
+                        average
+                    )
+                VALUES
+                    (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);
+            ",
+            (
+                self.start.to_string(),
+                self.stop.to_string(),
+                self.bin_size_min.total_nanoseconds() as u32 / 1000,
+                self.bin_size_max.total_nanoseconds() as u32 / 1000,
+                self.bin_size_best.total_nanoseconds() as u32 / 1000,
+                self.delay.total_nanoseconds() as u32 / 1000,
+                self.count,
+                self.average,
+            ),
+        )
+        .map(|_| ())
     }
 }
