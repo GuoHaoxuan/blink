@@ -37,7 +37,7 @@ fn date_obs(fptrs: &mut [FitsFile], events: &[FitsHdu]) -> Epoch {
         .zip(fptrs.iter_mut())
         .map(|(events, fptr)| events.read_key::<String>(fptr, "DATE-OBS").unwrap())
         .map(|date_obs| Epoch::from_str(&date_obs).unwrap())
-        .max()
+        .min()
         .unwrap()
 }
 
