@@ -18,4 +18,4 @@ CREATE TABLE
         delay INTEGER NOT NULL,
         count INTEGER NOT NULL, -- 计数
         average REAL NOT NULL, -- 平均值
-    )
+    );
