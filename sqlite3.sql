@@ -17,5 +17,5 @@ CREATE TABLE
         bin_size_best INTEGER NOT NULL,
         delay INTEGER NOT NULL,
         count INTEGER NOT NULL, -- 计数
-        average REAL NOT NULL, -- 平均值
+        average REAL NOT NULL -- 平均值
     );
