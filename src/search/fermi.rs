@@ -32,15 +32,13 @@ fn interval_intersection(a: Vec<Interval>, b: Vec<Interval>) -> Vec<Interval> {
 }
 
 fn date_obs(fptrs: &mut [FitsFile], events: &[FitsHdu]) -> Epoch {
-    let date_obs = events
+    events
         .iter()
         .zip(fptrs.iter_mut())
         .map(|(events, fptr)| events.read_key::<String>(fptr, "DATE-OBS").unwrap())
         .map(|date_obs| Epoch::from_str(&date_obs).unwrap())
-        .collect::<Vec<_>>();
-    assert!(date_obs.iter().all(|x| x == &date_obs[0]));
-
-    date_obs[0]
+        .max()
+        .unwrap()
 }
 
 fn t_start(fptrs: &mut [FitsFile], events: &[FitsHdu], date_obs: Epoch) -> f64 {
