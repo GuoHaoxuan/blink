@@ -1,12 +1,11 @@
 mod search;
 
-use itertools::Itertools;
 use regex::Regex;
+use search::fermi::calculate_fermi_nai;
 use std::str::FromStr;
 
 use hifitime::prelude::*;
 use polars::prelude::*;
-use search::calculate_fermi_nai;
 
 fn get_fermi_nai_filenames(epoch: Epoch) -> Vec<String> {
     let (y, m, d, h, ..) = epoch.to_gregorian_utc();
