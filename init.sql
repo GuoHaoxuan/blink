@@ -1,11 +1,14 @@
 CREATE TABLE
-    IF NOT EXISTS tasks (
+    tasks (
         created_at TEXT NOT NULL, -- 创建时间
         updated_at TEXT NOT NULL, -- 修改时间
         retry_times INTEGER NOT NULL, -- 重试次数
-        lock_id TEXT NOT NULL, -- 为了加行锁的标志，如 hostname-pid
-        time_hour TEXT NOT NULL, -- 消息内容
-        satellite TEXT NOT NULL -- 消息内容
+        worker TEXT NOT NULL, -- 处理者
+        status TEXT NOT NULL, -- 状态 Pending, Running, Finished, Failed
+        time TEXT NOT NULL, -- 要处理的时间
+        satellite TEXT NOT NULL, -- 要处理的卫星
+        detector TEXT NOT NULL, -- 要处理的探测器
+        UNIQUE (time, satellite, detector) ON CONFLICT IGNORE
     );
 
 CREATE TABLE

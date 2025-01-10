@@ -6,3 +6,4 @@ venv
 *.fit.gz*
 *.fit
 *.pha
+*.db
