@@ -33,3 +33,52 @@ pub fn get_task(conn: &Connection, worker: &str, satellite: &str, detector: &str
     .next()
     .map(|x| Epoch::from_str(&x.unwrap()).unwrap())
 }
+
+pub fn finish_task(conn: &Connection, time: &Epoch, satellite: &str, detector: &str) {
+    conn.execute(
+        "
+            UPDATE tasks
+            SET
+                status = 'Finished',
+                updated_at = DATETIME ('now')
+            WHERE
+                time = ?1
+                AND satellite = ?2
+                AND detector = ?3;
+        ",
+        params![
+            format!(
+                "{}",
+                Formatter::new(*time, Format::from_str("%Y-%m-%d %H:%M:%S").unwrap())
+            ),
+            satellite,
+            detector
+        ],
+    )
+    .unwrap();
+}
+
+pub fn fail_task(conn: &Connection, time: &Epoch, satellite: &str, detector: &str) {
+    conn.execute(
+        "
+            UPDATE tasks
+            SET
+                status = 'Failed',
+                updated_at = DATETIME ('now'),
+                retry_times = retry_times + 1
+            WHERE
+                time = ?1
+                AND satellite = ?2
+                AND detector = ?3;
+        ",
+        params![
+            format!(
+                "{}",
+                Formatter::new(*time, Format::from_str("%Y-%m-%d %H:%M:%S").unwrap())
+            ),
+            satellite,
+            detector
+        ],
+    )
+    .unwrap();
+}
