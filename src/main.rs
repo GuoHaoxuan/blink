@@ -12,7 +12,7 @@ fn consume() {
     let conn = Connection::open("blink.db").unwrap();
     conn.busy_timeout(std::time::Duration::from_secs(3600))
         .unwrap();
-    while let Some(epoch) = get_task(&conn, &worker, "fermi", "nai") {
+    while let Some(epoch) = get_task(&conn, &worker, "Fermi", "GBM") {
         let results = process(&epoch);
         results.iter().for_each(|x| x.save(&conn).unwrap());
     }
