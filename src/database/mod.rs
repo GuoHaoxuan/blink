@@ -18,7 +18,7 @@ pub fn get_task(conn: &Connection, worker: &str, satellite: &str, detector: &str
                         tasks
                     WHERE
                         status = 'Pending'
-                        AND satellite = ?1
+                        AND satellite = ?2
                         AND detector = ?3
                     LIMIT
                         1
