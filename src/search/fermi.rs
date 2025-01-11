@@ -3,6 +3,7 @@ use fitsio::{hdu::FitsHdu, FitsFile};
 use hifitime::prelude::*;
 use itertools::Itertools;
 use regex::Regex;
+use std::error::Error;
 
 use super::{algorithms::search_all, record::Record};
 
@@ -31,66 +32,91 @@ fn interval_intersection(a: Vec<Interval>, b: Vec<Interval>) -> Vec<Interval> {
     res
 }
 
-fn date_obs(fptrs: &mut [FitsFile], events: &[FitsHdu]) -> Epoch {
-    events
+fn date_obs(fptrs: &mut [FitsFile], events: &[FitsHdu]) -> Result<Epoch, Box<dyn Error>> {
+    let date_obs = events
         .iter()
         .zip(fptrs.iter_mut())
-        .map(|(events, fptr)| events.read_key::<String>(fptr, "DATE-OBS").unwrap())
-        .map(|date_obs| Epoch::from_str(&date_obs).unwrap())
+        .map(|(events, fptr)| events.read_key::<String>(fptr, "DATE-OBS"))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let min_date_obs = date_obs
+        .into_iter()
+        .map(|date_obs| Epoch::from_str(&date_obs))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
         .min()
-        .unwrap()
+        .ok_or("No valid DATE-OBS found")?;
+
+    Ok(min_date_obs)
 }
 
-fn t_start(fptrs: &mut [FitsFile], events: &[FitsHdu], date_obs: Epoch) -> f64 {
+fn t_start(
+    fptrs: &mut [FitsFile],
+    events: &[FitsHdu],
+    date_obs: Epoch,
+) -> Result<f64, Box<dyn Error>> {
     let mjd_ref_i = events
         .iter()
         .zip(fptrs.iter_mut())
-        .map(|(events, fptr)| events.read_key::<f64>(fptr, "MJDREFI").unwrap())
-        .collect::<Vec<_>>();
-    assert!(mjd_ref_i
+        .map(|(events, fptr)| events.read_key::<f64>(fptr, "MJDREFI"))
+        .collect::<Result<Vec<_>, _>>()?;
+    if !mjd_ref_i
         .iter()
-        .all(|x| (x - mjd_ref_i[0]).abs() < f64::EPSILON));
+        .all(|x| (x - mjd_ref_i[0]).abs() < f64::EPSILON)
+    {
+        return Err("MJDREFI values are not consistent".into());
+    }
     let mjd_ref_i = mjd_ref_i[0];
+
     let mjd_ref_f = events
         .iter()
         .zip(fptrs.iter_mut())
-        .map(|(events, fptr)| events.read_key::<f64>(fptr, "MJDREFF").unwrap())
-        .collect::<Vec<_>>();
-    assert!(mjd_ref_f
+        .map(|(events, fptr)| events.read_key::<f64>(fptr, "MJDREFF"))
+        .collect::<Result<Vec<_>, _>>()?;
+    if !mjd_ref_f
         .iter()
-        .all(|x| (x - mjd_ref_f[0]).abs() < f64::EPSILON));
+        .all(|x| (x - mjd_ref_f[0]).abs() < f64::EPSILON)
+    {
+        return Err("MJDREFF values are not consistent".into());
+    }
     let mjd_ref_f = mjd_ref_f[0];
+
     let time_ref = Epoch::from_mjd_tai(mjd_ref_i + mjd_ref_f) - 32.184.seconds();
     let time_ref = Epoch::from_mjd_utc(time_ref.to_mjd_utc_days());
-    (date_obs - time_ref).to_seconds()
+    Ok((date_obs - time_ref).to_seconds())
 }
 
-fn gti(fptrs: &mut [FitsFile]) -> Vec<Interval> {
-    fptrs
+fn gti(fptrs: &mut [FitsFile]) -> Result<Vec<Interval>, Box<dyn Error>> {
+    let intervals = fptrs
         .iter_mut()
-        .map(|fptr| (fptr.hdu("GTI").unwrap(), fptr))
-        .map(|(gti, fptr)| {
-            let start = gti.read_col::<f64>(fptr, "START").unwrap();
-            let stop = gti.read_col::<f64>(fptr, "STOP").unwrap();
-            start
-                .into_iter()
-                .zip(stop)
-                .map(|(start, stop)| Interval { start, stop })
-                .collect::<Vec<_>>()
+        .map(|fptr| {
+            let gti = fptr.hdu("GTI")?;
+            let start = gti.read_col::<f64>(fptr, "START")?;
+            let stop = gti.read_col::<f64>(fptr, "STOP")?;
+            Ok::<Vec<Interval>, fitsio::errors::Error>(
+                start
+                    .into_iter()
+                    .zip(stop)
+                    .map(|(start, stop)| Interval { start, stop })
+                    .collect::<Vec<_>>(),
+            )
         })
+        .collect::<Result<Vec<_>, _>>()?;
+    intervals
+        .into_iter()
         .reduce(interval_intersection)
-        .unwrap()
+        .ok_or_else(|| "No intervals found".into())
 }
 
-pub fn calculate_fermi_nai(filenames: &[&str]) -> Vec<Record> {
-    let mut fptrs = fptrs(filenames);
-    let events = events(&mut fptrs);
-    let time = time(&mut fptrs, &events);
-    let pha = pha(&mut fptrs, &events);
+pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Record>, Box<dyn Error>> {
+    let mut fptrs = fptrs(filenames)?;
+    let events = events(&mut fptrs)?;
+    let time = time(&mut fptrs, &events)?;
+    let pha = pha(&mut fptrs, &events)?;
 
-    let gti = gti(&mut fptrs);
-    let date_obs = date_obs(&mut fptrs, &events);
-    let t_start = t_start(&mut fptrs, &events, date_obs);
+    let gti = gti(&mut fptrs)?;
+    let date_obs = date_obs(&mut fptrs, &events)?;
+    let t_start = t_start(&mut fptrs, &events, date_obs)?;
     let time = time
         .into_iter()
         .flatten()
@@ -102,7 +128,8 @@ pub fn calculate_fermi_nai(filenames: &[&str]) -> Vec<Record> {
         .map(|time| time - t_start)
         .collect::<Vec<_>>();
 
-    gti.iter()
+    Ok(gti
+        .iter()
         .flat_map(|interval| {
             search_all(
                 &time,
@@ -123,87 +150,88 @@ pub fn calculate_fermi_nai(filenames: &[&str]) -> Vec<Record> {
             })
         })
         .map(|trigger| Record::new(&trigger, date_obs))
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>())
 }
 
-fn events(fptrs: &mut [FitsFile]) -> Vec<FitsHdu> {
-    fptrs
-        .iter_mut()
-        .map(|fptr| fptr.hdu("EVENTS").unwrap())
-        .collect::<Vec<_>>()
+fn events(fptrs: &mut [FitsFile]) -> Result<Vec<FitsHdu>, fitsio::errors::Error> {
+    fptrs.iter_mut().map(|fptr| fptr.hdu("EVENTS")).collect()
 }
 
-fn fptrs(filenames: &[&str]) -> Vec<FitsFile> {
+fn fptrs(filenames: &[&str]) -> Result<Vec<FitsFile>, fitsio::errors::Error> {
     filenames
         .iter()
-        .map(|filename| FitsFile::open(filename).unwrap())
-        .collect::<Vec<_>>()
+        .map(|filename| FitsFile::open(filename))
+        .collect()
 }
 
-fn pha(fptrs: &mut [FitsFile], events: &[FitsHdu]) -> Vec<Vec<i16>> {
+fn pha(fptrs: &mut [FitsFile], events: &[FitsHdu]) -> Result<Vec<Vec<i16>>, fitsio::errors::Error> {
     events
         .iter()
         .zip(fptrs.iter_mut())
-        .map(|(events, fptr)| events.read_col::<i16>(fptr, "PHA").unwrap())
-        .collect::<Vec<_>>()
+        .map(|(events, fptr)| events.read_col::<i16>(fptr, "PHA"))
+        .collect()
 }
 
-fn time(fptrs: &mut [FitsFile], events: &[FitsHdu]) -> Vec<Vec<f64>> {
+fn time(
+    fptrs: &mut [FitsFile],
+    events: &[FitsHdu],
+) -> Result<Vec<Vec<f64>>, fitsio::errors::Error> {
     events
         .iter()
         .zip(fptrs.iter_mut())
-        .map(|(events, fptr)| events.read_col::<f64>(fptr, "TIME").unwrap())
-        .collect::<Vec<_>>()
+        .map(|(events, fptr)| events.read_col::<f64>(fptr, "TIME"))
+        .collect()
 }
 
-fn get_fermi_nai_filenames(epoch: &Epoch) -> Vec<String> {
+fn get_fermi_nai_filenames(epoch: &Epoch) -> Result<Vec<String>, Box<dyn Error>> {
     let (y, m, d, h, ..) = epoch.to_gregorian_utc();
     let folder = format!(
         "/gecamfs/Exchange/GSDC/missions/FTP/fermi/data/gbm/daily/{:04}/{:02}/{:02}/current",
         y, m, d
     );
-    (0..12)
-        .map(|i| {
-            format!(
-                "glg_tte_n{:x}_{:02}{:02}{:02}_{:02}z_v\\d{{2}}\\.fit\\.gz",
-                i,
-                y % 100,
-                m,
-                d,
-                h,
-            )
-        })
-        .map(|x| Regex::new(&x).unwrap())
-        .map(|re| {
-            std::fs::read_dir(&folder)
-                .unwrap()
-                .map(|x| x.unwrap())
-                .map(|x| x.path())
-                .filter(|x| x.is_file())
-                .map(|x| x.file_name().unwrap().to_str().unwrap().to_string())
-                .filter(|x| re.is_match(x))
-                .max_by(|a, b| {
-                    let extract = |x: &str| {
-                        x.split('_')
-                            .last()
-                            .unwrap()
-                            .strip_prefix('v')
-                            .unwrap()
-                            .strip_suffix(".fit.gz")
-                            .unwrap()
-                            .parse::<u32>()
-                            .unwrap()
-                    };
-                    extract(a).cmp(&extract(b))
-                })
-                .unwrap()
-        })
-        .map(|x| format!("{}/{}", folder, x))
-        .collect::<Vec<_>>()
+    let mut filenames = Vec::new();
+    for i in 0..12 {
+        let pattern = format!(
+            "glg_tte_n{:x}_{:02}{:02}{:02}_{:02}z_v\\d{{2}}\\.fit\\.gz",
+            i,
+            y % 100,
+            m,
+            d,
+            h,
+        );
+        let re = Regex::new(&pattern)?;
+        let max_file = std::fs::read_dir(&folder)?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file())
+            .filter_map(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str().map(String::from))
+            })
+            .filter(|name| re.is_match(name))
+            .max_by(|a, b| {
+                let extract_version = |name: &str| {
+                    name.split('_')
+                        .last()
+                        .and_then(|s| s.strip_prefix('v'))
+                        .and_then(|s| s.strip_suffix(".fit.gz"))
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(0)
+                };
+                extract_version(a).cmp(&extract_version(b))
+            });
+        if let Some(file) = max_file {
+            filenames.push(format!("{}/{}", folder, file));
+        }
+    }
+    if filenames.is_empty() {
+        return Err("No matching files found".into());
+    }
+    Ok(filenames)
 }
 
-pub fn process(epoch: &Epoch) -> Vec<Record> {
-    let filenames = get_fermi_nai_filenames(&epoch);
+pub fn process(epoch: &Epoch) -> Result<Vec<Record>, Box<dyn Error>> {
+    let filenames = get_fermi_nai_filenames(&epoch)?;
     let filenames_str: Vec<&str> = filenames.iter().map(|s| s.as_str()).collect();
     calculate_fermi_nai(&filenames_str)
 }

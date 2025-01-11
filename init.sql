@@ -5,6 +5,7 @@ CREATE TABLE
         retry_times INTEGER NOT NULL, -- 重试次数
         worker TEXT NOT NULL, -- 处理者
         status TEXT NOT NULL, -- 状态 Pending, Running, Finished, Failed
+        error TEXT NOT NULL, -- 错误信息
         time TEXT NOT NULL, -- 要处理的时间
         satellite TEXT NOT NULL, -- 要处理的卫星
         detector TEXT NOT NULL, -- 要处理的探测器

@@ -3,6 +3,8 @@
         "fitsio",
         "hifitime",
         "itertools",
+        "MJDREFF",
+        "MJDREFI",
         "rusqlite",
         "TSTART",
         "TSTOP"

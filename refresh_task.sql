@@ -5,6 +5,7 @@ OR IGNORE INTO tasks (
     retry_times,
     worker,
     status,
+    error,
     time,
     satellite,
     detector
@@ -27,6 +28,7 @@ SELECT
     0 AS retry_times,
     '' AS worker,
     'Pending' AS status,
+    '' AS error,
     hour AS time,
     'Fermi' AS satellite,
     'GBM' AS detector

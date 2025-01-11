@@ -1,7 +1,7 @@
 mod database;
 mod search;
 
-use database::{finish_task, get_task};
+use database::{fail_task, finish_task, get_task};
 use rusqlite::Connection;
 use search::fermi::process;
 
@@ -14,8 +14,15 @@ fn consume() {
         .unwrap();
     while let Some(epoch) = get_task(&conn, &worker, "Fermi", "GBM") {
         let results = process(&epoch);
-        results.iter().for_each(|x| x.save(&conn).unwrap());
-        finish_task(&conn, &epoch, "Fermi", "GBM");
+        match results {
+            Ok(results) => {
+                results.iter().for_each(|x| x.save(&conn).unwrap());
+                finish_task(&conn, &epoch, "Fermi", "GBM");
+            }
+            Err(e) => {
+                fail_task(&conn, &epoch, "Fermi", "GBM", e);
+            }
+        }
     }
 }
 
