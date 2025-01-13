@@ -8,6 +8,7 @@ clap = { version = "4.5.24", features = ["derive"] }
 fitsio = { version = "0.21.6", features = ["fitsio-src"] }
 hifitime = "4.0.2"
 hostname = "0.4.0"
+indicatif = "0.17.9"
 itertools = "0.13.0"
 plotters = "0.3.7"
 polars = "0.45.1"

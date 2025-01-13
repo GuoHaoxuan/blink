@@ -1,10 +1,13 @@
 {
     "cSpell.words": [
         "fitsio",
+        "gecamfs",
+        "GSDC",
         "hifitime",
         "itertools",
         "MJDREFF",
         "MJDREFI",
+        "peekable",
         "rusqlite",
         "TSTART",
         "TSTOP"
