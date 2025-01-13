@@ -1,4 +1,5 @@
 pub mod algorithms;
+pub mod algorithms2;
 pub mod fermi;
 pub mod light_curve;
 pub mod poisson;
