@@ -44,7 +44,9 @@ fn main() {
     let results = calculate_fermi_nai(&filenames);
     match results {
         Ok(results) => {
-            println!("{:?}", results);
+            for result in results {
+                println!("{:?}", result);
+            }
         }
         Err(e) => {
             println!("{:?}", e);

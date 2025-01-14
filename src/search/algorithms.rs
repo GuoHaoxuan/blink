@@ -1,3 +1,6 @@
+use std::f32::consts::E;
+use std::str::FromStr;
+
 use super::event::Event;
 use super::interval::Interval;
 use super::poisson::poisson_isf_cached;
@@ -63,11 +66,21 @@ pub fn search(
                         average,
                         &mut cache,
                     );
+                    // if data[cursor].time
+                    //     > Epoch::from_str("2023-01-01T00:02:42.484000000 UTC").unwrap()
+                    //     && data[cursor].time
+                    //         < Epoch::from_str("2023-01-01T00:02:42.485000000 UTC").unwrap()
+                    // {
+                    //     println!(
+                    //         "Now search at {} with count {} average {:.2} threshold {}",
+                    //         data[cursor].time, count, average, threshold
+                    //     );
+                    // }
                     count as u32 >= threshold
                 })
                 .filter(|flag| *flag)
                 .count()
-                >= 2
+                >= 1
             {
                 let new_interval = Interval {
                     start: data[cursor].time,
