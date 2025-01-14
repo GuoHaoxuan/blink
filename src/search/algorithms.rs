@@ -40,6 +40,7 @@ pub fn search(
     while cursor < data.len() && data[cursor].time < stop {
         let mut step = 0;
         let mut counts: Vec<u32> = vec![0; detector_count];
+        counts[data[cursor].detector] = 1;
         let mut average_stop = average_stop_base;
         let mut average_counts = average_counts_base.clone();
 

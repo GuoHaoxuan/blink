@@ -119,7 +119,7 @@ pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn 
                 interval.stop,
                 1.0.milliseconds(),
                 1.0.seconds(),
-                1.0,
+                20.0,
                 8,
             )
         })
