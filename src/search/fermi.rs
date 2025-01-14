@@ -106,7 +106,7 @@ pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn 
                 .map(|(time, pha)| Event {
                     time: time_ref + time.seconds(),
                     pi: pha as u32,
-                    detector: 0,
+                    detector: i,
                 })
                 .collect::<Vec<_>>()
         })
@@ -122,7 +122,7 @@ pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn 
         .flat_map(|interval| {
             search(
                 &events,
-                1,
+                12,
                 interval.start,
                 interval.stop,
                 1.0.milliseconds(),
