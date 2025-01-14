@@ -37,17 +37,14 @@ pub fn search(
         average_counts_base[data[average_stop_base].detector] += 1;
     }
 
-    while cursor < data.len() && data[cursor].time < stop {
+    loop {
         let mut step = 0;
         let mut counts: Vec<u32> = vec![0; detector_count];
         counts[data[cursor].detector] = 1;
         let mut average_stop = average_stop_base;
         let mut average_counts = average_counts_base.clone();
 
-        while step < data.len()
-            && data[cursor + step].time - data[cursor].time < max_duration
-            && data[cursor + step].time < stop
-        {
+        loop {
             if (0..detector_count)
                 .map(|detector| {
                     let count = counts[detector];
@@ -88,6 +85,14 @@ pub fn search(
             }
 
             step += 1;
+
+            if cursor + step >= data.len()
+                || data[cursor + step].time - data[cursor].time >= max_duration
+                || data[cursor + step].time >= stop
+            {
+                break;
+            }
+
             counts[data[cursor + step].detector] += 1;
             while average_stop + 1 < data.len()
                 && data[average_stop + 1].time - data[cursor + step].time < neighbor / 2
@@ -98,6 +103,11 @@ pub fn search(
         }
 
         cursor += 1;
+
+        if cursor >= data.len() || data[cursor].time >= stop {
+            break;
+        }
+
         while average_start_base + 1 < data.len()
             && data[cursor].time - data[average_start_base + 1].time > neighbor / 2
         {

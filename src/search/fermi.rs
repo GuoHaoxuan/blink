@@ -1,6 +1,7 @@
 use core::str::FromStr;
 use fitsio::{hdu::FitsHdu, FitsFile};
 use hifitime::prelude::*;
+use itertools::Itertools;
 use regex::Regex;
 use std::error::Error;
 use std::iter::zip;
@@ -98,15 +99,18 @@ pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn 
     let time_ref = Epoch::from_str("2001-01-01T00:00:00.000000000 UTC")?;
 
     let gti = gti(&mut fits_files, time_ref)?;
-    let events = zip(time.iter(), pha.iter())
+    let events = zip(time, pha)
         .enumerate()
-        .flat_map(|(detector, (times, pis))| {
-            zip(times.iter(), pis.iter()).map(move |(&time, &pi)| Event {
-                time: time_ref + time.seconds(),
-                pi: pi as u32,
-                detector,
-            })
+        .flat_map(|(i, (time, pha))| {
+            zip(time, pha)
+                .map(|(time, pha)| Event {
+                    time: time_ref + time.seconds(),
+                    pi: pha as u32,
+                    detector: i,
+                })
+                .collect::<Vec<_>>()
         })
+        .sorted_by_key(|x| x.time)
         .collect::<Vec<_>>();
 
     Ok(gti
