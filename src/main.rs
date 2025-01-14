@@ -16,7 +16,9 @@ fn consume() {
         let results = process(&epoch);
         match results {
             Ok(results) => {
-                // results.iter().for_each(|x| x.save(&conn).unwrap());
+                for result in results {
+                    println!("{:?}", result);
+                }
                 finish_task(&conn, &epoch, "Fermi", "GBM");
             }
             Err(e) => {
@@ -27,29 +29,5 @@ fn consume() {
 }
 
 fn main() {
-    let filenames = [
-        "current/glg_tte_n0_230101_00z_v00.fit.gz",
-        "current/glg_tte_n1_230101_00z_v00.fit.gz",
-        "current/glg_tte_n2_230101_00z_v00.fit.gz",
-        "current/glg_tte_n3_230101_00z_v00.fit.gz",
-        "current/glg_tte_n4_230101_00z_v00.fit.gz",
-        "current/glg_tte_n5_230101_00z_v00.fit.gz",
-        "current/glg_tte_n6_230101_00z_v00.fit.gz",
-        "current/glg_tte_n7_230101_00z_v00.fit.gz",
-        "current/glg_tte_n8_230101_00z_v00.fit.gz",
-        "current/glg_tte_n9_230101_00z_v00.fit.gz",
-        "current/glg_tte_na_230101_00z_v00.fit.gz",
-        "current/glg_tte_nb_230101_00z_v00.fit.gz",
-    ];
-    let results = calculate_fermi_nai(&filenames);
-    match results {
-        Ok(results) => {
-            for result in results {
-                println!("{:?}", result);
-            }
-        }
-        Err(e) => {
-            println!("{:?}", e);
-        }
-    }
+    consume();
 }

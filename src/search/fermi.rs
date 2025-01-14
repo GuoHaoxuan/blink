@@ -182,7 +182,7 @@ fn get_fermi_nai_filenames(epoch: &Epoch) -> Result<Vec<String>, Box<dyn Error>>
 }
 
 pub fn process(epoch: &Epoch) -> Result<Vec<Interval>, Box<dyn Error>> {
-    let filenames = get_fermi_nai_filenames(&epoch)?;
+    let filenames = get_fermi_nai_filenames(epoch)?;
     let filenames_str: Vec<&str> = filenames.iter().map(|s| s.as_str()).collect();
     calculate_fermi_nai(&filenames_str)
 }
