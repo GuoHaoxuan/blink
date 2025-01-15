@@ -1,6 +1,3 @@
-use std::f32::consts::E;
-use std::str::FromStr;
-
 use super::event::Event;
 use super::interval::Interval;
 use super::poisson::poisson_isf_cached;
@@ -32,18 +29,18 @@ pub fn search(
     let mut average_start_base = cursor;
     let mut average_stop_base = cursor;
     let mut average_counts_base: Vec<u32> = vec![0; detector_count];
-    average_counts_base[data[cursor].detector] = 1;
+    average_counts_base[data[cursor].detector as usize] = 1;
     while average_stop_base + 1 < data.len()
         && data[average_stop_base + 1].time - data[cursor].time < neighbor / 2
     {
         average_stop_base += 1;
-        average_counts_base[data[average_stop_base].detector] += 1;
+        average_counts_base[data[average_stop_base].detector as usize] += 1;
     }
 
     loop {
         let mut step = 0;
         let mut counts: Vec<u32> = vec![0; detector_count];
-        counts[data[cursor].detector] = 1;
+        counts[data[cursor].detector as usize] = 1;
         let mut average_stop = average_stop_base;
         let mut average_counts = average_counts_base.clone();
 
@@ -96,12 +93,12 @@ pub fn search(
                 break;
             }
 
-            counts[data[cursor + step].detector] += 1;
+            counts[data[cursor + step].detector as usize] += 1;
             while average_stop + 1 < data.len()
                 && data[average_stop + 1].time - data[cursor + step].time < neighbor / 2
             {
                 average_stop += 1;
-                average_counts[data[average_stop].detector] += 1;
+                average_counts[data[average_stop].detector as usize] += 1;
             }
         }
 
@@ -114,14 +111,14 @@ pub fn search(
         while average_start_base + 1 < data.len()
             && data[cursor].time - data[average_start_base + 1].time > neighbor / 2
         {
-            average_counts_base[data[average_start_base].detector] -= 1;
+            average_counts_base[data[average_start_base].detector as usize] -= 1;
             average_start_base += 1;
         }
         while average_stop_base + 1 < data.len()
             && data[average_stop_base + 1].time - data[cursor].time < neighbor / 2
         {
             average_stop_base += 1;
-            average_counts_base[data[average_stop_base].detector] += 1;
+            average_counts_base[data[average_stop_base].detector as usize] += 1;
         }
     }
 

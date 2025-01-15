@@ -6,6 +6,8 @@ use regex::Regex;
 use std::error::Error;
 use std::iter::zip;
 
+use crate::search::event::CompactedEvent;
+
 use super::algorithms::search;
 use super::event::Event;
 use super::interval::Interval;
@@ -92,30 +94,40 @@ fn time(
 }
 
 pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn Error>> {
+    let time_ref = Epoch::from_str("2001-01-01T00:00:00.000000000 UTC")?;
+
     let mut fits_files = fits_files(filenames)?;
     let events = events(&mut fits_files)?;
     let time = time(&mut fits_files, &events)?;
     let pha = pha(&mut fits_files, &events)?;
-    let time_ref = Epoch::from_str("2001-01-01T00:00:00.000000000 UTC")?;
-
+    drop(events);
     let gti = gti(&mut fits_files, time_ref)?;
+    drop(fits_files);
     let events = zip(time, pha)
         .enumerate()
         .flat_map(|(i, (time, pha))| {
             zip(time, pha)
-                .map(|(time, pha)| Event {
-                    time: time_ref + time.seconds(),
-                    pi: pha as u32,
-                    detector: i,
+                .map(|(time, pha)| CompactedEvent {
+                    time,
+                    pi: pha,
+                    detector: i as u8,
                 })
                 .collect::<Vec<_>>()
         })
-        .sorted_by_key(|x| x.time)
-        .dedup_by_with_count(|a, b| a.time == b.time)
+        .sorted_by(|a, b| a.time.partial_cmp(&b.time).unwrap())
+        .dedup_by_with_count(|a, b| (a.time - b.time).abs() < 0.3e-6)
         .filter(|(count, _)| *count == 1)
         .map(|(_, event)| event)
         .filter(|event| event.pi >= 30 && event.pi <= 124)
+        .map(|event| Event {
+            time: time_ref + event.time.seconds(),
+            // pi is unused now
+            // pi: event.pi as u32,
+            detector: event.detector,
+        })
         .collect::<Vec<_>>();
+
+    println!("Counts {}", events.len());
 
     Ok(gti
         .into_iter()

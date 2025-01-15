@@ -1,7 +1,10 @@
 mod database;
 mod search;
 
+use std::str::FromStr;
+
 use database::{fail_task, finish_task, get_task};
+use hifitime::prelude::*;
 use rusqlite::Connection;
 use search::fermi::{calculate_fermi_nai, process};
 
