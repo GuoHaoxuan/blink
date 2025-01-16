@@ -127,8 +127,6 @@ pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn 
         })
         .collect::<Vec<_>>();
 
-    println!("Counts {}", events.len());
-
     Ok(gti
         .into_iter()
         .flat_map(|interval| {
