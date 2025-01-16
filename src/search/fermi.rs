@@ -65,10 +65,7 @@ fn events(fits_files: &mut [FitsFile]) -> Result<Vec<FitsHdu>, fitsio::errors::E
 }
 
 fn fits_files(filenames: &[&str]) -> Result<Vec<FitsFile>, fitsio::errors::Error> {
-    filenames
-        .iter()
-        .map(|filename| FitsFile::open(filename))
-        .collect()
+    filenames.iter().map(FitsFile::open).collect()
 }
 
 fn pha(
