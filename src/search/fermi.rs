@@ -111,11 +111,7 @@ pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn 
                 })
                 .collect::<Vec<_>>()
         })
-        .sorted_by(|a, b| {
-            let a_time = a.time;
-            let b_time = b.time;
-            a_time.partial_cmp(&b_time).unwrap()
-        })
+        .sorted_by(|a, b| a.time.partial_cmp(&b.time).unwrap())
         .dedup_by_with_count(|a, b| (a.time - b.time).abs() < 0.3e-6)
         .filter(|(count, _)| *count == 1)
         .map(|(_, event)| event)

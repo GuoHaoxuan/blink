@@ -8,8 +8,9 @@ pub struct Event {
     pub detector: u8,
 }
 
+// DO NOT use repr(packed) here
+// This is UB
 #[derive(Clone)]
-#[repr(packed)]
 pub struct PackedEvent<T: Clone> {
     pub time: f64,
     pub pi: T,
