@@ -6,7 +6,7 @@ use regex::Regex;
 use std::error::Error;
 use std::iter::zip;
 
-use crate::search::event::CompactedEvent;
+use crate::search::event::PackedEvent;
 
 use super::algorithms::search;
 use super::event::Event;
@@ -104,14 +104,18 @@ pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn 
         .enumerate()
         .flat_map(|(i, (time, pha))| {
             zip(time, pha)
-                .map(|(time, pha)| CompactedEvent {
+                .map(|(time, pha)| PackedEvent {
                     time,
                     pi: pha,
                     detector: i as u8,
                 })
                 .collect::<Vec<_>>()
         })
-        .sorted_by(|a, b| a.time.partial_cmp(&b.time).unwrap())
+        .sorted_by(|a, b| {
+            let a_time = a.time;
+            let b_time = b.time;
+            a_time.partial_cmp(&b_time).unwrap()
+        })
         .dedup_by_with_count(|a, b| (a.time - b.time).abs() < 0.3e-6)
         .filter(|(count, _)| *count == 1)
         .map(|(_, event)| event)

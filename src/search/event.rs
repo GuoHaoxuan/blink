@@ -9,7 +9,8 @@ pub struct Event {
 }
 
 #[derive(Clone)]
-pub struct CompactedEvent<T: Clone> {
+#[repr(packed)]
+pub struct PackedEvent<T: Clone> {
     pub time: f64,
     pub pi: T,
     pub detector: u8,
