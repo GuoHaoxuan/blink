@@ -91,7 +91,7 @@ fn time(
         .collect()
 }
 
-pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn Error>> {
+pub fn calculate_fermi(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn Error>> {
     let time_ref = Epoch::from_str("2001-01-01T00:00:00.000000000 UTC")?;
 
     let mut fits_files = fits_files(filenames)?;
@@ -141,7 +141,7 @@ pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn 
         .collect())
 }
 
-fn get_fermi_nai_filenames(epoch: &Epoch) -> Result<Vec<String>, Box<dyn Error>> {
+fn get_fermi_filenames(epoch: &Epoch) -> Result<Vec<String>, Box<dyn Error>> {
     let (y, m, d, h, ..) = epoch.to_gregorian_utc();
     let folder = format!(
         "/gecamfs/Exchange/GSDC/missions/FTP/fermi/data/gbm/daily/{:04}/{:02}/{:02}/current",
@@ -193,7 +193,7 @@ fn get_fermi_nai_filenames(epoch: &Epoch) -> Result<Vec<String>, Box<dyn Error>>
 }
 
 pub fn process(epoch: &Epoch) -> Result<Vec<Interval>, Box<dyn Error>> {
-    let filenames = get_fermi_nai_filenames(epoch)?;
+    let filenames = get_fermi_filenames(epoch)?;
     let filenames_str: Vec<&str> = filenames.iter().map(|s| s.as_str()).collect();
-    calculate_fermi_nai(&filenames_str)
+    calculate_fermi(&filenames_str)
 }

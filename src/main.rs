@@ -3,7 +3,7 @@ mod search;
 
 use database::{fail_task, finish_task, get_task};
 use rusqlite::Connection;
-use search::fermi::{calculate_fermi_nai, process};
+use search::fermi::{calculate_fermi, process};
 
 fn consume() {
     let hostname = hostname::get().unwrap().into_string().unwrap();
@@ -45,7 +45,7 @@ fn local_test() {
         "2023-01-01/glg_tte_b0_230101_00z_v00.fit.gz",
         "2023-01-01/glg_tte_b1_230101_00z_v00.fit.gz",
     ];
-    let results = calculate_fermi_nai(&filenames);
+    let results = calculate_fermi(&filenames);
     match results {
         Ok(results) => {
             for result in results {
