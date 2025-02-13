@@ -36,7 +36,6 @@ pub fn search(
     config: SearchConfig,
 ) -> Vec<Interval> {
     let mut result: Vec<Interval> = Vec::new();
-    let mut cache = vec![0; 100_000];
 
     let mut cursor = match data.binary_search_by(|event| event.time.cmp(&start)) {
         Ok(index) => index,
