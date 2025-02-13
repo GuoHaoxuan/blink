@@ -36,6 +36,7 @@ pub fn search(
     config: SearchConfig,
 ) -> Vec<Interval> {
     let mut result: Vec<Interval> = Vec::new();
+    let mut cache = vec![vec![None; 10]; 10000];
 
     let mut cursor = match data.binary_search_by(|event| event.time.cmp(&start)) {
         Ok(index) => index,
@@ -77,7 +78,27 @@ pub fn search(
                     let count = counts[detector];
                     let average_count = average_counts[detector] - count;
                     let average = average_count as f64 * average_percent;
-                    let prob = Poisson::new(average).unwrap().cdf(count as u64);
+                    let prob = if count == 0 {
+                        0.0
+                    } else if average >= 10.0 || count >= 10 {
+                        match Poisson::new(average) {
+                            Ok(poisson) => poisson.cdf(count as u64),
+                            Err(_) => 1.0,
+                        }
+                    } else {
+                        let average_hash = (average * 1000.0).round() as usize;
+                        match cache[average_hash][count as usize] {
+                            None => {
+                                let prob = match Poisson::new(average) {
+                                    Ok(poisson) => poisson.cdf(count as u64),
+                                    Err(_) => 1.0,
+                                };
+                                cache[average_hash][count as usize] = Some(prob);
+                                prob
+                            }
+                            Some(prob) => prob,
+                        }
+                    };
                     (prob, detector_weight)
                 })
                 .sorted_by(|a, b| b.0.partial_cmp(&a.0).unwrap())
