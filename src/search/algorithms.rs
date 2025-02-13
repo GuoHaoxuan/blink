@@ -1,6 +1,10 @@
 use super::event::Event;
 use super::interval::Interval;
 use super::poisson::poisson_isf_cached;
+use itertools::Itertools;
+use statrs::distribution::{Discrete, DiscreteCDF, Poisson};
+use statrs::prec;
+use statrs::statistics::Distribution;
 
 use hifitime::prelude::*;
 
@@ -8,7 +12,8 @@ pub struct SearchConfig {
     pub max_duration: Duration,
     pub neighbor: Duration,
     pub fp_year: f64,
-    pub min_count: u32,
+    pub detector_weight: Box<dyn Fn(u8) -> u32>,
+    pub min_detector: u32,
 }
 
 impl Default for SearchConfig {
@@ -17,7 +22,8 @@ impl Default for SearchConfig {
             max_duration: 1.0.milliseconds(),
             neighbor: 1.0.seconds(),
             fp_year: 10000.0,
-            min_count: 3,
+            detector_weight: Box::new(|_| 1),
+            min_detector: 3,
         }
     }
 }
@@ -60,30 +66,32 @@ pub fn search(
         let mut average_counts = average_counts_base.clone();
 
         loop {
+            let duration = data[cursor + step].time - data[cursor].time;
+            let average_start_time = (data[cursor].time - config.neighbor / 2).max(start);
+            let average_stop_time = (data[cursor + step].time + config.neighbor / 2).min(stop);
+            let average_duration = (average_stop_time - average_start_time) - duration;
+            let average_percent = duration.to_seconds() / average_duration.to_seconds();
+            let threshold = 1.0 - config.fp_year / (3600.0 * 24.0 * 365.0 / duration.to_seconds());
             if (0..detector_count)
                 .map(|detector| {
+                    let detector_weight = (config.detector_weight)(detector as u8);
                     let count = counts[detector];
-                    if count < config.min_count {
-                        return false;
-                    }
-                    let duration = data[cursor + step].time - data[cursor].time;
                     let average_count = average_counts[detector] - count;
-                    let average_start_time = (data[cursor].time - config.neighbor / 2).max(start);
-                    let average_stop_time =
-                        (data[cursor + step].time + config.neighbor / 2).min(stop);
-                    let average_duration = (average_stop_time - average_start_time) - duration;
-                    let average_percent = duration.to_seconds() / average_duration.to_seconds();
                     let average = average_count as f64 * average_percent;
-                    let threshold = poisson_isf_cached(
-                        config.fp_year / (3600.0 * 24.0 * 365.0 / duration.to_seconds()),
-                        average,
-                        &mut cache,
-                    );
-                    count as u32 >= threshold
+                    let prob = Poisson::new(average).unwrap().cdf(count as u64);
+                    (prob, detector_weight)
                 })
-                .filter(|flag| *flag)
-                .count()
-                >= 2
+                .sorted_by(|a, b| b.0.partial_cmp(&a.0).unwrap())
+                .reduce(|(prob, weight), (prob2, weight2)| {
+                    if weight < config.min_detector {
+                        (prob * prob2, weight + weight2)
+                    } else {
+                        (1.0 - (1.0 - prob) * (1.0 - prob2), weight + weight2)
+                    }
+                })
+                .unwrap()
+                .0
+                > threshold
             {
                 let new_interval = Interval {
                     start: data[cursor].time,

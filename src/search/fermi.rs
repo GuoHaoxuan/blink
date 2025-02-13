@@ -1,5 +1,6 @@
 use core::str::FromStr;
 use fitsio::{hdu::FitsHdu, FitsFile};
+use hifitime::efmt::format;
 use hifitime::prelude::*;
 use itertools::Itertools;
 use regex::Regex;
@@ -129,7 +130,7 @@ pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn 
         .flat_map(|interval| {
             search(
                 &events,
-                12,
+                filenames.len(),
                 interval.start,
                 interval.stop,
                 SearchConfig {
@@ -149,8 +150,12 @@ fn get_fermi_nai_filenames(epoch: &Epoch) -> Result<Vec<String>, Box<dyn Error>>
     let mut filenames = Vec::new();
     for i in 0..12 {
         let pattern = format!(
-            "glg_tte_n{:x}_{:02}{:02}{:02}_{:02}z_v\\d{{2}}\\.fit\\.gz",
-            i,
+            "glg_tte_{}_{:02}{:02}{:02}_{:02}z_v\\d{{2}}\\.fit\\.gz",
+            if i < 12 {
+                format!("n{:x}", i)
+            } else {
+                format!("b{:x}", i - 12)
+            },
             y % 100,
             m,
             d,
