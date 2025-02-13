@@ -4,15 +4,30 @@ use super::poisson::poisson_isf_cached;
 
 use hifitime::prelude::*;
 
+pub struct SearchConfig {
+    pub max_duration: Duration,
+    pub neighbor: Duration,
+    pub fp_year: f64,
+    pub min_count: u32,
+}
+
+impl Default for SearchConfig {
+    fn default() -> Self {
+        Self {
+            max_duration: 1.0.milliseconds(),
+            neighbor: 1.0.seconds(),
+            fp_year: 10000.0,
+            min_count: 3,
+        }
+    }
+}
+
 pub fn search(
     data: &[Event],
     detector_count: usize,
     start: Epoch,
     stop: Epoch,
-    max_duration: Duration,
-    neighbor: Duration,
-    fp_year: f64,
-    min_count: u32,
+    config: SearchConfig,
 ) -> Vec<Interval> {
     let mut result: Vec<Interval> = Vec::new();
     let mut cache = vec![0; 100_000];
@@ -31,7 +46,7 @@ pub fn search(
     let mut average_counts_base: Vec<u32> = vec![0; detector_count];
     average_counts_base[data[cursor].detector as usize] = 1;
     while average_stop_base + 1 < data.len()
-        && data[average_stop_base + 1].time - data[cursor].time < neighbor / 2
+        && data[average_stop_base + 1].time - data[cursor].time < config.neighbor / 2
     {
         average_stop_base += 1;
         average_counts_base[data[average_stop_base].detector as usize] += 1;
@@ -48,18 +63,19 @@ pub fn search(
             if (0..detector_count)
                 .map(|detector| {
                     let count = counts[detector];
-                    if count < min_count {
+                    if count < config.min_count {
                         return false;
                     }
                     let duration = data[cursor + step].time - data[cursor].time;
                     let average_count = average_counts[detector] - count;
-                    let average_start_time = (data[cursor].time - neighbor / 2).max(start);
-                    let average_stop_time = (data[cursor + step].time + neighbor / 2).min(stop);
+                    let average_start_time = (data[cursor].time - config.neighbor / 2).max(start);
+                    let average_stop_time =
+                        (data[cursor + step].time + config.neighbor / 2).min(stop);
                     let average_duration = (average_stop_time - average_start_time) - duration;
                     let average_percent = duration.to_seconds() / average_duration.to_seconds();
                     let average = average_count as f64 * average_percent;
                     let threshold = poisson_isf_cached(
-                        fp_year / (3600.0 * 24.0 * 365.0 / duration.to_seconds()),
+                        config.fp_year / (3600.0 * 24.0 * 365.0 / duration.to_seconds()),
                         average,
                         &mut cache,
                     );
@@ -87,7 +103,7 @@ pub fn search(
             step += 1;
 
             if cursor + step >= data.len()
-                || data[cursor + step].time - data[cursor].time >= max_duration
+                || data[cursor + step].time - data[cursor].time >= config.max_duration
                 || data[cursor + step].time >= stop
             {
                 break;
@@ -95,7 +111,7 @@ pub fn search(
 
             counts[data[cursor + step].detector as usize] += 1;
             while average_stop + 1 < data.len()
-                && data[average_stop + 1].time - data[cursor + step].time < neighbor / 2
+                && data[average_stop + 1].time - data[cursor + step].time < config.neighbor / 2
             {
                 average_stop += 1;
                 average_counts[data[average_stop].detector as usize] += 1;
@@ -109,13 +125,13 @@ pub fn search(
         }
 
         while average_start_base + 1 < data.len()
-            && data[cursor].time - data[average_start_base + 1].time > neighbor / 2
+            && data[cursor].time - data[average_start_base + 1].time > config.neighbor / 2
         {
             average_counts_base[data[average_start_base].detector as usize] -= 1;
             average_start_base += 1;
         }
         while average_stop_base + 1 < data.len()
-            && data[average_stop_base + 1].time - data[cursor].time < neighbor / 2
+            && data[average_stop_base + 1].time - data[cursor].time < config.neighbor / 2
         {
             average_stop_base += 1;
             average_counts_base[data[average_stop_base].detector as usize] += 1;

@@ -8,7 +8,7 @@ use std::iter::zip;
 
 use crate::search::event::PackedEvent;
 
-use super::algorithms::search;
+use super::algorithms::{search, SearchConfig};
 use super::event::Event;
 use super::interval::Interval;
 
@@ -132,10 +132,9 @@ pub fn calculate_fermi_nai(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn 
                 12,
                 interval.start,
                 interval.stop,
-                1.0.milliseconds(),
-                1.0.seconds(),
-                10000.0,
-                3,
+                SearchConfig {
+                    ..Default::default()
+                },
             )
         })
         .collect())
