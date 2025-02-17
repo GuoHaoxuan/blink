@@ -28,6 +28,25 @@ impl Default for SearchConfig {
     }
 }
 
+fn coincidence_prob(probs: &[f64], n: usize) -> f64 {
+    let mut cache = vec![0.0; n + 1];
+    cache[0] = 1.0;
+
+    for m_i in 1..=probs.len() {
+        for n_i in (0..=n).rev() {
+            cache[n_i] = match (m_i, n_i) {
+                (_, 0) => 1.0,
+                // The following line can be removed, because cache[n_i] is 0.0 initially
+                // although it is meaningless mathematically
+                // (m_i, n_i) if m_i == n_i => probs[m_i - 1] * cache[n_i - 1],
+                (m_i, n_i) => probs[m_i - 1] * cache[n_i - 1] + (1.0 - probs[m_i - 1]) * cache[n_i],
+            }
+        }
+    }
+
+    cache[n]
+}
+
 pub fn search(
     data: &[Event],
     detector_count: usize,
@@ -72,7 +91,7 @@ pub fn search(
             let average_duration = (average_stop_time - average_start_time) - duration;
             let average_percent = duration.to_seconds() / average_duration.to_seconds();
             let threshold = 1.0 - config.fp_year / (3600.0 * 24.0 * 365.0 / duration.to_seconds());
-            if (0..detector_count)
+            let probs = (0..detector_count)
                 .map(|detector| {
                     let detector_weight = (config.detector_weight)(detector as u8);
                     let count = counts[detector];
@@ -101,18 +120,10 @@ pub fn search(
                     };
                     (prob, detector_weight)
                 })
-                .sorted_by(|a, b| b.0.partial_cmp(&a.0).unwrap())
-                .reduce(|(prob, weight), (prob2, weight2)| {
-                    if weight < config.min_detector {
-                        (prob * prob2, weight + weight2)
-                    } else {
-                        (1.0 - (1.0 - prob) * (1.0 - prob2), weight + weight2)
-                    }
-                })
-                .unwrap()
-                .0
-                > threshold
-            {
+                .map(|(prob, _)| prob)
+                .collect::<Vec<f64>>();
+            let prob = coincidence_prob(&probs, 4);
+            if prob > threshold {
                 let new_interval = Interval {
                     start: data[cursor].time,
                     stop: data[cursor + step].time,

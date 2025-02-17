@@ -49,7 +49,7 @@ fn local_test() {
     match results {
         Ok(results) => {
             for result in results {
-                // println!("{:?}", result);
+                println!("{:?}", result);
             }
         }
         Err(e) => {
