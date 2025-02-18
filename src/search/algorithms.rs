@@ -12,7 +12,6 @@ pub struct SearchConfig {
     pub max_duration: Duration,
     pub neighbor: Duration,
     pub fp_year: f64,
-    pub detector_weight: Box<dyn Fn(u8) -> u32>,
     pub min_detector: u32,
 }
 
@@ -21,8 +20,7 @@ impl Default for SearchConfig {
         Self {
             max_duration: 1.0.milliseconds(),
             neighbor: 1.0.seconds(),
-            fp_year: 10000.0,
-            detector_weight: Box::new(|_| 1),
+            fp_year: 20.0,
             min_detector: 3,
         }
     }
@@ -49,7 +47,7 @@ fn coincidence_prob(probs: &[f64], n: usize) -> f64 {
 
 pub fn search(
     data: &[Event],
-    detector_count: usize,
+    group_count: usize,
     start: Epoch,
     stop: Epoch,
     config: SearchConfig,
@@ -68,19 +66,19 @@ pub fn search(
 
     let mut average_start_base = cursor;
     let mut average_stop_base = cursor;
-    let mut average_counts_base: Vec<u32> = vec![0; detector_count];
-    average_counts_base[data[cursor].detector as usize] = 1;
+    let mut average_counts_base: Vec<u32> = vec![0; group_count];
+    average_counts_base[data[cursor].group as usize] = 1;
     while average_stop_base + 1 < data.len()
         && data[average_stop_base + 1].time - data[cursor].time < config.neighbor / 2
     {
         average_stop_base += 1;
-        average_counts_base[data[average_stop_base].detector as usize] += 1;
+        average_counts_base[data[average_stop_base].group as usize] += 1;
     }
 
     loop {
         let mut step = 0;
-        let mut counts: Vec<u32> = vec![0; detector_count];
-        counts[data[cursor].detector as usize] = 1;
+        let mut counts: Vec<u32> = vec![0; group_count];
+        counts[data[cursor].group as usize] = 1;
         let mut average_stop = average_stop_base;
         let mut average_counts = average_counts_base.clone();
 
@@ -91,13 +89,13 @@ pub fn search(
             let average_duration = (average_stop_time - average_start_time) - duration;
             let average_percent = duration.to_seconds() / average_duration.to_seconds();
             let threshold = 1.0 - config.fp_year / (3600.0 * 24.0 * 365.0 / duration.to_seconds());
-            let probs = (0..detector_count)
-                .map(|detector| {
-                    let detector_weight = (config.detector_weight)(detector as u8);
-                    let count = counts[detector];
-                    let average_count = average_counts[detector] - count;
+            let probs = (0..group_count)
+                .map(|group| {
+                    let count = counts[group];
+                    let average_count = average_counts[group] - count;
                     let average = average_count as f64 * average_percent;
-                    let prob = if count == 0 {
+
+                    if count == 0 {
                         0.0
                     } else if average >= 10.0 || count >= 10 {
                         match Poisson::new(average) {
@@ -117,12 +115,10 @@ pub fn search(
                             }
                             Some(prob) => prob,
                         }
-                    };
-                    (prob, detector_weight)
+                    }
                 })
-                .map(|(prob, _)| prob)
                 .collect::<Vec<f64>>();
-            let prob = coincidence_prob(&probs, 4);
+            let prob = coincidence_prob(&probs, 3);
             if prob > threshold {
                 let new_interval = Interval {
                     start: data[cursor].time,
@@ -148,12 +144,12 @@ pub fn search(
                 break;
             }
 
-            counts[data[cursor + step].detector as usize] += 1;
+            counts[data[cursor + step].group as usize] += 1;
             while average_stop + 1 < data.len()
                 && data[average_stop + 1].time - data[cursor + step].time < config.neighbor / 2
             {
                 average_stop += 1;
-                average_counts[data[average_stop].detector as usize] += 1;
+                average_counts[data[average_stop].group as usize] += 1;
             }
         }
 
@@ -166,14 +162,14 @@ pub fn search(
         while average_start_base + 1 < data.len()
             && data[cursor].time - data[average_start_base + 1].time > config.neighbor / 2
         {
-            average_counts_base[data[average_start_base].detector as usize] -= 1;
+            average_counts_base[data[average_start_base].group as usize] -= 1;
             average_start_base += 1;
         }
         while average_stop_base + 1 < data.len()
             && data[average_stop_base + 1].time - data[cursor].time < config.neighbor / 2
         {
             average_stop_base += 1;
-            average_counts_base[data[average_stop_base].detector as usize] += 1;
+            average_counts_base[data[average_stop_base].group as usize] += 1;
         }
     }
 

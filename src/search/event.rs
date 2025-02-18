@@ -6,6 +6,7 @@ pub struct Event {
     // pi is unused now
     // pub pi: u32,
     pub detector: u8,
+    pub group: u8,
 }
 
 // DO NOT use repr(packed) here

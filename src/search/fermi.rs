@@ -1,6 +1,5 @@
 use core::str::FromStr;
 use fitsio::{hdu::FitsHdu, FitsFile};
-use hifitime::efmt::format;
 use hifitime::prelude::*;
 use itertools::Itertools;
 use regex::Regex;
@@ -122,6 +121,15 @@ pub fn calculate_fermi(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn Erro
             // pi is unused now
             // pi: event.pi as u32,
             detector: event.detector,
+            group: match event.detector {
+                0..=2 => 0,
+                3..=5 => 1,
+                6..=8 => 2,
+                9..=11 => 3,
+                12 => 4,
+                13 => 5,
+                _ => 6, // unreachable
+            },
         })
         .collect::<Vec<_>>();
 
@@ -130,7 +138,7 @@ pub fn calculate_fermi(filenames: &[&str]) -> Result<Vec<Interval>, Box<dyn Erro
         .flat_map(|interval| {
             search(
                 &events,
-                filenames.len(),
+                6,
                 interval.start,
                 interval.stop,
                 SearchConfig {
