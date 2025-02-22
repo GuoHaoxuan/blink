@@ -241,6 +241,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "fitsio",
+ "fitsio-derive",
  "hifitime",
  "hostname",
  "indicatif",
@@ -699,6 +700,16 @@ checksum = "0bdc9559065f29d3d8ae5c36eb127fc87ce4fcbbedd44c0094f8ff13453dbee0"
 dependencies = [
  "fitsio-sys",
  "libc",
+]
+
+[[package]]
+name = "fitsio-derive"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64c57c8d5aa68245c94778ab7606ea17db0bef3d00213f2c5acd6f4df44832be"
+dependencies = [
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
