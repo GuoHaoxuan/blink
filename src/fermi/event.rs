@@ -28,15 +28,15 @@ impl crate::types::Event for Event {
 }
 
 impl Group for Event {
-    fn group(&self) -> Result<u8, &'static str> {
+    fn group(&self) -> u8 {
         match self.detector {
-            Detector::Nai(0..=2) => Ok(0),
-            Detector::Nai(3..=5) => Ok(1),
-            Detector::Nai(6..=8) => Ok(2),
-            Detector::Nai(9..=11) => Ok(3),
-            Detector::Bgo(0) => Ok(4),
-            Detector::Bgo(1) => Ok(5),
-            _ => Err("Invalid detector"),
+            Detector::Nai(0..=2) => 0,
+            Detector::Nai(3..=5) => 1,
+            Detector::Nai(6..=8) => 2,
+            Detector::Nai(9..=11) => 3,
+            Detector::Bgo(0) => 4,
+            Detector::Bgo(1) => 5,
+            _ => panic!("Invalid detector"),
         }
     }
 }

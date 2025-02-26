@@ -61,18 +61,18 @@ pub fn search<E: Event + Group>(
     let mut average_start_base = cursor;
     let mut average_stop_base = cursor;
     let mut average_counts_base: Vec<u32> = vec![0; group_count];
-    average_counts_base[data[cursor].group().unwrap() as usize] = 1;
+    average_counts_base[data[cursor].group() as usize] = 1;
     while average_stop_base + 1 < data.len()
         && data[average_stop_base + 1].time() - data[cursor].time() < config.neighbor / 2.0
     {
         average_stop_base += 1;
-        average_counts_base[data[average_stop_base].group().unwrap() as usize] += 1;
+        average_counts_base[data[average_stop_base].group() as usize] += 1;
     }
 
     loop {
         let mut step = 0;
         let mut counts: Vec<u32> = vec![0; group_count];
-        counts[data[cursor].group().unwrap() as usize] = 1;
+        counts[data[cursor].group() as usize] = 1;
         let mut average_stop = average_stop_base;
         let mut average_counts = average_counts_base.clone();
 
@@ -138,13 +138,13 @@ pub fn search<E: Event + Group>(
                 break;
             }
 
-            counts[data[cursor + step].group().unwrap() as usize] += 1;
+            counts[data[cursor + step].group() as usize] += 1;
             while average_stop + 1 < data.len()
                 && data[average_stop + 1].time() - data[cursor + step].time()
                     < config.neighbor / 2.0
             {
                 average_stop += 1;
-                average_counts[data[average_stop].group().unwrap() as usize] += 1;
+                average_counts[data[average_stop].group() as usize] += 1;
             }
         }
 
@@ -157,14 +157,14 @@ pub fn search<E: Event + Group>(
         while average_start_base + 1 < data.len()
             && data[cursor].time() - data[average_start_base + 1].time() > config.neighbor / 2.0
         {
-            average_counts_base[data[average_start_base].group().unwrap() as usize] -= 1;
+            average_counts_base[data[average_start_base].group() as usize] -= 1;
             average_start_base += 1;
         }
         while average_stop_base + 1 < data.len()
             && data[average_stop_base + 1].time() - data[cursor].time() < config.neighbor / 2.0
         {
             average_stop_base += 1;
-            average_counts_base[data[average_stop_base].group().unwrap() as usize] += 1;
+            average_counts_base[data[average_stop_base].group() as usize] += 1;
         }
     }
 

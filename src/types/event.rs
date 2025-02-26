@@ -7,5 +7,5 @@ pub(crate) trait Event {
 }
 
 pub(crate) trait Group {
-    fn group(&self) -> Result<u8, &'static str>;
+    fn group(&self) -> u8;
 }

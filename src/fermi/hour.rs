@@ -13,11 +13,11 @@ use super::event::Event;
 use super::file::{self, File};
 use super::Fermi;
 
-pub(crate) struct Group {
+pub(crate) struct Hour {
     files: Vec<File>,
 }
 
-impl Group {
+impl Hour {
     pub(crate) fn new(data: &[(&str, Detector)]) -> Result<Self, fitsio::errors::Error> {
         let files = data
             .iter()
@@ -141,7 +141,7 @@ impl Group {
     }
 }
 
-impl<'a> IntoIterator for &'a Group {
+impl<'a> IntoIterator for &'a Hour {
     type Item = Event;
     type IntoIter = Iter<'a>;
 
