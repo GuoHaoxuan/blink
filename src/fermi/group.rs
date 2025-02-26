@@ -1,12 +1,12 @@
-use hifitime::prelude::*;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use crate::types::Interval;
+use crate::types::{Epoch, Interval};
 
 use super::detector::Detector;
 use super::event::Event;
 use super::file::{self, File};
+use super::Fermi;
 
 pub(crate) struct Group {
     files: Vec<File>,
@@ -21,7 +21,7 @@ impl Group {
         Ok(Self { files })
     }
 
-    pub(crate) fn gti(&self) -> Vec<Interval<Epoch>> {
+    pub(crate) fn gti(&self) -> Vec<Interval<Epoch<Fermi>>> {
         self.files
             .iter()
             .map(|file| file.gti())

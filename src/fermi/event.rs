@@ -1,19 +1,15 @@
-use hifitime::prelude::*;
+use crate::types::{Epoch, Group};
 
-use super::detector::Detector;
+use super::{detector::Detector, Fermi};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
 pub(crate) struct Event {
-    pub(super) time: Epoch,
+    pub(super) time: Epoch<Fermi>,
     pub(super) pha: i16,
     pub(super) detector: Detector,
 }
 
 impl Event {
-    pub(crate) fn time(&self) -> Epoch {
-        self.time
-    }
-
     pub(crate) fn pha(&self) -> i16 {
         self.pha
     }
@@ -21,9 +17,18 @@ impl Event {
     pub(crate) fn detector(&self) -> Detector {
         self.detector
     }
+}
 
-    // TODO: move out of Event
-    pub(crate) fn group(&self) -> Result<u8, &'static str> {
+impl crate::types::Event for Event {
+    type Satellite = Fermi;
+
+    fn time(&self) -> Epoch<Fermi> {
+        self.time
+    }
+}
+
+impl Group for Event {
+    fn group(&self) -> Result<u8, &'static str> {
         match self.detector {
             Detector::Nai(0..=2) => Ok(0),
             Detector::Nai(3..=5) => Ok(1),

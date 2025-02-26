@@ -1,16 +1,15 @@
-use hifitime::prelude::*;
 use itertools::Itertools;
 use regex::Regex;
 use std::error::Error;
 
-use crate::fermi::{Detector, Event, Group};
-use crate::types::Interval;
+use crate::fermi::{Detector, Event, Fermi, Group};
+use crate::types::{Epoch, Event as _, Interval, TimeUnits};
 
 use super::algorithms::{search, SearchConfig};
 
 pub fn calculate_fermi(
     filenames: &[(&str, Detector)],
-) -> Result<Vec<Interval<Epoch>>, Box<dyn Error>> {
+) -> Result<Vec<Interval<Epoch<Fermi>>>, Box<dyn Error>> {
     let group = Group::new(filenames)?;
     let events: Vec<Event> = group
         .into_iter()
@@ -37,7 +36,7 @@ pub fn calculate_fermi(
         .collect())
 }
 
-fn get_fermi_filenames(epoch: &Epoch) -> Result<Vec<(String, Detector)>, Box<dyn Error>> {
+fn get_fermi_filenames(epoch: &hifitime::Epoch) -> Result<Vec<(String, Detector)>, Box<dyn Error>> {
     let (y, m, d, h, ..) = epoch.to_gregorian_utc();
     let folder = format!(
         "/gecamfs/Exchange/GSDC/missions/FTP/fermi/data/gbm/daily/{:04}/{:02}/{:02}/current",
@@ -93,7 +92,7 @@ fn get_fermi_filenames(epoch: &Epoch) -> Result<Vec<(String, Detector)>, Box<dyn
     Ok(filenames)
 }
 
-pub fn process(epoch: &Epoch) -> Result<Vec<Interval<Epoch>>, Box<dyn Error>> {
+pub fn process(epoch: &hifitime::Epoch) -> Result<Vec<Interval<Epoch<Fermi>>>, Box<dyn Error>> {
     let filenames = get_fermi_filenames(epoch)?;
     let filenames_str: Vec<(&str, Detector)> =
         filenames.iter().map(|(s, d)| (s.as_str(), *d)).collect();

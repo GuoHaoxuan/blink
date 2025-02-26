@@ -1,13 +1,10 @@
 use std::iter::zip;
-use std::str::FromStr;
-use std::sync::OnceLock;
 
-use hifitime::prelude::*;
-
-use crate::types::Interval;
+use crate::types::{Epoch, Interval};
 
 use super::detector::Detector;
 use super::event::Event;
+use super::Fermi;
 
 pub(super) struct File {
     // HDU 1: EBOUNDS
@@ -59,16 +56,11 @@ impl File {
         })
     }
 
-    fn ref_time() -> &'static Epoch {
-        static REF_TIME: OnceLock<Epoch> = OnceLock::new();
-        REF_TIME.get_or_init(|| Epoch::from_str("2001-01-01T00:00:00.000000000 UTC").unwrap())
-    }
-
-    pub(super) fn gti(&self) -> Vec<Interval<Epoch>> {
+    pub(super) fn gti(&self) -> Vec<Interval<Epoch<Fermi>>> {
         zip(&self.gti_start, &self.gti_stop)
             .map(|(start, stop)| Interval {
-                start: *File::ref_time() + start.seconds(),
-                stop: *File::ref_time() + stop.seconds(),
+                start: Epoch::new(*start),
+                stop: Epoch::new(*stop),
             })
             .collect()
     }
@@ -97,7 +89,7 @@ impl Iterator for Iter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.file.events_time.len() {
             let event = Event {
-                time: *File::ref_time() + self.file.events_time[self.index].seconds(),
+                time: Epoch::new(self.file.events_time[self.index]),
                 pha: self.file.events_pha[self.index],
                 detector: self.file.detector,
             };

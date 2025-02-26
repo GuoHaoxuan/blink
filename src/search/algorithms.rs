@@ -1,17 +1,15 @@
-use hifitime::prelude::*;
 use statrs::distribution::{DiscreteCDF, Poisson};
 
-use crate::fermi::Event;
-use crate::types::Interval;
+use crate::types::{Duration, Epoch, Event, Group, Interval, Satellite, TimeUnits};
 
-pub struct SearchConfig {
-    pub max_duration: Duration,
-    pub neighbor: Duration,
+pub struct SearchConfig<T: Satellite> {
+    pub max_duration: Duration<T>,
+    pub neighbor: Duration<T>,
     pub fp_year: f64,
     pub min_detector: u32,
 }
 
-impl Default for SearchConfig {
+impl<T: Satellite> Default for SearchConfig<T> {
     fn default() -> Self {
         Self {
             max_duration: 1.0.milliseconds(),
@@ -41,14 +39,14 @@ fn coincidence_prob(probs: &[f64], n: usize) -> f64 {
     cache[n]
 }
 
-pub fn search(
-    data: &[Event],
+pub fn search<E: Event + Group>(
+    data: &[E],
     group_count: usize,
-    start: Epoch,
-    stop: Epoch,
-    config: SearchConfig,
-) -> Vec<Interval<Epoch>> {
-    let mut result: Vec<Interval<Epoch>> = Vec::new();
+    start: Epoch<E::Satellite>,
+    stop: Epoch<E::Satellite>,
+    config: SearchConfig<E::Satellite>,
+) -> Vec<Interval<Epoch<E::Satellite>>> {
+    let mut result: Vec<Interval<Epoch<E::Satellite>>> = Vec::new();
     let mut cache = vec![vec![None; 10]; 10000];
 
     let mut cursor = match data.binary_search_by(|event| event.time().cmp(&start)) {
@@ -65,7 +63,7 @@ pub fn search(
     let mut average_counts_base: Vec<u32> = vec![0; group_count];
     average_counts_base[data[cursor].group().unwrap() as usize] = 1;
     while average_stop_base + 1 < data.len()
-        && data[average_stop_base + 1].time() - data[cursor].time() < config.neighbor / 2
+        && data[average_stop_base + 1].time() - data[cursor].time() < config.neighbor / 2.0
     {
         average_stop_base += 1;
         average_counts_base[data[average_stop_base].group().unwrap() as usize] += 1;
@@ -80,8 +78,8 @@ pub fn search(
 
         loop {
             let duration = data[cursor + step].time() - data[cursor].time();
-            let average_start_time = (data[cursor].time() - config.neighbor / 2).max(start);
-            let average_stop_time = (data[cursor + step].time() + config.neighbor / 2).min(stop);
+            let average_start_time = (data[cursor].time() - config.neighbor / 2.0).max(start);
+            let average_stop_time = (data[cursor + step].time() + config.neighbor / 2.0).min(stop);
             let average_duration = (average_stop_time - average_start_time) - duration;
             let average_percent = duration.to_seconds() / average_duration.to_seconds();
             let threshold = 1.0 - config.fp_year / (3600.0 * 24.0 * 365.0 / duration.to_seconds());
@@ -142,7 +140,8 @@ pub fn search(
 
             counts[data[cursor + step].group().unwrap() as usize] += 1;
             while average_stop + 1 < data.len()
-                && data[average_stop + 1].time() - data[cursor + step].time() < config.neighbor / 2
+                && data[average_stop + 1].time() - data[cursor + step].time()
+                    < config.neighbor / 2.0
             {
                 average_stop += 1;
                 average_counts[data[average_stop].group().unwrap() as usize] += 1;
@@ -156,13 +155,13 @@ pub fn search(
         }
 
         while average_start_base + 1 < data.len()
-            && data[cursor].time() - data[average_start_base + 1].time() > config.neighbor / 2
+            && data[cursor].time() - data[average_start_base + 1].time() > config.neighbor / 2.0
         {
             average_counts_base[data[average_start_base].group().unwrap() as usize] -= 1;
             average_start_base += 1;
         }
         while average_stop_base + 1 < data.len()
-            && data[average_stop_base + 1].time() - data[cursor].time() < config.neighbor / 2
+            && data[average_stop_base + 1].time() - data[cursor].time() < config.neighbor / 2.0
         {
             average_stop_base += 1;
             average_counts_base[data[average_stop_base].group().unwrap() as usize] += 1;
