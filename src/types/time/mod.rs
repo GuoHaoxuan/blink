@@ -2,6 +2,7 @@ mod time_units;
 
 use ordered_float::NotNan;
 use std::{
+    fmt::{self, Debug, Formatter},
     marker::PhantomData,
     ops::{Add, Div, Sub},
 };
@@ -10,10 +11,16 @@ use super::Satellite;
 
 pub(crate) use time_units::TimeUnits;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub(crate) struct Epoch<T: Satellite> {
     time: NotNan<f64>,
     _phantom: PhantomData<T>,
+}
+
+impl<T: Satellite> Debug for Epoch<T> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        self.to_hifitime().fmt(f)
+    }
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
@@ -28,6 +35,10 @@ impl<T: Satellite> Epoch<T> {
             time: NotNan::new(time).unwrap(),
             _phantom: PhantomData,
         }
+    }
+
+    pub(crate) fn to_hifitime(self) -> hifitime::Epoch {
+        *T::ref_time() + hifitime::Duration::from_seconds(self.time.into_inner())
     }
 }
 
