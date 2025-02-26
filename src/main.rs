@@ -4,9 +4,8 @@ mod search;
 mod types;
 
 use database::{fail_task, finish_task, get_task};
-use fermi::Detector;
+use fermi::{Detector, Group};
 use rusqlite::Connection;
-use search::fermi::{calculate_fermi, process};
 
 fn consume() {
     let hostname = hostname::get().unwrap().into_string().unwrap();
@@ -16,7 +15,7 @@ fn consume() {
     conn.busy_timeout(std::time::Duration::from_secs(3600))
         .unwrap();
     while let Some(epoch) = get_task(&conn, &worker, "Fermi", "GBM") {
-        let results = process(&epoch);
+        let results = Group::from_epoch(&epoch).unwrap().search();
         match results {
             Ok(results) => {
                 for result in results {
@@ -90,7 +89,7 @@ fn local_test() {
             Detector::Bgo(1),
         ),
     ];
-    let results = calculate_fermi(&filenames);
+    let results = Group::new(&filenames).unwrap().search();
     match results {
         Ok(results) => {
             for result in results {
