@@ -8,7 +8,6 @@ pub struct SearchConfig<T: Satellite> {
     pub max_duration: Duration<T>,
     pub neighbor: Duration<T>,
     pub fp_year: f64,
-    pub min_detector: u32,
 }
 
 impl<T: Satellite> Default for SearchConfig<T> {
@@ -17,7 +16,6 @@ impl<T: Satellite> Default for SearchConfig<T> {
             max_duration: 1.0.milliseconds(),
             neighbor: 1.0.seconds(),
             fp_year: 20.0,
-            min_detector: 3,
         }
     }
 }
