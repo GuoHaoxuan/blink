@@ -13,3 +13,6 @@ rand = "0.8.5"
 regex = "1.11.1"
 rusqlite = { version = "0.32.0", features = ["bundled"] }
 statrs = "0.18.0"
+
+[profile.release]
+debug = true

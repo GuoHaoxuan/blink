@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use statrs::distribution::{DiscreteCDF, Poisson};
 
 use crate::types::{Duration, Epoch, Event, Group, Interval, Satellite, TimeUnits};
@@ -175,6 +177,162 @@ pub fn search<E: Event + Group>(
         {
             average_stop_base += 1;
             average_counts_base[data[average_stop_base].group() as usize] += 1;
+        }
+    }
+
+    result
+}
+
+fn extend_queue<E: Event + Group>(
+    iter: &mut impl Iterator<Item = E>,
+    queue: &mut VecDeque<E>,
+    index: usize,
+) {
+    while queue.len() <= index {
+        if let Some(event) = iter.next() {
+            queue.push_back(event);
+        } else {
+            break;
+        }
+    }
+}
+
+pub(crate) fn search_stream<E: Event + Group>(
+    data: impl Iterator<Item = E>,
+    group_count: usize,
+    start: Epoch<E::Satellite>,
+    stop: Epoch<E::Satellite>,
+    config: SearchConfig<E::Satellite>,
+) -> Vec<Interval<Epoch<E::Satellite>>> {
+    let mut result: Vec<Interval<Epoch<E::Satellite>>> = Vec::new();
+    let mut cache = vec![
+        vec![None; CACHE_COUNT_MAX as usize];
+        (CACHE_AVERAGE_MAX * CACHE_AVERAGE_HASH_FACTOR).ceil() as usize
+    ];
+
+    let mut iter = data.skip_while(|event| event.time() < start).peekable();
+    if iter.peek().is_none() {
+        return result;
+    }
+
+    let mut queue = VecDeque::new();
+    extend_queue(&mut iter, &mut queue, 0);
+
+    let mut cursor: usize = 0;
+    let mut average_start_base = cursor;
+    let mut average_stop_base = cursor;
+    let mut average_counts_base: Vec<u32> = vec![0; group_count];
+    average_counts_base[queue[cursor].group() as usize] = 1;
+    while iter.peek().is_some()
+        && iter.peek().unwrap().time() - queue[cursor].time() < config.neighbor / 2.0
+    {
+        queue.push_back(iter.next().unwrap());
+        average_stop_base += 1;
+        average_counts_base[queue[average_stop_base].group() as usize] += 1;
+    }
+
+    loop {
+        let mut step = 0;
+        let mut counts: Vec<u32> = vec![0; group_count];
+        counts[queue[cursor].group() as usize] = 1;
+        let mut average_stop = average_stop_base;
+        let mut average_counts = average_counts_base.clone();
+
+        loop {
+            let duration = queue[cursor + step].time() - queue[cursor].time();
+            let average_start_time = (queue[cursor].time() - config.neighbor / 2.0).max(start);
+            let average_stop_time = (queue[cursor + step].time() + config.neighbor / 2.0).min(stop);
+            let average_duration = (average_stop_time - average_start_time) - duration;
+            let average_percent = duration.to_seconds() / average_duration.to_seconds();
+            let threshold = 1.0 - config.fp_year / (3600.0 * 24.0 * 365.0 / duration.to_seconds());
+            let probs = (0..group_count)
+                .map(|group| {
+                    let count = counts[group];
+                    let average_count = average_counts[group] - count;
+                    let average = average_count as f64 * average_percent;
+
+                    poisson_cdf(&mut cache, average, count)
+                })
+                .collect::<Vec<f64>>();
+            let prob = coincidence_prob(&probs, 3);
+            if prob > threshold {
+                let new_interval = Interval {
+                    start: queue[cursor].time(),
+                    stop: queue[cursor + step].time(),
+                };
+                if let Some(last) = result.last_mut() {
+                    if last.stop >= new_interval.start {
+                        last.stop = new_interval.stop;
+                    } else {
+                        result.push(new_interval);
+                    }
+                } else {
+                    result.push(new_interval);
+                }
+            }
+
+            step += 1;
+            extend_queue(&mut iter, &mut queue, cursor + step);
+
+            if cursor + step >= queue.len()
+                || queue[cursor + step].time() - queue[cursor].time() >= config.max_duration
+                || queue[cursor + step].time() >= stop
+            {
+                break;
+            }
+
+            counts[queue[cursor + step].group() as usize] += 1;
+            loop {
+                extend_queue(&mut iter, &mut queue, average_stop + 1);
+                if average_stop + 1 < queue.len()
+                    && queue[average_stop + 1].time() - queue[cursor + step].time()
+                        < config.neighbor / 2.0
+                {
+                    average_stop += 1;
+                    average_counts[queue[average_stop].group() as usize] += 1;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        cursor += 1;
+        extend_queue(&mut iter, &mut queue, cursor);
+
+        if cursor >= queue.len() || queue[cursor].time() >= stop {
+            break;
+        }
+
+        loop {
+            extend_queue(&mut iter, &mut queue, average_start_base + 1);
+            if average_start_base + 1 < queue.len()
+                && queue[cursor].time() - queue[average_start_base + 1].time()
+                    > config.neighbor / 2.0
+            {
+                average_counts_base[queue[average_start_base].group() as usize] -= 1;
+                average_start_base += 1;
+            } else {
+                break;
+            }
+        }
+        loop {
+            extend_queue(&mut iter, &mut queue, average_stop_base + 1);
+            if average_stop_base + 1 < queue.len()
+                && queue[average_stop_base + 1].time() - queue[cursor].time()
+                    < config.neighbor / 2.0
+            {
+                average_stop_base += 1;
+                average_counts_base[queue[average_stop_base].group() as usize] += 1;
+            } else {
+                break;
+            }
+        }
+
+        while average_start_base > 0 {
+            queue.pop_front();
+            average_start_base -= 1;
+            average_stop_base -= 1;
+            cursor -= 1;
         }
     }
 
