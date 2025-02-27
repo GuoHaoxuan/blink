@@ -1,3 +1,8 @@
+use std::{
+    cell::RefCell,
+    sync::{LazyLock, RwLock},
+};
+
 use statrs::distribution::{DiscreteCDF, Poisson};
 
 use crate::types::{Duration, Epoch, Event, Group, Interval, Satellite, TimeUnits};
@@ -28,7 +33,7 @@ fn coincidence_prob(probs: &[f64], n: usize) -> f64 {
         for n_i in (0..=n).rev() {
             cache[n_i] = match (m_i, n_i) {
                 (_, 0) => 1.0,
-                // The following line can be removed, because cache[n_i] is 0.0 initially
+                // The following line can be removed, because cache[n_i] is 0.0 initially,
                 // although it is meaningless mathematically
                 // (m_i, n_i) if m_i == n_i => probs[m_i - 1] * cache[n_i - 1],
                 (m_i, n_i) => probs[m_i - 1] * cache[n_i - 1] + (1.0 - probs[m_i - 1]) * cache[n_i],
@@ -39,6 +44,38 @@ fn coincidence_prob(probs: &[f64], n: usize) -> f64 {
     cache[n]
 }
 
+// Cache for Poisson distribution
+// Sync here is safe because idempotent writes are safe
+struct CacheWrapper(RefCell<Vec<Vec<Option<f64>>>>);
+unsafe impl Sync for CacheWrapper {}
+static CACHE: LazyLock<CacheWrapper> =
+    LazyLock::new(|| CacheWrapper(RefCell::new(vec![vec![None; 10]; 10000])));
+
+fn poisson_cdf(average: f64, count: u32) -> f64 {
+    if count == 0 {
+        0.0
+    } else if average >= 10.0 || count >= 10 {
+        match Poisson::new(average) {
+            Ok(poisson) => poisson.cdf(count as u64),
+            Err(_) => 1.0,
+        }
+    } else {
+        let average_hash = (average * 1000.0).round() as usize;
+        let mut guard = CACHE.0.borrow_mut();
+        match guard[average_hash][count as usize] {
+            None => {
+                let prob = match Poisson::new(average) {
+                    Ok(poisson) => poisson.cdf(count as u64),
+                    Err(_) => 1.0,
+                };
+                guard[average_hash][count as usize] = Some(prob);
+                prob
+            }
+            Some(prob) => prob,
+        }
+    }
+}
+
 pub fn search<E: Event + Group>(
     data: &[E],
     group_count: usize,
@@ -47,12 +84,10 @@ pub fn search<E: Event + Group>(
     config: SearchConfig<E::Satellite>,
 ) -> Vec<Interval<Epoch<E::Satellite>>> {
     let mut result: Vec<Interval<Epoch<E::Satellite>>> = Vec::new();
-    let mut cache = vec![vec![None; 10]; 10000];
 
-    let mut cursor = match data.binary_search_by(|event| event.time().cmp(&start)) {
-        Ok(index) => index,
-        Err(index) => index,
-    };
+    let mut cursor = data
+        .binary_search_by(|event| event.time().cmp(&start))
+        .unwrap_or_else(|index| index);
 
     if cursor == data.len() {
         return result;
@@ -89,27 +124,7 @@ pub fn search<E: Event + Group>(
                     let average_count = average_counts[group] - count;
                     let average = average_count as f64 * average_percent;
 
-                    if count == 0 {
-                        0.0
-                    } else if average >= 10.0 || count >= 10 {
-                        match Poisson::new(average) {
-                            Ok(poisson) => poisson.cdf(count as u64),
-                            Err(_) => 1.0,
-                        }
-                    } else {
-                        let average_hash = (average * 1000.0).round() as usize;
-                        match cache[average_hash][count as usize] {
-                            None => {
-                                let prob = match Poisson::new(average) {
-                                    Ok(poisson) => poisson.cdf(count as u64),
-                                    Err(_) => 1.0,
-                                };
-                                cache[average_hash][count as usize] = Some(prob);
-                                prob
-                            }
-                            Some(prob) => prob,
-                        }
-                    }
+                    poisson_cdf(average, count)
                 })
                 .collect::<Vec<f64>>();
             let prob = coincidence_prob(&probs, 3);
