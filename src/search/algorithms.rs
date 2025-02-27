@@ -1,8 +1,3 @@
-use std::{
-    cell::RefCell,
-    sync::{LazyLock, RwLock},
-};
-
 use statrs::distribution::{DiscreteCDF, Poisson};
 
 use crate::types::{Duration, Epoch, Event, Group, Interval, Satellite, TimeUnits};
