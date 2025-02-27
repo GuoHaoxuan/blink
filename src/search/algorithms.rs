@@ -44,31 +44,27 @@ fn coincidence_prob(probs: &[f64], n: usize) -> f64 {
     cache[n]
 }
 
-// Cache for Poisson distribution
-// Sync here is safe because idempotent writes are safe
-struct CacheWrapper(RefCell<Vec<Vec<Option<f64>>>>);
-unsafe impl Sync for CacheWrapper {}
-static CACHE: LazyLock<CacheWrapper> =
-    LazyLock::new(|| CacheWrapper(RefCell::new(vec![vec![None; 10]; 10000])));
+const CACHE_AVERAGE_MAX: f64 = 10.0;
+const CACHE_COUNT_MAX: u32 = 10;
+const CACHE_AVERAGE_HASH_FACTOR: f64 = 1000.0;
 
-fn poisson_cdf(average: f64, count: u32) -> f64 {
-    if count == 0 {
-        0.0
-    } else if average >= 10.0 || count >= 10 {
+fn poisson_cdf(cache: &mut [Vec<Option<f64>>], average: f64, count: u32) -> f64 {
+    let do_calc = |average: f64, count: u32| -> f64 {
         match Poisson::new(average) {
             Ok(poisson) => poisson.cdf(count as u64),
             Err(_) => 1.0,
         }
+    };
+    if count == 0 {
+        0.0
+    } else if average >= CACHE_AVERAGE_MAX || count >= CACHE_COUNT_MAX {
+        do_calc(average, count)
     } else {
-        let average_hash = (average * 1000.0).round() as usize;
-        let mut guard = CACHE.0.borrow_mut();
-        match guard[average_hash][count as usize] {
+        let average_hash = (average * CACHE_AVERAGE_HASH_FACTOR).round() as usize;
+        match cache[average_hash][count as usize] {
             None => {
-                let prob = match Poisson::new(average) {
-                    Ok(poisson) => poisson.cdf(count as u64),
-                    Err(_) => 1.0,
-                };
-                guard[average_hash][count as usize] = Some(prob);
+                let prob = do_calc(average, count);
+                cache[average_hash][count as usize] = Some(prob);
                 prob
             }
             Some(prob) => prob,
@@ -84,6 +80,10 @@ pub fn search<E: Event + Group>(
     config: SearchConfig<E::Satellite>,
 ) -> Vec<Interval<Epoch<E::Satellite>>> {
     let mut result: Vec<Interval<Epoch<E::Satellite>>> = Vec::new();
+    let mut cache = vec![
+        vec![None; CACHE_COUNT_MAX as usize];
+        (CACHE_AVERAGE_MAX * CACHE_AVERAGE_HASH_FACTOR).ceil() as usize
+    ];
 
     let mut cursor = data
         .binary_search_by(|event| event.time().cmp(&start))
@@ -124,7 +124,7 @@ pub fn search<E: Event + Group>(
                     let average_count = average_counts[group] - count;
                     let average = average_count as f64 * average_percent;
 
-                    poisson_cdf(average, count)
+                    poisson_cdf(&mut cache, average, count)
                 })
                 .collect::<Vec<f64>>();
             let prob = coincidence_prob(&probs, 3);
