@@ -120,7 +120,10 @@ impl Hour {
             .dedup_by_with_count(|a, b| b.time() - a.time() < 0.3e-6.seconds())
             .filter(|(count, _)| *count == 1)
             .map(|(_, event)| event)
-            .filter(|event| event.pha() >= 30 && event.pha() <= 124)
+            .filter(|event| match event.detector() {
+                Detector::Nai(_) => event.pha() >= 30 && event.pha() <= 124,
+                Detector::Bgo(_) => event.pha() >= 19 && event.pha() <= 126,
+            })
             .collect();
         let gti = self.gti();
 
