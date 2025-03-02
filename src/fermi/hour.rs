@@ -5,7 +5,7 @@ use std::error::Error;
 use itertools::Itertools;
 use regex::Regex;
 
-use crate::search::algorithms::{search, search_stream, SearchConfig};
+use crate::search::algorithms::{search, SearchConfig};
 use crate::types::{Epoch, Event as _, Interval, TimeUnits};
 
 use super::detector::Detector;
@@ -132,29 +132,6 @@ impl Hour {
             .flat_map(|interval| {
                 search(
                     &events,
-                    6,
-                    interval.start,
-                    interval.stop,
-                    SearchConfig {
-                        ..Default::default()
-                    },
-                )
-            })
-            .collect())
-    }
-
-    pub(crate) fn search_stream(&self) -> Result<Vec<Interval<Epoch<Fermi>>>, Box<dyn Error>> {
-        let gti = self.gti();
-
-        Ok(gti
-            .into_iter()
-            .flat_map(|interval| {
-                search_stream(
-                    self.into_iter()
-                        .dedup_by_with_count(|a, b| b.time() - a.time() < 0.3e-6.seconds())
-                        .filter(|(count, _)| *count == 1)
-                        .map(|(_, event)| event)
-                        .filter(|event| event.pha() >= 30 && event.pha() <= 124),
                     6,
                     interval.start,
                     interval.stop,
