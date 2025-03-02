@@ -5,6 +5,7 @@ use std::error::Error;
 use itertools::Itertools;
 use regex::Regex;
 
+use crate::lightning::Lightning;
 use crate::search::algorithms::{search, SearchConfig};
 use crate::types::{Epoch, Event as _, Interval, Signal, TimeUnits};
 
@@ -186,11 +187,25 @@ impl Hour {
                     .filter(|event| event.time() >= start_extended && event.time() <= stop_extended)
                     .map(|event| event.to_interval(ebounds_min, ebounds_max))
                     .collect::<Vec<_>>();
+                let position = self.position.get_row(start).unwrap();
+                let lat = position.sc_lat;
+                let lon = position.sc_lon;
+
+                let time_tolerance = hifitime::Duration::from_microseconds(5.0);
+                let distance_tolerance = 80.0;
+
                 Signal {
                     start,
                     stop,
                     events,
                     position: self.position.get_row(start).unwrap(),
+                    lightnings: Lightning::associated_lightning(
+                        (start + (stop - start) / 2.0).to_hifitime(),
+                        lat as f64,
+                        lon as f64,
+                        time_tolerance,
+                        distance_tolerance,
+                    ),
                 }
             })
             .collect();

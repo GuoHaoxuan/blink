@@ -1,5 +1,6 @@
 mod database;
 mod fermi;
+mod lightning;
 mod search;
 mod types;
 
