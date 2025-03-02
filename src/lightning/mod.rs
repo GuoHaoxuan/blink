@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Mutex};
+use std::{env, str::FromStr, sync::Mutex};
 
 use hifitime::{efmt, prelude::*};
 use rusqlite::{params, Connection};
@@ -9,7 +9,9 @@ use std::sync::LazyLock;
 static LIGHTNING_CONNECTION: LazyLock<Mutex<Connection>> = LazyLock::new(|| {
     Mutex::new(
         Connection::open_with_flags(
-            "/Volumes/Graphite/WWLLN.db",
+            env::var("WWLLN_DB_PATH").unwrap_or_else(|_| {
+                String::from("/gecamfs/Exchange/GSDC/missions/AEfiles/WWLLN.db")
+            }),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )
         .unwrap(),
