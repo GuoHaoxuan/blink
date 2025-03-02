@@ -13,7 +13,7 @@ pub(crate) struct Event<T: Copy> {
 }
 
 pub(crate) type EventPha = Event<i16>;
-pub(crate) type EventInterval = Event<Interval<NotNan<f64>>>;
+pub(crate) type EventInterval = Event<Interval<NotNan<f32>>>;
 
 impl<T: Copy> Event<T> {
     pub(crate) fn energy(&self) -> T {
@@ -43,6 +43,19 @@ impl<T: Copy + Serialize> Group for Event<T> {
             Detector::Bgo(0) => 4,
             Detector::Bgo(1) => 5,
             _ => panic!("Invalid detector"),
+        }
+    }
+}
+
+impl EventPha {
+    pub(crate) fn to_interval(&self, ebounds_min: &[f32], ebounds_max: &[f32]) -> EventInterval {
+        EventInterval {
+            time: self.time,
+            energy: Interval {
+                start: NotNan::new(ebounds_min[self.energy as usize]).unwrap(),
+                stop: NotNan::new(ebounds_max[self.energy as usize]).unwrap(),
+            },
+            detector: self.detector,
         }
     }
 }

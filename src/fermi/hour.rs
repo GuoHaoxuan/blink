@@ -115,7 +115,7 @@ impl Hour {
             .unwrap()
     }
 
-    pub(crate) fn search(&self) -> Result<Vec<Signal<EventPha>>, Box<dyn Error>> {
+    pub(crate) fn search(&self) -> Result<Vec<Signal<EventInterval>>, Box<dyn Error>> {
         let events: Vec<EventPha> = self
             .into_iter()
             .dedup_by_with_count(|a, b| b.time() - a.time() < 0.3e-6.seconds())
@@ -143,6 +143,8 @@ impl Hour {
             })
             .collect());
 
+        let ebounds_min = &self.files[0].ebounds_e_min;
+        let ebounds_max = &self.files[0].ebounds_e_max;
         let signals = intervals?
             .into_iter()
             .map(|interval| {
@@ -162,7 +164,10 @@ impl Hour {
                 Signal {
                     start,
                     stop,
-                    events: events[start_index..=stop_index].to_vec(),
+                    events: events[start_index..=stop_index]
+                        .iter()
+                        .map(|event| event.to_interval(ebounds_min, ebounds_max))
+                        .collect(),
                 }
             })
             .collect();

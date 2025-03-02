@@ -9,8 +9,8 @@ use super::Fermi;
 pub(super) struct File {
     // HDU 1: EBOUNDS
     ebounds_channel: Vec<i16>,
-    ebounds_e_min: Vec<f32>,
-    ebounds_e_max: Vec<f32>,
+    pub(crate) ebounds_e_min: Vec<f32>,
+    pub(crate) ebounds_e_max: Vec<f32>,
 
     // HDU 2: EVENTS
     events_time: Vec<f64>,
