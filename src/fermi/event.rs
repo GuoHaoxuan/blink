@@ -1,8 +1,10 @@
+use serde::Serialize;
+
 use crate::types::{Epoch, Group};
 
 use super::{detector::Detector, Fermi};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Serialize)]
 pub(crate) struct Event {
     pub(super) time: Epoch<Fermi>,
     pub(super) pha: i16,

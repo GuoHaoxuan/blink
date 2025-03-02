@@ -1,6 +1,8 @@
+use serde::Serialize;
+
 use super::{Epoch, Satellite};
 
-pub(crate) trait Event {
+pub(crate) trait Event: Serialize {
     type Satellite: Satellite<Event = Self>;
 
     fn time(&self) -> Epoch<Self::Satellite>;

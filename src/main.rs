@@ -3,9 +3,11 @@ mod fermi;
 mod search;
 mod types;
 
+use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
+
 use database::{fail_task, finish_task, get_task};
 use fermi::{Detector, Hour};
-use rusqlite::Connection;
 
 fn consume() {
     let hostname = hostname::get().unwrap().into_string().unwrap();
@@ -92,8 +94,9 @@ fn local_test() {
     let results = Hour::new(&filenames).unwrap().search();
     match results {
         Ok(results) => {
-            for result in results {
-                println!("{:?}", result);
+            for (idx, result) in results.iter().enumerate() {
+                let mut file = std::fs::File::create(format!("result_{}.json", idx)).unwrap();
+                serde_json::to_writer(&mut file, &result).unwrap();
             }
         }
         Err(e) => {

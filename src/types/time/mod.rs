@@ -7,6 +7,8 @@ use std::{
     ops::{Add, Div, Sub},
 };
 
+use serde::Serialize;
+
 use super::Satellite;
 
 pub(crate) use time_units::TimeUnits;
@@ -20,6 +22,12 @@ pub(crate) struct Epoch<T: Satellite> {
 impl<T: Satellite> Debug for Epoch<T> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         self.to_hifitime().fmt(f)
+    }
+}
+
+impl<T: Satellite> Serialize for Epoch<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_hifitime().serialize(serializer)
     }
 }
 
