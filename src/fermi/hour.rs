@@ -12,19 +12,31 @@ use super::detector::Detector;
 use super::event::EventInterval;
 use super::event::EventPha;
 use super::file::{self, File};
-use super::Fermi;
+use super::{Fermi, Position};
 
 pub(crate) struct Hour {
     files: Vec<File>,
+    position: Position,
 }
 
 impl Hour {
-    pub(crate) fn new(data: &[(&str, Detector)]) -> Result<Self, fitsio::errors::Error> {
+    pub(crate) fn new(data: &[&str], position: &str) -> Result<Self, fitsio::errors::Error> {
+        let detectors = (0..14)
+            .map(|i| {
+                if i < 12 {
+                    Detector::Nai(i)
+                } else {
+                    Detector::Bgo(i - 12)
+                }
+            })
+            .collect::<Vec<_>>();
         let files = data
             .iter()
+            .zip(detectors.iter())
             .map(|(filename, detector)| File::new(filename, *detector))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self { files })
+        let position = Position::new(position)?;
+        Ok(Self { files, position })
     }
 
     pub(crate) fn from_epoch(epoch: &hifitime::Epoch) -> Result<Self, Box<dyn Error>> {
@@ -33,60 +45,75 @@ impl Hour {
             "/gecamfs/Exchange/GSDC/missions/FTP/fermi/data/gbm/daily/{:04}/{:02}/{:02}/current",
             y, m, d
         );
-        let mut filenames = Vec::new();
-        for i in 0..12 {
-            let pattern = format!(
-                "glg_tte_{}_{:02}{:02}{:02}_{:02}z_v\\d{{2}}\\.fit\\.gz",
-                if i < 12 {
-                    format!("n{:x}", i)
-                } else {
-                    format!("b{:x}", i - 12)
-                },
-                y % 100,
-                m,
-                d,
-                h,
-            );
-            let detector = if i < 12 {
-                Detector::Nai(i)
-            } else {
-                Detector::Bgo(i - 12)
-            };
-            let re = Regex::new(&pattern)?;
-            let max_file = std::fs::read_dir(&folder)?
-                .filter_map(|entry| entry.ok())
-                .map(|entry| entry.path())
-                .filter(|path| path.is_file())
-                .filter_map(|path| {
-                    path.file_name()
-                        .and_then(|name| name.to_str().map(String::from))
-                })
-                .filter(|name| re.is_match(name))
-                .max_by(|a, b| {
-                    let extract_version = |name: &str| {
-                        name.split('_')
-                            .last()
-                            .and_then(|s| s.strip_prefix('v'))
-                            .and_then(|s| s.strip_suffix(".fit.gz"))
-                            .and_then(|s| s.parse::<u32>().ok())
-                            .unwrap_or(0)
-                    };
-                    extract_version(a).cmp(&extract_version(b))
-                });
-            if let Some(file) = max_file {
-                filenames.push((format!("{}/{}", folder, file), detector));
-            }
-        }
-        if filenames.is_empty() {
-            return Err("No matching files found".into());
-        }
-        Self::new(
-            &filenames
-                .iter()
-                .map(|(s, d)| (s.as_str(), *d))
-                .collect::<Vec<_>>(),
-        )
-        .map_err(|e| e.into())
+        let filenames: Vec<String> = (0..14)
+            .map(|i| -> Result<String, Box<dyn Error>> {
+                let pattern = format!(
+                    "glg_tte_{}_{:02}{:02}{:02}_{:02}z_v\\d{{2}}\\.fit\\.gz",
+                    if i < 12 {
+                        format!("n{:x}", i)
+                    } else {
+                        format!("b{:x}", i - 12)
+                    },
+                    y % 100,
+                    m,
+                    d,
+                    h,
+                );
+                let re = Regex::new(&pattern)?;
+                let max_file = std::fs::read_dir(&folder)?
+                    .filter_map(|entry| entry.ok())
+                    .map(|entry| entry.path())
+                    .filter(|path| path.is_file())
+                    .filter_map(|path| {
+                        path.file_name()
+                            .and_then(|name| name.to_str().map(String::from))
+                    })
+                    .filter(|name| re.is_match(name))
+                    .max_by(|a, b| {
+                        let extract_version = |name: &str| {
+                            name.split('_')
+                                .last()
+                                .and_then(|s| s.strip_prefix('v'))
+                                .and_then(|s| s.strip_suffix(".fit.gz"))
+                                .and_then(|s| s.parse::<u32>().ok())
+                                .unwrap_or(0)
+                        };
+                        extract_version(a).cmp(&extract_version(b))
+                    });
+                Ok(max_file.ok_or("No files found matching the pattern")?)
+            })
+            .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
+        let position_pattern = format!(
+            "glg_poshist_all_{:02}{:02}{:02}_v\\d{{2}}\\.fit\\.gz",
+            y % 100,
+            m,
+            d
+        );
+        let position_max_file = std::fs::read_dir(&folder)?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file())
+            .filter_map(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str().map(String::from))
+            })
+            .filter(|name| Regex::new(&position_pattern).unwrap().is_match(name))
+            .max_by(|a, b| {
+                let extract_version = |name: &str| {
+                    name.split('_')
+                        .last()
+                        .and_then(|s| s.strip_prefix('v'))
+                        .and_then(|s| s.strip_suffix(".fit.gz"))
+                        .and_then(|s| s.parse::<u32>().ok())
+                        .unwrap_or(0)
+                };
+                extract_version(a).cmp(&extract_version(b))
+            })
+            .ok_or("No position file found")?;
+        Ok(Self::new(
+            &filenames.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
+            &position_max_file,
+        )?)
     }
 
     pub(crate) fn gti(&self) -> Vec<Interval<Epoch<Fermi>>> {

@@ -3,8 +3,8 @@ mod fermi;
 mod search;
 mod types;
 
+use fitsio::hdu::HduInfo;
 use rusqlite::Connection;
-use serde::{Deserialize, Serialize};
 
 use database::{fail_task, finish_task, get_task};
 use fermi::{Detector, Hour};
@@ -34,64 +34,23 @@ fn consume() {
 
 fn local_test() {
     let filenames = [
-        (
-            "2023-01-01/glg_tte_n0_230101_00z_v00.fit.gz",
-            Detector::Nai(0),
-        ),
-        (
-            "2023-01-01/glg_tte_n1_230101_00z_v00.fit.gz",
-            Detector::Nai(1),
-        ),
-        (
-            "2023-01-01/glg_tte_n2_230101_00z_v00.fit.gz",
-            Detector::Nai(2),
-        ),
-        (
-            "2023-01-01/glg_tte_n3_230101_00z_v00.fit.gz",
-            Detector::Nai(3),
-        ),
-        (
-            "2023-01-01/glg_tte_n4_230101_00z_v00.fit.gz",
-            Detector::Nai(4),
-        ),
-        (
-            "2023-01-01/glg_tte_n5_230101_00z_v00.fit.gz",
-            Detector::Nai(5),
-        ),
-        (
-            "2023-01-01/glg_tte_n6_230101_00z_v00.fit.gz",
-            Detector::Nai(6),
-        ),
-        (
-            "2023-01-01/glg_tte_n7_230101_00z_v00.fit.gz",
-            Detector::Nai(7),
-        ),
-        (
-            "2023-01-01/glg_tte_n8_230101_00z_v00.fit.gz",
-            Detector::Nai(8),
-        ),
-        (
-            "2023-01-01/glg_tte_n9_230101_00z_v00.fit.gz",
-            Detector::Nai(9),
-        ),
-        (
-            "2023-01-01/glg_tte_na_230101_00z_v00.fit.gz",
-            Detector::Nai(10),
-        ),
-        (
-            "2023-01-01/glg_tte_nb_230101_00z_v00.fit.gz",
-            Detector::Nai(11),
-        ),
-        (
-            "2023-01-01/glg_tte_b0_230101_00z_v00.fit.gz",
-            Detector::Bgo(0),
-        ),
-        (
-            "2023-01-01/glg_tte_b1_230101_00z_v00.fit.gz",
-            Detector::Bgo(1),
-        ),
+        "2023-01-01/glg_tte_n0_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_n1_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_n2_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_n3_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_n4_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_n5_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_n6_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_n7_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_n8_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_n9_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_na_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_nb_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_b0_230101_00z_v00.fit.gz",
+        "2023-01-01/glg_tte_b1_230101_00z_v00.fit.gz",
     ];
-    let results = Hour::new(&filenames).unwrap().search();
+    let position_filename = "2023-01-01/glg_poshist_all_230101_v00.fit";
+    let results = Hour::new(&filenames, position_filename).unwrap().search();
     match results {
         Ok(results) => {
             for (idx, result) in results.iter().enumerate() {
@@ -107,4 +66,18 @@ fn local_test() {
 
 fn main() {
     local_test();
+    // let mut fptr = fitsio::FitsFile::open("2023-01-01/glg_poshist_all_230101_v00.fit").unwrap();
+
+    // fptr.pretty_print().unwrap();
+    // let hdu = fptr.hdu("GLAST POS HIST").unwrap();
+    // if let HduInfo::TableInfo {
+    //     column_descriptions,
+    //     num_rows,
+    // } = hdu.info
+    // {
+    //     println!("Number of rows: {}", num_rows);
+    //     for desc in column_descriptions {
+    //         println!("Column: {:?}", desc);
+    //     }
+    // }
 }
