@@ -1,7 +1,11 @@
-use hifitime::prelude::*;
-use rusqlite::{params, Connection};
 use std::error::Error;
 use std::str::FromStr;
+
+use hifitime::prelude::*;
+use rusqlite::{params, Connection};
+use serde::Serialize;
+
+use crate::types::{Event, Signal};
 
 pub fn get_task(conn: &Connection, worker: &str, satellite: &str, detector: &str) -> Option<Epoch> {
     conn.prepare(
@@ -87,6 +91,23 @@ pub fn fail_task(
             satellite,
             detector,
             error.to_string()
+        ],
+    )
+    .unwrap();
+}
+
+pub(crate) fn write_signal<E: Event, P: Serialize>(conn: &Connection, signal: &Signal<E, P>) {
+    conn.execute(
+        "
+            INSERT INTO signals (start, stop, events, position, lightnings)
+            VALUES (?1, ?2, ?3, ?4, ?5);
+        ",
+        params![
+            signal.start.to_hifitime().to_isoformat(),
+            signal.stop.to_hifitime().to_isoformat(),
+            serde_json::to_string(&signal.events).unwrap(),
+            serde_json::to_string(&signal.position).unwrap(),
+            serde_json::to_string(&signal.lightnings).unwrap()
         ],
     )
     .unwrap();

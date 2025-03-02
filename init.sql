@@ -13,13 +13,10 @@ CREATE TABLE
     );
 
 CREATE TABLE
-    IF NOT EXISTS records (
+    IF NOT EXISTS signals (
         start TEXT NOT NULL, -- 开始时间
         stop TEXT NOT NULL, -- 结束时间
-        bin_size_min INTEGER NOT NULL,
-        bin_size_max INTEGER NOT NULL,
-        bin_size_best INTEGER NOT NULL,
-        delay INTEGER NOT NULL,
-        count INTEGER NOT NULL, -- 计数
-        average REAL NOT NULL -- 平均值
+        events TEXT NOT NULL, -- 事件
+        position TEXT NOT NULL, -- 位置
+        lightnings TEXT NOT NULL -- 闪电
     );

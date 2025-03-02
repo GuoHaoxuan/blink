@@ -7,7 +7,7 @@ mod types;
 use fitsio::hdu::HduInfo;
 use rusqlite::Connection;
 
-use database::{fail_task, finish_task, get_task};
+use database::{fail_task, finish_task, get_task, write_signal};
 use fermi::{Detector, Hour};
 
 fn consume() {
@@ -22,7 +22,7 @@ fn consume() {
         match results {
             Ok(results) => {
                 for result in results {
-                    println!("{:?}", result);
+                    write_signal(&conn, &result);
                 }
                 finish_task(&conn, &epoch, "Fermi", "GBM");
             }
@@ -34,6 +34,7 @@ fn consume() {
 }
 
 fn local_test() {
+    let conn = Connection::open("blink.db").unwrap();
     let filenames = [
         "2023-01-01/glg_tte_n0_230101_00z_v00.fit.gz",
         "2023-01-01/glg_tte_n1_230101_00z_v00.fit.gz",
@@ -54,9 +55,8 @@ fn local_test() {
     let results = Hour::new(&filenames, position_filename).unwrap().search();
     match results {
         Ok(results) => {
-            for (idx, result) in results.iter().enumerate() {
-                let mut file = std::fs::File::create(format!("result_{}.json", idx)).unwrap();
-                serde_json::to_writer(&mut file, &result).unwrap();
+            for result in results.iter() {
+                write_signal(&conn, result);
             }
         }
         Err(e) => {
