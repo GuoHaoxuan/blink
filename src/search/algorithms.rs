@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use statrs::distribution::{DiscreteCDF, Poisson};
 
 use crate::types::{Duration, Epoch, Event, Group, Interval, Satellite, TimeUnits};
