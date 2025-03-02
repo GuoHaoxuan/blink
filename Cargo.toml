@@ -8,7 +8,7 @@ fitsio = { version = "0.21.6", features = ["fitsio-src"] }
 hifitime = "4.0.2"
 hostname = "0.4.0"
 itertools = "0.13.0"
-ordered-float = "5.0.0"
+ordered-float = { version = "5.0.0", features = ["serde"] }
 rand = "0.8.5"
 regex = "1.11.1"
 rusqlite = { version = "0.32.0", features = ["bundled"] }
