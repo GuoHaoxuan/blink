@@ -111,7 +111,12 @@ impl Hour {
                 };
                 extract_version(a).cmp(&extract_version(b))
             })
-            .ok_or("No position file found")?;
+            .ok_or_else(|| {
+                format!(
+                    "No position file found for {} and dir {}",
+                    position_pattern, folder
+                )
+            })?;
         Ok(Self::new(
             &filenames.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
             &position_max_file,
