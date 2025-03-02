@@ -180,17 +180,3 @@ pub fn search<E: Event + Group>(
 
     result
 }
-
-fn extend_queue<E: Event + Group>(
-    iter: &mut impl Iterator<Item = E>,
-    queue: &mut VecDeque<E>,
-    index: usize,
-) {
-    while queue.len() <= index {
-        if let Some(event) = iter.next() {
-            queue.push_back(event);
-        } else {
-            break;
-        }
-    }
-}
