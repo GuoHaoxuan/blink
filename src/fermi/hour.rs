@@ -6,7 +6,7 @@ use itertools::Itertools;
 use regex::Regex;
 
 use crate::search::algorithms::{search, SearchConfig};
-use crate::types::{Epoch, Event as _, Interval, TimeUnits};
+use crate::types::{Epoch, Event as _, Interval, Signal, TimeUnits};
 
 use super::detector::Detector;
 use super::event::Event;
@@ -114,7 +114,7 @@ impl Hour {
             .unwrap()
     }
 
-    pub(crate) fn search(&self) -> Result<Vec<Interval<Epoch<Fermi>>>, Box<dyn Error>> {
+    pub(crate) fn search(&self) -> Result<Vec<Signal<Fermi>>, Box<dyn Error>> {
         let events: Vec<Event> = self
             .into_iter()
             .dedup_by_with_count(|a, b| b.time() - a.time() < 0.3e-6.seconds())
@@ -127,7 +127,7 @@ impl Hour {
             .collect();
         let gti = self.gti();
 
-        Ok(gti
+        let intervals: Result<Vec<Interval<usize>>, Box<dyn Error>> = Ok(gti
             .into_iter()
             .flat_map(|interval| {
                 search(
@@ -140,7 +140,33 @@ impl Hour {
                     },
                 )
             })
-            .collect())
+            .collect());
+
+        let signals = intervals?
+            .into_iter()
+            .map(|interval| {
+                let start = events[interval.start].time();
+                let stop = events[interval.stop].time();
+                let extend_time = 5.0.milliseconds();
+                let start_before = start - extend_time;
+                let stop_after = stop + extend_time;
+                let start_index = events
+                    .binary_search_by(|event| event.time().cmp(&start_before))
+                    .unwrap_or_else(|index| index)
+                    .min(interval.start);
+                let stop_index = events
+                    .binary_search_by(|event| event.time().cmp(&stop_after))
+                    .unwrap_or_else(|index| index - 1)
+                    .max(interval.stop);
+                Signal {
+                    start,
+                    stop,
+                    events: events[start_index..=stop_index].to_vec(),
+                }
+            })
+            .collect();
+
+        Ok(signals)
     }
 }
 

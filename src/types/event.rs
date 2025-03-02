@@ -1,7 +1,7 @@
 use super::{Epoch, Satellite};
 
 pub(crate) trait Event {
-    type Satellite: Satellite;
+    type Satellite: Satellite<Event = Self>;
 
     fn time(&self) -> Epoch<Self::Satellite>;
 }

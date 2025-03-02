@@ -73,8 +73,8 @@ pub fn search<E: Event + Group>(
     start: Epoch<E::Satellite>,
     stop: Epoch<E::Satellite>,
     config: SearchConfig<E::Satellite>,
-) -> Vec<Interval<Epoch<E::Satellite>>> {
-    let mut result: Vec<Interval<Epoch<E::Satellite>>> = Vec::new();
+) -> Vec<Interval<usize>> {
+    let mut result: Vec<Interval<usize>> = Vec::new();
     let mut cache = vec![
         vec![None; CACHE_COUNT_MAX as usize];
         (CACHE_AVERAGE_MAX * CACHE_AVERAGE_HASH_FACTOR).ceil() as usize
@@ -125,8 +125,8 @@ pub fn search<E: Event + Group>(
             let prob = coincidence_prob(&probs, 3);
             if prob > threshold {
                 let new_interval = Interval {
-                    start: data[cursor].time(),
-                    stop: data[cursor + step].time(),
+                    start: cursor,
+                    stop: cursor + step,
                 };
                 if let Some(last) = result.last_mut() {
                     if last.stop >= new_interval.start {
