@@ -86,7 +86,7 @@ impl Hour {
             })
             .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
         let position_pattern = format!(
-            "glg_poshist_all_{:02}{:02}{:02}_v\\d{{2}}\\.fit\\.gz",
+            "glg_poshist_all_{:02}{:02}{:02}_v\\d{{2}}\\.fit",
             y % 100,
             m,
             d
@@ -105,7 +105,7 @@ impl Hour {
                     name.split('_')
                         .last()
                         .and_then(|s| s.strip_prefix('v'))
-                        .and_then(|s| s.strip_suffix(".fit.gz"))
+                        .and_then(|s| s.strip_suffix(".fit"))
                         .and_then(|s| s.parse::<u32>().ok())
                         .unwrap_or(0)
                 };
