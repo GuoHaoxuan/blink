@@ -9,7 +9,8 @@ use crate::search::algorithms::{search, SearchConfig};
 use crate::types::{Epoch, Event as _, Interval, Signal, TimeUnits};
 
 use super::detector::Detector;
-use super::event::Event;
+use super::event::EventInterval;
+use super::event::EventPha;
 use super::file::{self, File};
 use super::Fermi;
 
@@ -114,15 +115,15 @@ impl Hour {
             .unwrap()
     }
 
-    pub(crate) fn search(&self) -> Result<Vec<Signal<Fermi>>, Box<dyn Error>> {
-        let events: Vec<Event> = self
+    pub(crate) fn search(&self) -> Result<Vec<Signal<EventPha>>, Box<dyn Error>> {
+        let events: Vec<EventPha> = self
             .into_iter()
             .dedup_by_with_count(|a, b| b.time() - a.time() < 0.3e-6.seconds())
             .filter(|(count, _)| *count == 1)
             .map(|(_, event)| event)
             .filter(|event| match event.detector() {
-                Detector::Nai(_) => event.pha() >= 30 && event.pha() <= 124,
-                Detector::Bgo(_) => event.pha() >= 19 && event.pha() <= 126,
+                Detector::Nai(_) => event.energy >= 30 && event.energy <= 124,
+                Detector::Bgo(_) => event.energy >= 19 && event.energy <= 126,
             })
             .collect();
         let gti = self.gti();
@@ -171,7 +172,7 @@ impl Hour {
 }
 
 impl<'a> IntoIterator for &'a Hour {
-    type Item = Event;
+    type Item = EventPha;
     type IntoIter = Iter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -192,11 +193,11 @@ impl<'a> IntoIterator for &'a Hour {
 
 pub(crate) struct Iter<'a> {
     file_iters: Vec<file::Iter<'a>>,
-    buffer: BinaryHeap<Reverse<(Event, usize)>>,
+    buffer: BinaryHeap<Reverse<(EventPha, usize)>>,
 }
 
 impl Iterator for Iter<'_> {
-    type Item = Event;
+    type Item = EventPha;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(Reverse((event, index))) = self.buffer.pop() {

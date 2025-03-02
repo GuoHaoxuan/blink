@@ -3,7 +3,7 @@ use std::iter::zip;
 use crate::types::{Epoch, Interval};
 
 use super::detector::Detector;
-use super::event::Event;
+use super::event::EventPha;
 use super::Fermi;
 
 pub(super) struct File {
@@ -67,7 +67,7 @@ impl File {
 }
 
 impl<'a> IntoIterator for &'a File {
-    type Item = Event;
+    type Item = EventPha;
     type IntoIter = Iter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -84,13 +84,13 @@ pub(super) struct Iter<'a> {
 }
 
 impl Iterator for Iter<'_> {
-    type Item = Event;
+    type Item = EventPha;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.file.events_time.len() {
-            let event = Event {
+            let event = EventPha {
                 time: Epoch::new(self.file.events_time[self.index]),
-                pha: self.file.events_pha[self.index],
+                energy: self.file.events_pha[self.index],
                 detector: self.file.detector,
             };
             self.index += 1;
