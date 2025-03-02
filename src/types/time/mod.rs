@@ -15,7 +15,7 @@ pub(crate) use time_units::TimeUnits;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub(crate) struct Epoch<T: Satellite> {
-    time: NotNan<f64>,
+    pub(crate) time: NotNan<f64>,
     _phantom: PhantomData<T>,
 }
 

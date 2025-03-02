@@ -12,6 +12,7 @@ use super::detector::Detector;
 use super::event::EventInterval;
 use super::event::EventPha;
 use super::file::{self, File};
+use super::position::PositionRow;
 use super::{Fermi, Position};
 
 pub(crate) struct Hour {
@@ -142,7 +143,7 @@ impl Hour {
             .unwrap()
     }
 
-    pub(crate) fn search(&self) -> Result<Vec<Signal<EventInterval>>, Box<dyn Error>> {
+    pub(crate) fn search(&self) -> Result<Vec<Signal<EventInterval, PositionRow>>, Box<dyn Error>> {
         let events: Vec<EventPha> = self
             .into_iter()
             .dedup_by_with_count(|a, b| b.time() - a.time() < 0.3e-6.seconds())
@@ -189,6 +190,7 @@ impl Hour {
                     start,
                     stop,
                     events,
+                    position: self.position.get_row(start).unwrap(),
                 }
             })
             .collect();
