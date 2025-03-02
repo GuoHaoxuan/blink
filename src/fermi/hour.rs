@@ -157,7 +157,7 @@ impl Hour {
             .collect();
         let gti = self.gti();
 
-        let intervals: Result<Vec<Interval<Epoch<Fermi>>>, Box<dyn Error>> = Ok(gti
+        let intervals: Result<Vec<(Interval<Epoch<Fermi>>, f64)>, Box<dyn Error>> = Ok(gti
             .iter()
             .flat_map(|interval| {
                 search(
@@ -176,7 +176,7 @@ impl Hour {
         let ebounds_max = &self.files[0].ebounds_e_max;
         let signals = intervals?
             .into_iter()
-            .map(|interval| {
+            .map(|(interval, fp_year)| {
                 let start = interval.start;
                 let stop = interval.stop;
                 let extend = 1.0.milliseconds();
@@ -197,6 +197,7 @@ impl Hour {
                 Signal {
                     start,
                     stop,
+                    fp_year,
                     events,
                     position: self.position.get_row(start).unwrap(),
                     lightnings: Lightning::associated_lightning(

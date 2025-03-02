@@ -99,12 +99,13 @@ pub fn fail_task(
 pub(crate) fn write_signal<E: Event, P: Serialize>(conn: &Connection, signal: &Signal<E, P>) {
     conn.execute(
         "
-            INSERT INTO signals (start, stop, events, position, lightnings)
-            VALUES (?1, ?2, ?3, ?4, ?5);
+            INSERT INTO signals (start, stop, fp_year, events, position, lightnings)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6);
         ",
         params![
             signal.start.to_hifitime().to_isoformat(),
             signal.stop.to_hifitime().to_isoformat(),
+            signal.fp_year,
             serde_json::to_string(&signal.events).unwrap(),
             serde_json::to_string(&signal.position).unwrap(),
             serde_json::to_string(&signal.lightnings).unwrap()
