@@ -128,8 +128,8 @@ impl Hour {
             .collect();
         let gti = self.gti();
 
-        let intervals: Result<Vec<Interval<usize>>, Box<dyn Error>> = Ok(gti
-            .into_iter()
+        let intervals: Result<Vec<Interval<Epoch<Fermi>>>, Box<dyn Error>> = Ok(gti
+            .iter()
             .flat_map(|interval| {
                 search(
                     &events,
@@ -148,26 +148,20 @@ impl Hour {
         let signals = intervals?
             .into_iter()
             .map(|interval| {
-                let start = events[interval.start].time();
-                let stop = events[interval.stop].time();
-                let extend_time = 1.0.milliseconds();
-                let start_before = start - extend_time;
-                let stop_after = stop + extend_time;
-                let start_index = events
-                    .binary_search_by(|event| event.time().cmp(&start_before))
-                    .unwrap_or_else(|index| index)
-                    .min(interval.start);
-                let stop_index = events
-                    .binary_search_by(|event| event.time().cmp(&stop_after))
-                    .unwrap_or_else(|index| index - 1)
-                    .max(interval.stop);
+                let start = interval.start;
+                let stop = interval.stop;
+                let extend = 1.0.milliseconds();
+                let start_extended = start - extend;
+                let stop_extended = stop + extend;
+                let events = self
+                    .into_iter()
+                    .filter(|event| event.time() >= start_extended && event.time() <= stop_extended)
+                    .map(|event| event.to_interval(ebounds_min, ebounds_max))
+                    .collect::<Vec<_>>();
                 Signal {
                     start,
                     stop,
-                    events: events[start_index..=stop_index]
-                        .iter()
-                        .map(|event| event.to_interval(ebounds_min, ebounds_max))
-                        .collect(),
+                    events,
                 }
             })
             .collect();
