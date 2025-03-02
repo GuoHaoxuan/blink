@@ -147,7 +147,7 @@ impl Hour {
             .map(|interval| {
                 let start = events[interval.start].time();
                 let stop = events[interval.stop].time();
-                let extend_time = 5.0.milliseconds();
+                let extend_time = 1.0.milliseconds();
                 let start_before = start - extend_time;
                 let stop_after = stop + extend_time;
                 let start_index = events
