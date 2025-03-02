@@ -7,7 +7,7 @@ mod time;
 
 use serde::Serialize;
 
-pub(crate) use detector::Detector;
+// pub(crate) use detector::Detector;
 pub(crate) use hour::Hour;
 pub(crate) use position::Position;
 

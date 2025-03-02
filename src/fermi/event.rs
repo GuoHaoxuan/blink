@@ -16,10 +16,6 @@ pub(crate) type EventPha = Event<i16>;
 pub(crate) type EventInterval = Event<Interval<NotNan<f32>>>;
 
 impl<T: Copy> Event<T> {
-    pub(crate) fn energy(&self) -> T {
-        self.energy
-    }
-
     pub(crate) fn detector(&self) -> Detector {
         self.detector
     }

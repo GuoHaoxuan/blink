@@ -8,7 +8,7 @@ use super::Fermi;
 
 pub(super) struct File {
     // HDU 1: EBOUNDS
-    ebounds_channel: Vec<i16>,
+    // ebounds_channel: Vec<i16>,
     pub(crate) ebounds_e_min: Vec<f32>,
     pub(crate) ebounds_e_max: Vec<f32>,
 
@@ -30,7 +30,7 @@ impl File {
 
         // HDU 1: EBOUNDS
         let ebounds = fptr.hdu("EBOUNDS")?;
-        let ebounds_channel = ebounds.read_col::<i16>(&mut fptr, "CHANNEL")?;
+        // let ebounds_channel = ebounds.read_col::<i16>(&mut fptr, "CHANNEL")?;
         let ebounds_e_min = ebounds.read_col::<f32>(&mut fptr, "E_MIN")?;
         let ebounds_e_max = ebounds.read_col::<f32>(&mut fptr, "E_MAX")?;
 
@@ -45,7 +45,7 @@ impl File {
         let gti_stop = gti.read_col::<f64>(&mut fptr, "STOP")?;
 
         Ok(Self {
-            ebounds_channel,
+            // ebounds_channel,
             ebounds_e_min,
             ebounds_e_max,
             events_time,
