@@ -5,7 +5,7 @@ use crate::types::Epoch;
 use super::Fermi;
 
 pub(crate) struct Position {
-    sclk_utc: Vec<f64>,
+    pub(crate) sclk_utc: Vec<f64>,
     qsj_1: Vec<f64>,
     qsj_2: Vec<f64>,
     qsj_3: Vec<f64>,

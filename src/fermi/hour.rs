@@ -210,7 +210,20 @@ impl Hour {
                     .filter(|event| event.time() >= start_extended && event.time() <= stop_extended)
                     .map(|event| event.to_interval(ebounds_min, ebounds_max))
                     .collect::<Vec<_>>();
-                let position = self.position.get_row(start).unwrap();
+                let position = match self.position.get_row(start) {
+                    Some(pos) => pos,
+                    None => {
+                        panic!(
+                            "No position found for {}\n Where position range {} - {}",
+                            start.to_hifitime(),
+                            Epoch::<Fermi>::new(self.position.sclk_utc[0]).to_hifitime(),
+                            Epoch::<Fermi>::new(
+                                self.position.sclk_utc[self.position.sclk_utc.len() - 1]
+                            )
+                            .to_hifitime(),
+                        );
+                    }
+                };
                 let lat = position.sc_lat;
                 let lon = position.sc_lon;
 
