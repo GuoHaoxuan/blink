@@ -53,7 +53,7 @@ fn poisson_cdf(cache: &mut [Vec<Option<f64>>], average: f64, count: u32) -> f64 
     } else if average >= CACHE_AVERAGE_MAX || count >= CACHE_COUNT_MAX {
         do_calc(average, count)
     } else {
-        let average_hash = (average * CACHE_AVERAGE_HASH_FACTOR).round() as usize;
+        let average_hash = (average * CACHE_AVERAGE_HASH_FACTOR).floor() as usize;
         match cache[average_hash][count as usize] {
             None => {
                 let prob = do_calc(average, count);
