@@ -17,7 +17,12 @@ fn consume() {
     conn.busy_timeout(std::time::Duration::from_secs(3600))
         .unwrap();
     while let Some(epoch) = get_task(&conn, &worker, "Fermi", "GBM") {
-        let results = Hour::from_epoch(&epoch).unwrap().search();
+        let hour = Hour::from_epoch(&epoch);
+        if let Err(e) = hour {
+            fail_task(&conn, &epoch, "Fermi", "GBM", e);
+            continue;
+        }
+        let results = hour.unwrap().search();
         match results {
             Ok(results) => {
                 for result in results {

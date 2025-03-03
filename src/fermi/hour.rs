@@ -1,6 +1,9 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
+use std::env;
 use std::error::Error;
+use std::path::Path;
+use std::sync::LazyLock;
 
 use itertools::Itertools;
 use regex::Regex;
@@ -42,11 +45,15 @@ impl Hour {
     }
 
     pub(crate) fn from_epoch(epoch: &hifitime::Epoch) -> Result<Self, Box<dyn Error>> {
+        static GBM_DAILY_PATH: LazyLock<String> = LazyLock::new(|| {
+            env::var("GBM_DAILY_PATH").unwrap_or_else(|_| {
+                "/gecamfs/Exchange/GSDC/missions/FTP/fermi/data/gbm/daily".to_string()
+            })
+        });
         let (y, m, d, h, ..) = epoch.to_gregorian_utc();
-        let folder = format!(
-            "/gecamfs/Exchange/GSDC/missions/FTP/fermi/data/gbm/daily/{:04}/{:02}/{:02}/current",
-            y, m, d
-        );
+        let folder = Path::new(&*GBM_DAILY_PATH)
+            .join(format!("{:04}/{:02}/{:02}/current", y, m, d))
+            .into_os_string();
         let filenames: Vec<String> = (0..14)
             .map(|i| -> Result<String, Box<dyn Error>> {
                 let pattern = format!(
@@ -81,8 +88,13 @@ impl Hour {
                                 .unwrap_or(0)
                         };
                         extract_version(a).cmp(&extract_version(b))
-                    });
-                Ok(max_file.ok_or("No files found matching the pattern")?)
+                    })
+                    .ok_or_else(|| format!("No files found matching pattern for detector {}", i))?;
+                Ok(Path::new(&folder)
+                    .join(max_file)
+                    .into_os_string()
+                    .into_string()
+                    .unwrap())
             })
             .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
         let position_pattern = format!(
@@ -114,12 +126,18 @@ impl Hour {
             .ok_or_else(|| {
                 format!(
                     "No position file found for {} and dir {}",
-                    position_pattern, folder
+                    position_pattern,
+                    folder.clone().into_string().unwrap()
                 )
             })?;
+        let position_filename = Path::new(&folder)
+            .join(position_max_file)
+            .into_os_string()
+            .into_string()
+            .unwrap();
         Ok(Self::new(
             &filenames.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
-            &position_max_file,
+            &position_filename,
         )?)
     }
 
