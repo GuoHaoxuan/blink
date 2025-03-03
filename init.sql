@@ -18,6 +18,6 @@ CREATE TABLE
         stop TEXT NOT NULL, -- 结束时间
         fp_year REAL NOT NULL, -- 年误触发个数
         events TEXT NOT NULL, -- 事件
-        position TEXT NOT NULL, -- 位置
-        lightnings TEXT NOT NULL -- 闪电
+        position TEXT, -- 位置
+        lightnings TEXT -- 闪电
     );

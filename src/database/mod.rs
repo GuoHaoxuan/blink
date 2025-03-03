@@ -107,8 +107,14 @@ pub(crate) fn write_signal<E: Event, P: Serialize>(conn: &Connection, signal: &S
             signal.stop.to_hifitime().to_isoformat(),
             signal.fp_year,
             serde_json::to_string(&signal.events).unwrap(),
-            serde_json::to_string(&signal.position).unwrap(),
-            serde_json::to_string(&signal.lightnings).unwrap()
+            signal
+                .position
+                .as_ref()
+                .map(|x| serde_json::to_string(&x).unwrap()),
+            signal
+                .lightnings
+                .as_ref()
+                .map(|x| serde_json::to_string(&x).unwrap())
         ],
     )
     .unwrap();

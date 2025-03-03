@@ -210,39 +210,33 @@ impl Hour {
                     .filter(|event| event.time() >= start_extended && event.time() <= stop_extended)
                     .map(|event| event.to_interval(ebounds_min, ebounds_max))
                     .collect::<Vec<_>>();
-                let position = match self.position.get_row(start) {
-                    Some(pos) => pos,
-                    None => {
-                        panic!(
-                            "No position found for {}\n Where position range {} - {}",
-                            start.to_hifitime(),
-                            Epoch::<Fermi>::new(self.position.sclk_utc[0]).to_hifitime(),
-                            Epoch::<Fermi>::new(
-                                self.position.sclk_utc[self.position.sclk_utc.len() - 1]
-                            )
-                            .to_hifitime(),
-                        );
-                    }
-                };
-                let lat = position.sc_lat;
-                let lon = position.sc_lon;
+                let position = self.position.get_row(start);
+                let lightnings = match &position {
+                    Some(pos) => {
+                        let lat = pos.sc_lat;
+                        let lon = pos.sc_lon;
 
-                let time_tolerance = hifitime::Duration::from_microseconds(5.0);
-                let distance_tolerance = 80.0;
+                        let time_tolerance = hifitime::Duration::from_microseconds(5.0);
+                        let distance_tolerance = 80.0;
+
+                        Some(Lightning::associated_lightning(
+                            (start + (stop - start) / 2.0).to_hifitime(),
+                            lat as f64,
+                            lon as f64,
+                            time_tolerance,
+                            distance_tolerance,
+                        ))
+                    }
+                    None => None,
+                };
 
                 Signal {
                     start,
                     stop,
                     fp_year,
                     events,
-                    position: self.position.get_row(start).unwrap(),
-                    lightnings: Lightning::associated_lightning(
-                        (start + (stop - start) / 2.0).to_hifitime(),
-                        lat as f64,
-                        lon as f64,
-                        time_tolerance,
-                        distance_tolerance,
-                    ),
+                    position,
+                    lightnings,
                 }
             })
             .collect();
