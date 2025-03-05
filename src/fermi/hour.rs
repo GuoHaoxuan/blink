@@ -217,7 +217,7 @@ impl Hour {
                         let lon = pos.sc_lon;
 
                         let time_tolerance = hifitime::Duration::from_microseconds(5.0);
-                        let distance_tolerance = 80.0;
+                        let distance_tolerance = 800_000.0;
 
                         Some(Lightning::associated_lightning(
                             (start + (stop - start) / 2.0).to_hifitime(),
