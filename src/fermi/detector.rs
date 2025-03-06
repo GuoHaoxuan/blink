@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(crate) enum Detector {
@@ -6,11 +7,11 @@ pub(crate) enum Detector {
     Bgo(u8),
 }
 
-impl Detector {
-    pub(crate) fn to_string(&self) -> String {
+impl fmt::Display for Detector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Detector::Nai(n) => format!("n{}", n),
-            Detector::Bgo(n) => format!("b{}", n),
+            Detector::Nai(n) => write!(f, "n{}", n),
+            Detector::Bgo(n) => write!(f, "b{}", n),
         }
     }
 }
