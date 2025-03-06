@@ -107,6 +107,7 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal) {
             signal.fp_year,
             signal.position.longitude_degrees(),
             signal.position.latitude_degrees(),
+            signal.position.altitude(),
             serde_json::to_string(&signal.events).unwrap(),
             serde_json::to_string(&signal.lightnings).unwrap(),
         ],
