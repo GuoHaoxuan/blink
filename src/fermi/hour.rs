@@ -11,7 +11,7 @@ use regex::Regex;
 
 use crate::lightning::Lightning;
 use crate::search::algorithms::{search, SearchConfig};
-use crate::types::{Epoch, Event as _, Interval, Signal, TimeUnits};
+use crate::types::{Epoch, Event as _, Signal, TimeUnits};
 
 use super::detector::Detector;
 use super::event::Event;
@@ -140,7 +140,7 @@ impl Hour {
         )?)
     }
 
-    pub(crate) fn gti(&self) -> Vec<Interval<Epoch<Fermi>>> {
+    pub(crate) fn gti(&self) -> Vec<[Epoch<Fermi>; 2]> {
         self.files
             .iter()
             .map(|file| file.gti())
@@ -150,12 +150,12 @@ impl Hour {
                 let mut b_iter = b.into_iter().peekable();
 
                 while let (Some(a), Some(b)) = (a_iter.peek(), b_iter.peek()) {
-                    let start = a.start.max(b.start);
-                    let stop = a.stop.min(b.stop);
+                    let start = a[0].max(b[0]);
+                    let stop = a[1].min(b[1]);
                     if start < stop {
-                        res.push(Interval { start, stop });
+                        res.push([start, stop]);
                     }
-                    if a.stop < b.stop {
+                    if a[1] < b[1] {
                         a_iter.next();
                     } else {
                         b_iter.next();
@@ -179,14 +179,14 @@ impl Hour {
             .collect();
         let gti = self.gti();
 
-        let intervals: Result<Vec<(Interval<Epoch<Fermi>>, f64)>, Box<dyn Error>> = Ok(gti
+        let intervals: Result<Vec<([Epoch<Fermi>; 2], f64)>, Box<dyn Error>> = Ok(gti
             .iter()
             .flat_map(|interval| {
                 search(
                     &events,
                     6,
-                    interval.start,
-                    interval.stop,
+                    interval[0],
+                    interval[1],
                     SearchConfig {
                         ..Default::default()
                     },
@@ -198,8 +198,8 @@ impl Hour {
         let signals = intervals?
             .into_iter()
             .map(|(interval, fp_year)| {
-                let start = interval.start;
-                let stop = interval.stop;
+                let start = interval[0];
+                let stop = interval[1];
                 let extend = 1.0.milliseconds();
                 let start_extended = start - extend;
                 let stop_extended = stop + extend;

@@ -1,6 +1,6 @@
 use std::iter::zip;
 
-use crate::types::{Ebounds, Epoch, Interval};
+use crate::types::{Ebounds, Epoch};
 
 use super::detector::Detector;
 use super::event::Event;
@@ -56,12 +56,9 @@ impl File {
         })
     }
 
-    pub(super) fn gti(&self) -> Vec<Interval<Epoch<Fermi>>> {
+    pub(super) fn gti(&self) -> Vec<[Epoch<Fermi>; 2]> {
         zip(&self.gti_start, &self.gti_stop)
-            .map(|(start, stop)| Interval {
-                start: Epoch::new(*start),
-                stop: Epoch::new(*stop),
-            })
+            .map(|(start, stop)| [Epoch::new(*start), Epoch::new(*stop)])
             .collect()
     }
 

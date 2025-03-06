@@ -3,10 +3,8 @@ use std::str::FromStr;
 
 use hifitime::prelude::*;
 use rusqlite::{params, Connection};
-use serde::Serialize;
-use serde_json;
 
-use crate::types::{Event, Signal};
+use crate::types::Signal;
 
 pub fn get_task(conn: &Connection, worker: &str, satellite: &str, detector: &str) -> Option<Epoch> {
     conn.prepare(

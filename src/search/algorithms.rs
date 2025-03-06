@@ -1,6 +1,6 @@
 use statrs::distribution::{DiscreteCDF, Poisson};
 
-use crate::types::{Duration, Epoch, Event, Group, Interval, Satellite, TimeUnits};
+use crate::types::{Duration, Epoch, Event, Group, Satellite, TimeUnits};
 
 pub struct SearchConfig<T: Satellite> {
     pub max_duration: Duration<T>,
@@ -71,8 +71,8 @@ pub fn search<E: Event + Group>(
     start: Epoch<E::Satellite>,
     stop: Epoch<E::Satellite>,
     config: SearchConfig<E::Satellite>,
-) -> Vec<(Interval<Epoch<E::Satellite>>, f64)> {
-    let mut result: Vec<(Interval<Epoch<E::Satellite>>, f64)> = Vec::new();
+) -> Vec<([Epoch<E::Satellite>; 2], f64)> {
+    let mut result: Vec<([Epoch<E::Satellite>; 2], f64)> = Vec::new();
     let mut cache = vec![
         vec![None; CACHE_COUNT_MAX as usize];
         (CACHE_AVERAGE_MAX * CACHE_AVERAGE_HASH_FACTOR).ceil() as usize
@@ -123,13 +123,10 @@ pub fn search<E: Event + Group>(
             let prob = coincidence_prob(&probs, 3);
             if prob > threshold {
                 let fp_year_real = (1.0 - prob) * 3600.0 * 24.0 * 365.0 / duration.to_seconds();
-                let new_interval = Interval {
-                    start: data[cursor].time(),
-                    stop: data[cursor + step].time(),
-                };
+                let new_interval = [data[cursor].time(), data[cursor + step].time()];
                 if let Some(last) = result.last_mut() {
-                    if last.0.stop >= new_interval.start {
-                        last.0.stop = new_interval.stop;
+                    if last.0[1] >= new_interval[0] {
+                        last.0[1] = new_interval[1];
                         last.1 = last.1.min(fp_year_real);
                     } else {
                         result.push((new_interval, fp_year_real));

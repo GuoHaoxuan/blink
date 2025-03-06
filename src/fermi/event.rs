@@ -1,7 +1,6 @@
-use ordered_float::NotNan;
 use serde::Serialize;
 
-use crate::types::{Epoch, GeneralEvent, Group, Interval};
+use crate::types::{Epoch, GeneralEvent, Group};
 
 use super::{detector::Detector, Fermi};
 
@@ -28,10 +27,10 @@ impl crate::types::Event for Event {
     fn to_general(&self, ebounds: &crate::types::Ebounds) -> GeneralEvent {
         GeneralEvent {
             time: self.time.to_hifitime(),
-            energy: Interval {
-                start: NotNan::new(ebounds[self.energy as usize][0]).unwrap(),
-                stop: NotNan::new(ebounds[self.energy as usize][1]).unwrap(),
-            },
+            energy: [
+                ebounds[self.energy as usize][0],
+                ebounds[self.energy as usize][1],
+            ],
             detector: self.detector.to_string(),
         }
     }
