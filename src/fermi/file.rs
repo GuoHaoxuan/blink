@@ -2,8 +2,8 @@ use std::iter::zip;
 
 use crate::types::{Ebounds, Time};
 
-use super::detector::Detector;
-use super::event::Event;
+use super::detector::FermiDetectorType;
+use super::event::FermiEvent;
 use super::Fermi;
 
 pub(super) struct File {
@@ -21,11 +21,14 @@ pub(super) struct File {
     gti_stop: Vec<f64>,
 
     // detector
-    detector: Detector,
+    detector: FermiDetectorType,
 }
 
 impl File {
-    pub(super) fn new(filename: &str, detector: Detector) -> Result<Self, fitsio::errors::Error> {
+    pub(super) fn new(
+        filename: &str,
+        detector: FermiDetectorType,
+    ) -> Result<Self, fitsio::errors::Error> {
         let mut fptr = fitsio::FitsFile::open(filename)?;
 
         // HDU 1: EBOUNDS
@@ -72,7 +75,7 @@ impl File {
 }
 
 impl<'a> IntoIterator for &'a File {
-    type Item = Event;
+    type Item = FermiEvent;
     type IntoIter = Iter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -89,11 +92,11 @@ pub(super) struct Iter<'a> {
 }
 
 impl Iterator for Iter<'_> {
-    type Item = Event;
+    type Item = FermiEvent;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.file.events_time.len() {
-            let event = Event {
+            let event = FermiEvent {
                 time: Time::new(self.file.events_time[self.index]),
                 energy: self.file.events_pha[self.index],
                 detector: self.file.detector,

@@ -1,31 +1,41 @@
 use serde::Serialize;
 
-use crate::types::{Time, GeneralEvent, Group};
+use crate::types::{GenericEvent, Group, Time};
 
-use super::{detector::Detector, Fermi};
+use super::{detector::FermiDetectorType, Fermi};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Serialize)]
-pub(crate) struct Event {
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Serialize)]
+pub(crate) struct FermiEvent {
     pub(super) time: Time<Fermi>,
     pub(super) energy: i16,
-    pub(super) detector: Detector,
+    pub(super) detector: FermiDetectorType,
 }
 
-impl Event {
-    pub(crate) fn detector(&self) -> Detector {
+impl FermiEvent {
+    pub(crate) fn detector(&self) -> FermiDetectorType {
         self.detector
     }
 }
 
-impl crate::types::Event for Event {
+impl crate::types::Event for FermiEvent {
     type Satellite = Fermi;
+    type EnergyType = i16;
+    // type DetectorType = FermiDetectorType;
 
     fn time(&self) -> Time<Fermi> {
         self.time
     }
 
-    fn to_general(&self, ebounds: &crate::types::Ebounds) -> GeneralEvent {
-        GeneralEvent {
+    fn energy(&self) -> Self::EnergyType {
+        self.energy
+    }
+
+    // fn detector(&self) -> Self::DetectorType {
+    //     self.detector
+    // }
+
+    fn to_general(&self, ebounds: &crate::types::Ebounds) -> GenericEvent {
+        GenericEvent {
             time: self.time.to_hifitime(),
             energy: [
                 ebounds[self.energy as usize][0],
@@ -36,15 +46,15 @@ impl crate::types::Event for Event {
     }
 }
 
-impl Group for Event {
+impl Group for FermiEvent {
     fn group(&self) -> u8 {
         match self.detector {
-            Detector::Nai(0..=2) => 0,
-            Detector::Nai(3..=5) => 1,
-            Detector::Nai(6..=8) => 2,
-            Detector::Nai(9..=11) => 3,
-            Detector::Bgo(0) => 4,
-            Detector::Bgo(1) => 5,
+            FermiDetectorType::Nai(0..=2) => 0,
+            FermiDetectorType::Nai(3..=5) => 1,
+            FermiDetectorType::Nai(6..=8) => 2,
+            FermiDetectorType::Nai(9..=11) => 3,
+            FermiDetectorType::Bgo(0) => 4,
+            FermiDetectorType::Bgo(1) => 5,
             _ => panic!("Invalid detector"),
         }
     }

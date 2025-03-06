@@ -2,21 +2,21 @@ use serde::Serialize;
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub(crate) enum Detector {
+pub(crate) enum FermiDetectorType {
     Nai(u8),
     Bgo(u8),
 }
 
-impl fmt::Display for Detector {
+impl fmt::Display for FermiDetectorType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Detector::Nai(n) => write!(f, "n{}", n),
-            Detector::Bgo(n) => write!(f, "b{}", n),
+            FermiDetectorType::Nai(n) => write!(f, "n{}", n),
+            FermiDetectorType::Bgo(n) => write!(f, "b{}", n),
         }
     }
 }
 
-impl Serialize for Detector {
+impl Serialize for FermiDetectorType {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.to_string().serialize(serializer)
     }

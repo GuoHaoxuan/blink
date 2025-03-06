@@ -13,8 +13,8 @@ use crate::lightning::Lightning;
 use crate::search::algorithms::{search, SearchConfig};
 use crate::types::{Event as _, Signal, Time, TimeUnits};
 
-use super::detector::Detector;
-use super::event::Event;
+use super::detector::FermiDetectorType;
+use super::event::FermiEvent;
 use super::file::{self, File};
 use super::{Fermi, Position};
 
@@ -28,9 +28,9 @@ impl Hour {
         let detectors = (0..14)
             .map(|i| {
                 if i < 12 {
-                    Detector::Nai(i)
+                    FermiDetectorType::Nai(i)
                 } else {
-                    Detector::Bgo(i - 12)
+                    FermiDetectorType::Bgo(i - 12)
                 }
             })
             .collect::<Vec<_>>();
@@ -167,14 +167,14 @@ impl Hour {
     }
 
     pub(crate) fn search(&self) -> Result<Vec<Signal>, Box<dyn Error>> {
-        let events: Vec<Event> = self
+        let events: Vec<FermiEvent> = self
             .into_iter()
             .dedup_by_with_count(|a, b| b.time() - a.time() < 0.3e-6.seconds())
             .filter(|(count, _)| *count == 1)
             .map(|(_, event)| event)
             .filter(|event| match event.detector() {
-                Detector::Nai(_) => event.energy >= 30 && event.energy <= 124,
-                Detector::Bgo(_) => event.energy >= 19 && event.energy <= 126,
+                FermiDetectorType::Nai(_) => event.energy() >= 30 && event.energy() <= 124,
+                FermiDetectorType::Bgo(_) => event.energy() >= 19 && event.energy() <= 126,
             })
             .collect();
         let gti = self.gti();
@@ -241,7 +241,7 @@ impl Hour {
 }
 
 impl<'a> IntoIterator for &'a Hour {
-    type Item = Event;
+    type Item = FermiEvent;
     type IntoIter = Iter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -262,11 +262,11 @@ impl<'a> IntoIterator for &'a Hour {
 
 pub(crate) struct Iter<'a> {
     file_iters: Vec<file::Iter<'a>>,
-    buffer: BinaryHeap<Reverse<(Event, usize)>>,
+    buffer: BinaryHeap<Reverse<(FermiEvent, usize)>>,
 }
 
 impl Iterator for Iter<'_> {
-    type Item = Event;
+    type Item = FermiEvent;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(Reverse((event, index))) = self.buffer.pop() {

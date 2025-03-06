@@ -1,17 +1,17 @@
 use crate::types::Satellite;
 
-use super::Duration;
+use super::Span;
 
 pub(crate) trait TimeUnits<T: Satellite> {
-    fn seconds(self) -> Duration<T>;
-    fn milliseconds(self) -> Duration<T>;
+    fn seconds(self) -> Span<T>;
+    fn milliseconds(self) -> Span<T>;
 }
 
 impl<T: Satellite> TimeUnits<T> for f64 {
-    fn seconds(self) -> Duration<T> {
-        Duration::new(self)
+    fn seconds(self) -> Span<T> {
+        Span::new(self)
     }
-    fn milliseconds(self) -> Duration<T> {
-        Duration::new(self / 1000.0)
+    fn milliseconds(self) -> Span<T> {
+        Span::new(self / 1000.0)
     }
 }
