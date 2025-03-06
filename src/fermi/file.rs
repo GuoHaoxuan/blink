@@ -1,6 +1,6 @@
 use std::iter::zip;
 
-use crate::types::{Ebounds, Epoch};
+use crate::types::{Ebounds, Time};
 
 use super::detector::Detector;
 use super::event::Event;
@@ -56,9 +56,9 @@ impl File {
         })
     }
 
-    pub(super) fn gti(&self) -> Vec<[Epoch<Fermi>; 2]> {
+    pub(super) fn gti(&self) -> Vec<[Time<Fermi>; 2]> {
         zip(&self.gti_start, &self.gti_stop)
-            .map(|(start, stop)| [Epoch::new(*start), Epoch::new(*stop)])
+            .map(|(start, stop)| [Time::new(*start), Time::new(*stop)])
             .collect()
     }
 
@@ -94,7 +94,7 @@ impl Iterator for Iter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.file.events_time.len() {
             let event = Event {
-                time: Epoch::new(self.file.events_time[self.index]),
+                time: Time::new(self.file.events_time[self.index]),
                 energy: self.file.events_pha[self.index],
                 detector: self.file.detector,
             };

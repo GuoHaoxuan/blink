@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::types::Epoch;
+use crate::types::Time;
 
 use super::Fermi;
 
@@ -66,7 +66,7 @@ impl Position {
         })
     }
 
-    pub(crate) fn get_row(&self, epoch: Epoch<Fermi>) -> PositionRow {
+    pub(crate) fn get_row(&self, epoch: Time<Fermi>) -> PositionRow {
         let sclk_utc = epoch.time.into_inner();
         let pos = self
             .sclk_utc

@@ -1,6 +1,6 @@
 use statrs::distribution::{DiscreteCDF, Poisson};
 
-use crate::types::{Duration, Epoch, Event, Group, Satellite, TimeUnits};
+use crate::types::{Duration, Event, Group, Satellite, Time, TimeUnits};
 
 pub struct SearchConfig<T: Satellite> {
     pub max_duration: Duration<T>,
@@ -68,11 +68,11 @@ fn poisson_cdf(cache: &mut [Vec<Option<f64>>], average: f64, count: u32) -> f64 
 pub fn search<E: Event + Group>(
     data: &[E],
     group_count: usize,
-    start: Epoch<E::Satellite>,
-    stop: Epoch<E::Satellite>,
+    start: Time<E::Satellite>,
+    stop: Time<E::Satellite>,
     config: SearchConfig<E::Satellite>,
-) -> Vec<([Epoch<E::Satellite>; 2], f64)> {
-    let mut result: Vec<([Epoch<E::Satellite>; 2], f64)> = Vec::new();
+) -> Vec<([Time<E::Satellite>; 2], f64)> {
+    let mut result: Vec<([Time<E::Satellite>; 2], f64)> = Vec::new();
     let mut cache = vec![
         vec![None; CACHE_COUNT_MAX as usize];
         (CACHE_AVERAGE_MAX * CACHE_AVERAGE_HASH_FACTOR).ceil() as usize

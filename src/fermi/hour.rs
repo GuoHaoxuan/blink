@@ -11,7 +11,7 @@ use regex::Regex;
 
 use crate::lightning::Lightning;
 use crate::search::algorithms::{search, SearchConfig};
-use crate::types::{Epoch, Event as _, Signal, TimeUnits};
+use crate::types::{Event as _, Signal, Time, TimeUnits};
 
 use super::detector::Detector;
 use super::event::Event;
@@ -140,7 +140,7 @@ impl Hour {
         )?)
     }
 
-    pub(crate) fn gti(&self) -> Vec<[Epoch<Fermi>; 2]> {
+    pub(crate) fn gti(&self) -> Vec<[Time<Fermi>; 2]> {
         self.files
             .iter()
             .map(|file| file.gti())
@@ -179,7 +179,7 @@ impl Hour {
             .collect();
         let gti = self.gti();
 
-        let intervals: Result<Vec<([Epoch<Fermi>; 2], f64)>, Box<dyn Error>> = Ok(gti
+        let intervals: Result<Vec<([Time<Fermi>; 2], f64)>, Box<dyn Error>> = Ok(gti
             .iter()
             .flat_map(|interval| {
                 search(

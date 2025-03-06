@@ -1,12 +1,12 @@
 use serde::Serialize;
 
-use crate::types::{Epoch, GeneralEvent, Group};
+use crate::types::{Time, GeneralEvent, Group};
 
 use super::{detector::Detector, Fermi};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Serialize)]
 pub(crate) struct Event {
-    pub(super) time: Epoch<Fermi>,
+    pub(super) time: Time<Fermi>,
     pub(super) energy: i16,
     pub(super) detector: Detector,
 }
@@ -20,7 +20,7 @@ impl Event {
 impl crate::types::Event for Event {
     type Satellite = Fermi;
 
-    fn time(&self) -> Epoch<Fermi> {
+    fn time(&self) -> Time<Fermi> {
         self.time
     }
 

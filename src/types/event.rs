@@ -1,11 +1,11 @@
 use serde::Serialize;
 
-use super::{Ebounds, Epoch, Satellite};
+use super::{Ebounds, Time, Satellite};
 
 pub(crate) trait Event: Serialize {
     type Satellite: Satellite;
 
-    fn time(&self) -> Epoch<Self::Satellite>;
+    fn time(&self) -> Time<Self::Satellite>;
     fn to_general(&self, ebounds: &Ebounds) -> GeneralEvent;
 }
 

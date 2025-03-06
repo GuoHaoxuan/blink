@@ -14,18 +14,18 @@ use super::Satellite;
 pub(crate) use time_units::TimeUnits;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub(crate) struct Epoch<T: Satellite> {
+pub(crate) struct Time<T: Satellite> {
     pub(crate) time: NotNan<f64>,
     _phantom: PhantomData<T>,
 }
 
-impl<T: Satellite> Debug for Epoch<T> {
+impl<T: Satellite> Debug for Time<T> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         self.to_hifitime().fmt(f)
     }
 }
 
-impl<T: Satellite> Serialize for Epoch<T> {
+impl<T: Satellite> Serialize for Time<T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.to_hifitime().serialize(serializer)
     }
@@ -37,7 +37,7 @@ pub(crate) struct Duration<T: Satellite> {
     _phantom: PhantomData<T>,
 }
 
-impl<T: Satellite> Epoch<T> {
+impl<T: Satellite> Time<T> {
     pub(crate) fn new(time: f64) -> Self {
         Self {
             time: NotNan::new(time).unwrap(),
@@ -63,7 +63,7 @@ impl<T: Satellite> Duration<T> {
     }
 }
 
-impl<T: Satellite> Sub for Epoch<T> {
+impl<T: Satellite> Sub for Time<T> {
     type Output = Duration<T>;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -74,7 +74,7 @@ impl<T: Satellite> Sub for Epoch<T> {
     }
 }
 
-impl<T: Satellite> Sub<Duration<T>> for Epoch<T> {
+impl<T: Satellite> Sub<Duration<T>> for Time<T> {
     type Output = Self;
 
     fn sub(self, rhs: Duration<T>) -> Self::Output {
@@ -85,7 +85,7 @@ impl<T: Satellite> Sub<Duration<T>> for Epoch<T> {
     }
 }
 
-impl<T: Satellite> Add<Duration<T>> for Epoch<T> {
+impl<T: Satellite> Add<Duration<T>> for Time<T> {
     type Output = Self;
 
     fn add(self, rhs: Duration<T>) -> Self::Output {
