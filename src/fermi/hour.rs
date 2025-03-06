@@ -5,6 +5,7 @@ use std::error::Error;
 use std::path::Path;
 use std::sync::LazyLock;
 
+use hifitime::Duration;
 use itertools::Itertools;
 use nav_types::{ECEF, WGS84};
 use regex::Regex;
@@ -21,10 +22,15 @@ use super::{Fermi, Position};
 pub(crate) struct Hour {
     files: Vec<File>,
     position: Position,
+    span: [Time<Fermi>; 2],
 }
 
 impl Hour {
-    pub(crate) fn new(data: &[&str], position: &str) -> Result<Self, fitsio::errors::Error> {
+    pub(crate) fn new(
+        data: &[&str],
+        position: &str,
+        span: [Time<Fermi>; 2],
+    ) -> Result<Self, fitsio::errors::Error> {
         let detectors = (0..14)
             .map(|i| {
                 if i < 12 {
@@ -40,7 +46,11 @@ impl Hour {
             .map(|(filename, detector)| File::new(filename, *detector))
             .collect::<Result<Vec<_>, _>>()?;
         let position = Position::new(position)?;
-        Ok(Self { files, position })
+        Ok(Self {
+            files,
+            position,
+            span,
+        })
     }
 
     pub(crate) fn from_epoch(epoch: &hifitime::Epoch) -> Result<Self, Box<dyn Error>> {
@@ -137,6 +147,10 @@ impl Hour {
         Ok(Self::new(
             &filenames.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
             &position_filename,
+            [
+                Time::<Fermi>::from(*epoch),
+                Time::<Fermi>::from(*epoch + Duration::from_hours(1.0)),
+            ],
         )?)
     }
 
@@ -144,6 +158,7 @@ impl Hour {
         self.files
             .iter()
             .map(|file| file.gti())
+            .chain(std::iter::once(vec![self.span]))
             .reduce(|a, b| {
                 let mut res = Vec::new();
                 let mut a_iter = a.into_iter().peekable();

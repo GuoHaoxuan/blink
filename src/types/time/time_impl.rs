@@ -30,6 +30,18 @@ impl<T: Satellite> Time<T> {
     }
 }
 
+impl<S: Satellite> From<hifitime::Epoch> for Time<S> {
+    fn from(value: hifitime::Epoch) -> Self {
+        Self::new((value - *S::ref_time()).to_seconds())
+    }
+}
+
+impl<S: Satellite> From<NotNan<f64>> for Time<S> {
+    fn from(value: NotNan<f64>) -> Self {
+        Self::new(value.into_inner())
+    }
+}
+
 impl<T: Satellite> Debug for Time<T> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         self.to_hifitime().fmt(f)
@@ -57,10 +69,7 @@ impl<T: Satellite> Sub<Span<T>> for Time<T> {
     type Output = Self;
 
     fn sub(self, rhs: Span<T>) -> Self::Output {
-        Self {
-            time: self.time - rhs.time,
-            _phantom: PhantomData,
-        }
+        Self::from(self.time - rhs.time)
     }
 }
 
@@ -68,9 +77,6 @@ impl<T: Satellite> Add<Span<T>> for Time<T> {
     type Output = Self;
 
     fn add(self, rhs: Span<T>) -> Self::Output {
-        Self {
-            time: self.time + rhs.time,
-            _phantom: PhantomData,
-        }
+        Self::from(self.time + rhs.time)
     }
 }
