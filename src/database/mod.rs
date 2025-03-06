@@ -4,6 +4,7 @@ use std::str::FromStr;
 use hifitime::prelude::*;
 use rusqlite::{params, Connection};
 use serde::Serialize;
+use serde_json;
 
 use crate::types::{Event, Signal};
 
@@ -96,25 +97,20 @@ pub fn fail_task(
     .unwrap();
 }
 
-pub(crate) fn write_signal<E: Event, P: Serialize>(conn: &Connection, signal: &Signal<E, P>) {
+pub(crate) fn write_signal(conn: &Connection, signal: &Signal) {
     conn.execute(
         "
-            INSERT INTO signals (start, stop, fp_year, events, position, lightnings)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6);
+            INSERT INTO signals (start, stop, fp_year, longitude, latitude, altitude, events, lightnings)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);
         ",
         params![
-            signal.start.to_hifitime().to_isoformat(),
-            signal.stop.to_hifitime().to_isoformat(),
+            signal.start.to_isoformat(),
+            signal.stop.to_isoformat(),
             signal.fp_year,
+            signal.position.longitude_degrees(),
+            signal.position.latitude_degrees(),
             serde_json::to_string(&signal.events).unwrap(),
-            signal
-                .position
-                .as_ref()
-                .map(|x| serde_json::to_string(&x).unwrap()),
-            signal
-                .lightnings
-                .as_ref()
-                .map(|x| serde_json::to_string(&x).unwrap())
+            serde_json::to_string(&signal.lightnings).unwrap(),
         ],
     )
     .unwrap();

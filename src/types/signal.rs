@@ -1,15 +1,17 @@
+use hifitime::prelude::*;
+use nav_types::WGS84;
 use serde::Serialize;
 
 use crate::lightning::Lightning;
 
-use super::{Epoch, Event};
+use super::GeneralEvent;
 
 #[derive(Debug, Serialize)]
-pub(crate) struct Signal<E: Event, P: Serialize> {
-    pub(crate) start: Epoch<E::Satellite>,
-    pub(crate) stop: Epoch<E::Satellite>,
+pub(crate) struct Signal {
+    pub(crate) start: Epoch,
+    pub(crate) stop: Epoch,
     pub(crate) fp_year: f64,
-    pub(crate) events: Vec<E>,
-    pub(crate) position: Option<P>,
-    pub(crate) lightnings: Option<Vec<Lightning>>,
+    pub(crate) events: Vec<GeneralEvent>,
+    pub(crate) position: WGS84<f64>,
+    pub(crate) lightnings: Vec<Lightning>,
 }

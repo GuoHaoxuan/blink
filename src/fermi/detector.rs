@@ -6,11 +6,17 @@ pub(crate) enum Detector {
     Bgo(u8),
 }
 
+impl Detector {
+    pub(crate) fn to_string(&self) -> String {
+        match self {
+            Detector::Nai(n) => format!("n{}", n),
+            Detector::Bgo(n) => format!("b{}", n),
+        }
+    }
+}
+
 impl Serialize for Detector {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Detector::Nai(n) => serializer.serialize_str(&("NaI ".to_string() + &n.to_string())),
-            Detector::Bgo(n) => serializer.serialize_str(&("BGO ".to_string() + &n.to_string())),
-        }
+        self.to_string().serialize(serializer)
     }
 }

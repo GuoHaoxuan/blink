@@ -66,7 +66,7 @@ impl Position {
         })
     }
 
-    pub(crate) fn get_row(&self, epoch: Epoch<Fermi>) -> Option<PositionRow> {
+    pub(crate) fn get_row(&self, epoch: Epoch<Fermi>) -> PositionRow {
         let sclk_utc = epoch.time.into_inner();
         let pos = self
             .sclk_utc
@@ -76,7 +76,7 @@ impl Position {
             Ok(idx) => idx,
             Err(idx) => {
                 if idx == 0 || idx == self.sclk_utc.len() {
-                    return None;
+                    panic!("Index out of bounds");
                 }
                 idx - 1
             }
@@ -87,7 +87,7 @@ impl Position {
         let alpha = (sclk_utc - t0) / (t1 - t0);
         let alpha_f32 = alpha as f32;
 
-        Some(PositionRow {
+        PositionRow {
             sclk_utc,
             qsj: [
                 self.qsj_1[idx] * (1.0 - alpha) + self.qsj_1[idx + 1] * alpha,
@@ -117,6 +117,6 @@ impl Position {
                 self.sada_ny[idx] * (1.0 - alpha_f32) + self.sada_ny[idx + 1] * alpha_f32,
             ],
             flags: self.flags[idx],
-        })
+        }
     }
 }

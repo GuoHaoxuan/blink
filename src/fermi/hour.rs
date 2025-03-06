@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use itertools::Itertools;
+use nav_types::{ECEF, WGS84};
 use regex::Regex;
 
 use crate::lightning::Lightning;
@@ -13,10 +14,8 @@ use crate::search::algorithms::{search, SearchConfig};
 use crate::types::{Epoch, Event as _, Interval, Signal, TimeUnits};
 
 use super::detector::Detector;
-use super::event::EventInterval;
-use super::event::EventPha;
+use super::event::Event;
 use super::file::{self, File};
-use super::position::PositionRow;
 use super::{Fermi, Position};
 
 pub(crate) struct Hour {
@@ -167,8 +166,8 @@ impl Hour {
             .unwrap()
     }
 
-    pub(crate) fn search(&self) -> Result<Vec<Signal<EventInterval, PositionRow>>, Box<dyn Error>> {
-        let events: Vec<EventPha> = self
+    pub(crate) fn search(&self) -> Result<Vec<Signal>, Box<dyn Error>> {
+        let events: Vec<Event> = self
             .into_iter()
             .dedup_by_with_count(|a, b| b.time() - a.time() < 0.3e-6.seconds())
             .filter(|(count, _)| *count == 1)
@@ -195,8 +194,7 @@ impl Hour {
             })
             .collect());
 
-        let ebounds_min = &self.files[0].ebounds_e_min;
-        let ebounds_max = &self.files[0].ebounds_e_max;
+        let ebounds = self.files[0].ebounds();
         let signals = intervals?
             .into_iter()
             .map(|(interval, fp_year)| {
@@ -208,34 +206,31 @@ impl Hour {
                 let events = self
                     .into_iter()
                     .filter(|event| event.time() >= start_extended && event.time() <= stop_extended)
-                    .map(|event| event.to_interval(ebounds_min, ebounds_max))
+                    .map(|event| event.to_general(&ebounds))
                     .collect::<Vec<_>>();
                 let position = self.position.get_row(start);
-                let lightnings = match &position {
-                    Some(pos) => {
-                        let lat = pos.sc_lat;
-                        let lon = pos.sc_lon;
-
-                        let time_tolerance = hifitime::Duration::from_microseconds(5.0);
-                        let distance_tolerance = 800_000.0;
-
-                        Some(Lightning::associated_lightning(
-                            (start + (stop - start) / 2.0).to_hifitime(),
-                            lat as f64,
-                            lon as f64,
-                            time_tolerance,
-                            distance_tolerance,
-                        ))
-                    }
-                    None => None,
-                };
+                let ecef = ECEF::new(
+                    position.pos[0] as f64,
+                    position.pos[1] as f64,
+                    position.pos[2] as f64,
+                );
+                let wgs84 = WGS84::from(ecef);
+                let time_tolerance = hifitime::Duration::from_microseconds(5.0);
+                let distance_tolerance = 800_000.0;
+                let lightnings = Lightning::associated_lightning(
+                    (start + (stop - start) / 2.0).to_hifitime(),
+                    wgs84.latitude_degrees(),
+                    wgs84.longitude_degrees(),
+                    time_tolerance,
+                    distance_tolerance,
+                );
 
                 Signal {
-                    start,
-                    stop,
+                    start: start.to_hifitime(),
+                    stop: stop.to_hifitime(),
                     fp_year,
                     events,
-                    position,
+                    position: wgs84,
                     lightnings,
                 }
             })
@@ -246,7 +241,7 @@ impl Hour {
 }
 
 impl<'a> IntoIterator for &'a Hour {
-    type Item = EventPha;
+    type Item = Event;
     type IntoIter = Iter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -267,11 +262,11 @@ impl<'a> IntoIterator for &'a Hour {
 
 pub(crate) struct Iter<'a> {
     file_iters: Vec<file::Iter<'a>>,
-    buffer: BinaryHeap<Reverse<(EventPha, usize)>>,
+    buffer: BinaryHeap<Reverse<(Event, usize)>>,
 }
 
 impl Iterator for Iter<'_> {
-    type Item = EventPha;
+    type Item = Event;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(Reverse((event, index))) = self.buffer.pop() {
