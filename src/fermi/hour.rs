@@ -1,6 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::error::Error;
+use std::ffi::OsStr;
 use std::path::Path;
 
 use hifitime::Duration;
@@ -59,8 +60,8 @@ impl Hour {
             .into_os_string();
         let filenames: Vec<String> = (0..14)
             .map(|i| -> Result<String, Box<dyn Error>> {
-                let pattern = format!(
-                    "glg_tte_{}_{:02}{:02}{:02}_{:02}z_v\\d{{2}}\\.fit\\.gz",
+                let prefix = format!(
+                    "glg_tte_{}_{:02}{:02}{:02}_{:02}z_v",
                     if i < 12 {
                         format!("n{:x}", i)
                     } else {
@@ -71,76 +72,14 @@ impl Hour {
                     d,
                     h,
                 );
-                let re = Regex::new(&pattern)?;
-                let max_file = std::fs::read_dir(&folder)?
-                    .filter_map(|entry| entry.ok())
-                    .map(|entry| entry.path())
-                    .filter(|path| path.is_file())
-                    .filter_map(|path| {
-                        path.file_name()
-                            .and_then(|name| name.to_str().map(String::from))
-                    })
-                    .filter(|name| re.is_match(name))
-                    .max_by(|a, b| {
-                        let extract_version = |name: &str| {
-                            name.split('_')
-                                .last()
-                                .and_then(|s| s.strip_prefix('v'))
-                                .and_then(|s| s.strip_suffix(".fit.gz"))
-                                .and_then(|s| s.parse::<u32>().ok())
-                                .unwrap_or(0)
-                        };
-                        extract_version(a).cmp(&extract_version(b))
-                    })
-                    .ok_or_else(|| format!("No files found matching pattern for detector {}", i))?;
-                Ok(Path::new(&folder)
-                    .join(max_file)
-                    .into_os_string()
-                    .into_string()
-                    .unwrap())
+                get_file(&folder, &prefix)
             })
             .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
-        let position_pattern = format!(
-            "glg_poshist_all_{:02}{:02}{:02}_v\\d{{2}}\\.fit",
-            y % 100,
-            m,
-            d
-        );
-        let position_max_file = std::fs::read_dir(&folder)?
-            .filter_map(|entry| entry.ok())
-            .map(|entry| entry.path())
-            .filter(|path| path.is_file())
-            .filter_map(|path| {
-                path.file_name()
-                    .and_then(|name| name.to_str().map(String::from))
-            })
-            .filter(|name| Regex::new(&position_pattern).unwrap().is_match(name))
-            .max_by(|a, b| {
-                let extract_version = |name: &str| {
-                    name.split('_')
-                        .last()
-                        .and_then(|s| s.strip_prefix('v'))
-                        .and_then(|s| s.strip_suffix(".fit"))
-                        .and_then(|s| s.parse::<u32>().ok())
-                        .unwrap_or(0)
-                };
-                extract_version(a).cmp(&extract_version(b))
-            })
-            .ok_or_else(|| {
-                format!(
-                    "No position file found for {} and dir {}",
-                    position_pattern,
-                    folder.clone().into_string().unwrap()
-                )
-            })?;
-        let position_filename = Path::new(&folder)
-            .join(position_max_file)
-            .into_os_string()
-            .into_string()
-            .unwrap();
+        let position_prefix = format!("glg_poshist_all_{:02}{:02}{:02}_v", y % 100, m, d);
+        let position_file = get_file(&folder, &position_prefix)?;
         Ok(Self::new(
             &filenames.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
-            &position_filename,
+            &position_file,
             [
                 Time::<Fermi>::from(*epoch),
                 Time::<Fermi>::from(*epoch + Duration::from_hours(1.0)),
@@ -287,4 +226,33 @@ impl Iterator for Iter<'_> {
             None
         }
     }
+}
+
+fn get_file(folder: &OsStr, prefix: &str) -> Result<String, Box<dyn Error>> {
+    let name = std::fs::read_dir(folder)?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file())
+        .filter_map(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str().map(String::from))
+        })
+        .filter(|name| name.starts_with(prefix))
+        .max_by(|a, b| {
+            let extract_version = |name: &str| {
+                name.split('_')
+                    .last()
+                    .and_then(|s| s.strip_prefix('v'))
+                    .and_then(|s| s.get(..2))
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(0)
+            };
+            extract_version(a).cmp(&extract_version(b))
+        })
+        .ok_or_else(|| format!("No files found matching pattern for detector {}", prefix))?;
+    Ok(Path::new(&folder)
+        .join(name)
+        .into_os_string()
+        .into_string()
+        .unwrap())
 }
