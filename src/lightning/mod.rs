@@ -1,22 +1,10 @@
-use std::{env, str::FromStr, sync::Mutex};
+use std::str::FromStr;
 
 use hifitime::{efmt, prelude::*};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::Serialize;
 
-use std::sync::LazyLock;
-
-static LIGHTNING_CONNECTION: LazyLock<Mutex<Connection>> = LazyLock::new(|| {
-    Mutex::new(
-        Connection::open_with_flags(
-            env::var("WWLLN_DB_PATH").unwrap_or_else(|_| {
-                String::from("/gecamfs/Exchange/GSDC/missions/AEfiles/WWLLN.db")
-            }),
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .unwrap(),
-    )
-});
+use crate::env::LIGHTNING_CONNECTION;
 
 const SPEED_OF_LIGHT: f64 = 299_792_458.0;
 const R_EARTH: f64 = 6_371_000.0;

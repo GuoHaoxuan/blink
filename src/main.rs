@@ -1,4 +1,5 @@
 mod database;
+mod env;
 mod fermi;
 mod lightning;
 mod search;

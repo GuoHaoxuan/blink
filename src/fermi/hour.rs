@@ -1,15 +1,14 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::env;
 use std::error::Error;
 use std::path::Path;
-use std::sync::LazyLock;
 
 use hifitime::Duration;
 use itertools::Itertools;
 use nav_types::{ECEF, WGS84};
 use regex::Regex;
 
+use crate::env::GBM_DAILY_PATH;
 use crate::lightning::Lightning;
 use crate::search::algorithms::{search, SearchConfig};
 use crate::types::{Event as _, Signal, Time, TimeUnits};
@@ -54,11 +53,6 @@ impl Hour {
     }
 
     pub(crate) fn from_epoch(epoch: &hifitime::Epoch) -> Result<Self, Box<dyn Error>> {
-        static GBM_DAILY_PATH: LazyLock<String> = LazyLock::new(|| {
-            env::var("GBM_DAILY_PATH").unwrap_or_else(|_| {
-                "/gecamfs/Exchange/GSDC/missions/FTP/fermi/data/gbm/daily".to_string()
-            })
-        });
         let (y, m, d, h, ..) = epoch.to_gregorian_utc();
         let folder = Path::new(&*GBM_DAILY_PATH)
             .join(format!("{:04}/{:02}/{:02}/current", y, m, d))
