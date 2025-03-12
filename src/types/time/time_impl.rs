@@ -5,7 +5,7 @@ use std::{
     sync::LazyLock,
 };
 
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, TimeZone, Timelike, Utc};
 use ordered_float::NotNan;
 use serde::Serialize;
 
@@ -15,33 +15,114 @@ use super::span::Span;
 
 static LEAP_SECONDS: LazyLock<[DateTime<Utc>; 27]> = LazyLock::new(|| {
     [
-        Utc.with_ymd_and_hms(1972, 6, 30, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1972, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1973, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1974, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1975, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1976, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1977, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1978, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1979, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1981, 6, 30, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1982, 6, 30, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1983, 6, 30, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1985, 6, 30, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1987, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1989, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1990, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1992, 6, 30, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1993, 6, 30, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1994, 6, 30, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1995, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1997, 6, 30, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(1998, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(2005, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(2008, 12, 31, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(2012, 6, 30, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(2015, 6, 30, 23, 59, 60).unwrap(),
-        Utc.with_ymd_and_hms(2016, 12, 31, 23, 59, 60).unwrap(),
+        Utc.with_ymd_and_hms(1972, 6, 30, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1972, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1973, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1974, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1975, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1976, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1977, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1978, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1979, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1981, 6, 30, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1982, 6, 30, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1983, 6, 30, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1985, 6, 30, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1987, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1989, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1990, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1992, 6, 30, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1993, 6, 30, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1994, 6, 30, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1995, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1997, 6, 30, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(1998, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(2005, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(2008, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(2012, 6, 30, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(2015, 6, 30, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
+        Utc.with_ymd_and_hms(2016, 12, 31, 23, 59, 59)
+            .unwrap()
+            .with_nanosecond(1_000_000_000)
+            .unwrap(),
     ]
 });
 
