@@ -79,7 +79,12 @@ impl Lightning {
         let mut rows = statement
             .query_map(params![time_start_str, time_end_str], |row| {
                 Ok(Lightning {
-                    time: DateTime::<Utc>::from_str(&row.get::<_, String>(0).unwrap()).unwrap(),
+                    time: NaiveDateTime::parse_from_str(
+                        &row.get::<_, String>(0).unwrap(),
+                        "%Y-%m-%d %H:%M:%S%.6f",
+                    )
+                    .unwrap()
+                    .and_utc(),
                     lat: row.get::<_, f64>(1).unwrap(),
                     lon: row.get::<_, f64>(2).unwrap(),
                     resid: row.get::<_, f64>(3).unwrap(),
