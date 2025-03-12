@@ -58,7 +58,11 @@ pub fn finish_task(conn: &Connection, time: &DateTime<Utc>, satellite: &str, det
                 AND satellite = ?2
                 AND detector = ?3;
         ",
-        params![format!("{}", time.to_string()), satellite, detector],
+        params![
+            format!("{}", time.format("%Y-%m-%d %H:%M:%S").to_string()),
+            satellite,
+            detector
+        ],
     )
     .unwrap();
 }
