@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::str::FromStr;
 
 use chrono::prelude::*;
 use rusqlite::{params, Connection};
@@ -40,10 +39,10 @@ pub fn get_task(
     })
     .unwrap()
     .next()
-    .and_then(|x| {
-        DateTime::parse_from_str(&x.unwrap(), "%Y-%m-%d %H:%M:%S")
-            .map(|dt| dt.with_timezone(&Utc))
-            .ok()
+    .map(|x| {
+        NaiveDateTime::parse_from_str(&x.unwrap(), "%Y-%m-%d %H:%M:%S")
+            .unwrap()
+            .and_utc()
     })
 }
 
@@ -85,7 +84,7 @@ pub fn fail_task(
                 AND detector = ?3;
         ",
         params![
-            format!("{}", time.to_string()),
+            format!("{}", time.format("%Y-%m-%d %H:%M:%S").to_string()),
             satellite,
             detector,
             error.to_string()
