@@ -1,12 +1,17 @@
 use std::error::Error;
 use std::str::FromStr;
 
-use hifitime::prelude::*;
+use chrono::prelude::*;
 use rusqlite::{params, Connection};
 
 use crate::types::Signal;
 
-pub fn get_task(conn: &Connection, worker: &str, satellite: &str, detector: &str) -> Option<Epoch> {
+pub fn get_task(
+    conn: &Connection,
+    worker: &str,
+    satellite: &str,
+    detector: &str,
+) -> Option<DateTime<Utc>> {
     conn.prepare(
         "
             UPDATE tasks
@@ -35,10 +40,10 @@ pub fn get_task(conn: &Connection, worker: &str, satellite: &str, detector: &str
     })
     .unwrap()
     .next()
-    .map(|x| Epoch::from_str(&x.unwrap()).unwrap())
+    .map(|x| DateTime::<Utc>::from_str(&x.unwrap()).unwrap())
 }
 
-pub fn finish_task(conn: &Connection, time: &Epoch, satellite: &str, detector: &str) {
+pub fn finish_task(conn: &Connection, time: &DateTime<Utc>, satellite: &str, detector: &str) {
     conn.execute(
         "
             UPDATE tasks
@@ -50,21 +55,14 @@ pub fn finish_task(conn: &Connection, time: &Epoch, satellite: &str, detector: &
                 AND satellite = ?2
                 AND detector = ?3;
         ",
-        params![
-            format!(
-                "{}",
-                Formatter::new(*time, Format::from_str("%Y-%m-%d %H:%M:%S").unwrap())
-            ),
-            satellite,
-            detector
-        ],
+        params![format!("{}", time.to_string()), satellite, detector],
     )
     .unwrap();
 }
 
 pub fn fail_task(
     conn: &Connection,
-    time: &Epoch,
+    time: &DateTime<Utc>,
     satellite: &str,
     detector: &str,
     error: Box<dyn Error>,
@@ -83,10 +81,7 @@ pub fn fail_task(
                 AND detector = ?3;
         ",
         params![
-            format!(
-                "{}",
-                Formatter::new(*time, Format::from_str("%Y-%m-%d %H:%M:%S").unwrap())
-            ),
+            format!("{}", time.to_string()),
             satellite,
             detector,
             error.to_string()
@@ -102,8 +97,8 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal) {
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);
         ",
         params![
-            signal.start.to_isoformat(),
-            signal.stop.to_isoformat(),
+            signal.start.to_string(),
+            signal.stop.to_string(),
             signal.fp_year,
             signal.position.longitude_degrees(),
             signal.position.latitude_degrees(),

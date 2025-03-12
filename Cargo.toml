@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+chrono = { version = "0.4.40", features = ["serde"] }
 fitsio = { version = "0.21.6", features = ["fitsio-src"] }
-hifitime = "4.0.2"
 hostname = "0.4.0"
 itertools = "0.13.0"
 nav-types = { version = "0.5.2", features = ["serde"] }

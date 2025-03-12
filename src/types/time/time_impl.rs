@@ -4,6 +4,7 @@ use std::{
     ops::{Add, Sub},
 };
 
+use chrono::{DateTime, Duration, Utc};
 use ordered_float::NotNan;
 use serde::Serialize;
 
@@ -25,14 +26,23 @@ impl<T: Satellite> Time<T> {
         }
     }
 
-    pub(crate) fn to_hifitime(self) -> hifitime::Epoch {
-        *T::ref_time() + hifitime::Duration::from_seconds(self.time.into_inner())
+    pub(crate) fn to_hifitime(self) -> DateTime<Utc> {
+        let seconds = self.time.into_inner();
+        let whole_seconds = seconds.trunc() as i64;
+        let nanoseconds = ((seconds.fract() * 1_000_000_000.0) as i64)
+            .max(0)
+            .min(999_999_999);
+
+        *T::ref_time() + Duration::seconds(whole_seconds) + Duration::nanoseconds(nanoseconds)
     }
 }
 
-impl<S: Satellite> From<hifitime::Epoch> for Time<S> {
-    fn from(value: hifitime::Epoch) -> Self {
-        Self::new((value - *S::ref_time()).to_seconds())
+impl<S: Satellite> From<DateTime<Utc>> for Time<S> {
+    fn from(value: DateTime<Utc>) -> Self {
+        let duration = value - *S::ref_time();
+        let seconds = duration.num_seconds() as f64;
+        let nanoseconds = duration.subsec_nanos() as f64 / 1_000_000_000.0;
+        Self::new(seconds + nanoseconds)
     }
 }
 

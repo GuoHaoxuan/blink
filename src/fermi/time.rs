@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-use hifitime::prelude::*;
+use chrono::prelude::*;
 
 use crate::types::Satellite;
 
@@ -11,8 +11,9 @@ use super::Fermi;
 impl Satellite for Fermi {
     type Event = FermiEvent;
 
-    fn ref_time() -> &'static Epoch {
-        static REF_TIME: OnceLock<Epoch> = OnceLock::new();
-        REF_TIME.get_or_init(|| Epoch::from_str("2001-01-01T00:00:00.000000000 UTC").unwrap())
+    fn ref_time() -> &'static DateTime<Utc> {
+        static REF_TIME: OnceLock<DateTime<Utc>> = OnceLock::new();
+        REF_TIME
+            .get_or_init(|| DateTime::<Utc>::from_str("2001-01-01T00:00:00.000000000 UTC").unwrap())
     }
 }

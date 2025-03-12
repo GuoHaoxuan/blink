@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use hifitime::{efmt, prelude::*};
+use chrono::{prelude::*, Duration};
 use rusqlite::params;
 use serde::Serialize;
 
@@ -29,12 +29,12 @@ fn time_of_arrival(distance: f64, h1: f64, h2: f64) -> Duration {
     let alpha = distance / R_EARTH;
     let d2 = (R_EARTH + h1).powi(2) + (R_EARTH + h2).powi(2)
         - 2.0 * (R_EARTH + h1) * (R_EARTH + h2) * alpha.cos();
-    Duration::from_seconds(d2.sqrt() / SPEED_OF_LIGHT)
+    Duration::nanoseconds((d2.sqrt() / SPEED_OF_LIGHT * 1_000_000_000.0).round() as i64)
 }
 
 #[derive(Debug, Serialize)]
 pub(crate) struct Lightning {
-    pub(crate) time: Epoch,
+    pub(crate) time: DateTime<Utc>,
     pub(crate) lat: f64,
     pub(crate) lon: f64,
     pub(crate) resid: f64,
@@ -46,17 +46,16 @@ pub(crate) struct Lightning {
 
 impl Lightning {
     pub(crate) fn associated_lightning(
-        time: Epoch,
+        time: DateTime<Utc>,
         lat: f64,
         lon: f64,
         time_tolerance: Duration,
         distance_tolerance: f64,
     ) -> Vec<Self> {
-        let fmt = efmt::Format::from_str("%Y-%m-%d %H:%M:%S.%f").unwrap();
-        let time_start = time - time_tolerance - 50.0.milliseconds();
-        let time_start_str = format!("{}", efmt::Formatter::new(time_start, fmt));
-        let time_end = time + time_tolerance + 50.0.milliseconds();
-        let time_end_str = format!("{}", efmt::Formatter::new(time_end, fmt));
+        let time_start = time - time_tolerance - Duration::milliseconds(50);
+        let time_start_str = time_start.format("%Y-%m-%d %H:%M:%S%.6f").to_string();
+        let time_end = time + time_tolerance + Duration::milliseconds(50);
+        let time_end_str = time_end.format("%Y-%m-%d %H:%M:%S%.6f").to_string();
         let connection = LIGHTNING_CONNECTION.lock().unwrap();
         let mut statement = connection
             .prepare(
@@ -80,7 +79,7 @@ impl Lightning {
         let mut rows = statement
             .query_map(params![time_start_str, time_end_str], |row| {
                 Ok(Lightning {
-                    time: Epoch::from_str(&row.get::<_, String>(0).unwrap()).unwrap(),
+                    time: DateTime::<Utc>::from_str(&row.get::<_, String>(0).unwrap()).unwrap(),
                     lat: row.get::<_, f64>(1).unwrap(),
                     lon: row.get::<_, f64>(2).unwrap(),
                     resid: row.get::<_, f64>(3).unwrap(),

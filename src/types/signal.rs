@@ -1,4 +1,4 @@
-use hifitime::prelude::*;
+use chrono::prelude::*;
 use nav_types::WGS84;
 use serde::Serialize;
 
@@ -8,8 +8,8 @@ use super::GenericEvent;
 
 #[derive(Debug, Serialize)]
 pub(crate) struct Signal {
-    pub(crate) start: Epoch,
-    pub(crate) stop: Epoch,
+    pub(crate) start: DateTime<Utc>,
+    pub(crate) stop: DateTime<Utc>,
     pub(crate) fp_year: f64,
     pub(crate) events: Vec<GenericEvent>,
     pub(crate) position: WGS84<f64>,

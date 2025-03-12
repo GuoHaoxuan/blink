@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use super::{Ebounds, Group, Satellite, Time};
@@ -15,7 +16,7 @@ pub(crate) trait Event: Serialize + Eq + Ord + Copy + Group {
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct GenericEvent {
-    pub(crate) time: hifitime::Epoch,
+    pub(crate) time: DateTime<Utc>,
     pub(crate) energy: [f64; 2],
     pub(crate) detector: String,
 }

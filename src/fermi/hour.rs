@@ -4,10 +4,9 @@ use std::error::Error;
 use std::ffi::OsStr;
 use std::path::Path;
 
-use hifitime::Duration;
+use chrono::{prelude::*, Duration};
 use itertools::Itertools;
 use nav_types::{ECEF, WGS84};
-use regex::Regex;
 
 use crate::env::GBM_DAILY_PATH;
 use crate::lightning::Lightning;
@@ -53,8 +52,11 @@ impl Hour {
         })
     }
 
-    pub(crate) fn from_epoch(epoch: &hifitime::Epoch) -> Result<Self, Box<dyn Error>> {
-        let (y, m, d, h, ..) = epoch.to_gregorian_utc();
+    pub(crate) fn from_epoch(epoch: &DateTime<Utc>) -> Result<Self, Box<dyn Error>> {
+        let y = epoch.year();
+        let m = epoch.month();
+        let d = epoch.day();
+        let h = epoch.hour();
         let folder = Path::new(&*GBM_DAILY_PATH)
             .join(format!("{:04}/{:02}/{:02}/current", y, m, d))
             .into_os_string();
@@ -82,7 +84,7 @@ impl Hour {
             &position_file,
             [
                 Time::<Fermi>::from(*epoch),
-                Time::<Fermi>::from(*epoch + Duration::from_hours(1.0)),
+                Time::<Fermi>::from(*epoch + Duration::hours(1)),
             ],
         )?)
     }
@@ -163,7 +165,7 @@ impl Hour {
                     position.pos[2] as f64,
                 );
                 let wgs84 = WGS84::from(ecef);
-                let time_tolerance = hifitime::Duration::from_microseconds(5.0);
+                let time_tolerance = Duration::microseconds(5);
                 let distance_tolerance = 800_000.0;
                 let lightnings = Lightning::associated_lightning(
                     (start + (stop - start) / 2.0).to_hifitime(),
