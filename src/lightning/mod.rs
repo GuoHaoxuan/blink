@@ -55,6 +55,7 @@ impl Lightning {
         let time_end = time + time_tolerance + Duration::milliseconds(50);
         let time_end_str = time_end.format("%Y-%m-%d %H:%M:%S%.6f").to_string();
         let connection = LIGHTNING_CONNECTION.lock().unwrap();
+        println!("{} {}", time_start_str, time_end_str);
         let mut statement = connection
             .prepare(
                 "
