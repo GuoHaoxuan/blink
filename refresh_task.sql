@@ -20,7 +20,7 @@ WITH RECURSIVE
         FROM
             hours
         WHERE
-            hour < DATETIME ('2016-01-05 06:00:00')
+            hour < DATETIME ('2016-12-31 23:00:00')
     )
 SELECT
     DATETIME ('now') AS created_at,
