@@ -40,7 +40,11 @@ pub fn get_task(
     })
     .unwrap()
     .next()
-    .map(|x| DateTime::<Utc>::from_str(&x.unwrap()).unwrap())
+    .and_then(|x| {
+        DateTime::parse_from_str(&x.unwrap(), "%Y-%m-%d %H:%M:%S")
+            .map(|dt| dt.with_timezone(&Utc))
+            .ok()
+    })
 }
 
 pub fn finish_task(conn: &Connection, time: &DateTime<Utc>, satellite: &str, detector: &str) {
