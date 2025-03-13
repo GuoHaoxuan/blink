@@ -50,9 +50,9 @@ impl Lightning {
         time_tolerance: Duration,
         distance_tolerance: f64,
     ) -> Vec<Self> {
-        let time_start = time - time_tolerance - Duration::seconds(5);
+        let time_start = time - time_tolerance - Duration::seconds(1);
         let time_start_str = time_start.format("%Y-%m-%d %H:%M:%S%.6f").to_string();
-        let time_end = time + time_tolerance + Duration::seconds(5);
+        let time_end = time + time_tolerance + Duration::seconds(1);
         let time_end_str = time_end.format("%Y-%m-%d %H:%M:%S%.6f").to_string();
         let connection = LIGHTNING_CONNECTION.lock().unwrap();
         let mut statement = connection
@@ -101,10 +101,6 @@ impl Lightning {
             let time_of_arrival_value = time_of_arrival(dist, 550_000.0, 15_000.0);
             let fixed_time = time - time_of_arrival_value;
             let time_delta = lightning.time - fixed_time;
-            // println!(
-            //     "Time: {} | Fixed Time: {} | Time Delta: {} | Distance: {}",
-            //     time, fixed_time, time_delta, dist
-            // );
             time_delta.abs() <= time_tolerance && dist <= distance_tolerance
         });
 

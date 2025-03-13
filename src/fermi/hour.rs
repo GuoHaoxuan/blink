@@ -158,7 +158,7 @@ impl Hour {
                     .map(|event| event.to_general(&ebounds))
                     .collect::<Vec<_>>();
                 let position = self.position.get_row(start);
-                let time_tolerance = Duration::microseconds(5);
+                let time_tolerance = Duration::milliseconds(5);
                 let distance_tolerance = 800_000.0;
                 let lightnings = Lightning::associated_lightning(
                     (start + (stop - start) / 2.0).to_hifitime(),

@@ -13,7 +13,7 @@ OR IGNORE INTO tasks (
 WITH RECURSIVE
     hours AS (
         SELECT
-            DATETIME ('2016-01-05 05:00:00') AS hour
+            DATETIME ('2016-01-01 00:00:00') AS hour
         UNION ALL
         SELECT
             DATETIME (hour, '+1 hour')
