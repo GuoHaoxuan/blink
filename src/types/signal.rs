@@ -13,5 +13,6 @@ pub(crate) struct Signal {
     pub(crate) fp_year: f64,
     pub(crate) events: Vec<GenericEvent>,
     pub(crate) position: WGS84<f64>,
+    pub(crate) position_debug: String,
     pub(crate) lightnings: Vec<Lightning>,
 }

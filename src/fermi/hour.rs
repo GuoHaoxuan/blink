@@ -181,6 +181,9 @@ impl Hour {
                     fp_year,
                     events,
                     position: wgs84,
+                    position_debug: serde_json::to_value(&position)
+                        .unwrap_or_default()
+                        .to_string(),
                     lightnings,
                 }
             })
