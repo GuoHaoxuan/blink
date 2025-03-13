@@ -20,7 +20,7 @@ CREATE TABLE
         longitude REAL NOT NULL, -- 经度
         latitude REAL NOT NULL, -- 纬度
         altitude REAL NOT NULL, -- 高度
-        position TEXT NOT NULL, -- 位置
+        position_debug TEXT NOT NULL, -- 位置
         events TEXT NOT NULL, -- 事件
         lightnings TEXT NOT NULL -- 闪电
     );

@@ -100,7 +100,7 @@ pub fn fail_task(
 pub(crate) fn write_signal(conn: &Connection, signal: &Signal) {
     conn.execute(
         "
-            INSERT INTO signals (start, stop, fp_year, longitude, latitude, altitude, position, events, lightnings)
+            INSERT INTO signals (start, stop, fp_year, longitude, latitude, altitude, position_debug, events, lightnings)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);
         ",
         params![
