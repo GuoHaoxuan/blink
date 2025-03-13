@@ -8,7 +8,6 @@ chrono = { version = "0.4.40", features = ["serde"] }
 fitsio = { version = "0.21.6", features = ["fitsio-src"] }
 hostname = "0.4.0"
 itertools = "0.13.0"
-nav-types = { version = "0.5.2", features = ["serde"] }
 ordered-float = { version = "5.0.0", features = ["serde"] }
 rand = "0.8.5"
 regex = "1.11.1"

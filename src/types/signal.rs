@@ -1,5 +1,4 @@
 use chrono::prelude::*;
-use nav_types::WGS84;
 use serde::Serialize;
 
 use crate::lightning::Lightning;
@@ -12,7 +11,9 @@ pub(crate) struct Signal {
     pub(crate) stop: DateTime<Utc>,
     pub(crate) fp_year: f64,
     pub(crate) events: Vec<GenericEvent>,
-    pub(crate) position: WGS84<f64>,
+    pub(crate) longitude: f64,
+    pub(crate) latitude: f64,
+    pub(crate) altitude: f64,
     pub(crate) position_debug: String,
     pub(crate) lightnings: Vec<Lightning>,
 }

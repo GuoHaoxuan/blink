@@ -6,7 +6,6 @@ use std::path::Path;
 
 use chrono::{prelude::*, Duration};
 use itertools::Itertools;
-use nav_types::{ECEF, WGS84};
 
 use crate::env::GBM_DAILY_PATH;
 use crate::lightning::Lightning;
@@ -159,18 +158,12 @@ impl Hour {
                     .map(|event| event.to_general(&ebounds))
                     .collect::<Vec<_>>();
                 let position = self.position.get_row(start);
-                let ecef = ECEF::new(
-                    position.pos[0] as f64,
-                    position.pos[1] as f64,
-                    position.pos[2] as f64,
-                );
-                let wgs84 = WGS84::from(ecef);
                 let time_tolerance = Duration::microseconds(5);
                 let distance_tolerance = 800_000.0;
                 let lightnings = Lightning::associated_lightning(
                     (start + (stop - start) / 2.0).to_hifitime(),
-                    wgs84.latitude_degrees(),
-                    wgs84.longitude_degrees(),
+                    position.sc_lat as f64,
+                    position.sc_lon as f64,
                     time_tolerance,
                     distance_tolerance,
                 );
@@ -180,7 +173,9 @@ impl Hour {
                     stop: stop.to_hifitime(),
                     fp_year,
                     events,
-                    position: wgs84,
+                    longitude: position.sc_lon as f64,
+                    latitude: position.sc_lat as f64,
+                    altitude: altitude(&position.pos) as f64,
                     position_debug: serde_json::to_value(&position)
                         .unwrap_or_default()
                         .to_string(),
@@ -260,4 +255,31 @@ fn get_file(folder: &OsStr, prefix: &str) -> Result<String, Box<dyn Error>> {
         .into_os_string()
         .into_string()
         .unwrap())
+}
+
+fn altitude(coord: &[f32]) -> f32 {
+    // Parameters of the World Geodetic System 1984
+    // semi-major axis
+    let wgs84_a = 6378137.0; // meters
+                             // reciprocal of flattening
+    let wgs84_1overf = 298.257223563;
+
+    let rho = (coord[0].powi(2) + coord[1].powi(2)).sqrt();
+    let f: f32 = 1.0 / wgs84_1overf;
+    let e_sq = 2.0 * f - f.powi(2);
+
+    // should completely converge in 3 iterations
+    let n_iter = 3;
+    let mut kappa = vec![0.0; n_iter + 1];
+    kappa[0] = 1.0 / (1.0 - e_sq);
+
+    for i in 1..=n_iter {
+        let c = (rho.powi(2) + (1.0 - e_sq) * coord[2].powi(2) * kappa[i - 1].powi(2)).powf(1.5)
+            / (wgs84_a * e_sq);
+        kappa[i] = (c + (1.0 - e_sq) * coord[2].powi(2) * kappa[i - 1].powi(3)) / (c - rho.powi(2));
+    }
+
+    (1.0 / kappa[n_iter] - 1.0 / kappa[0])
+        * (rho.powi(2) + coord[2].powi(2) * kappa[n_iter].powi(2)).sqrt()
+        / e_sq
 }
