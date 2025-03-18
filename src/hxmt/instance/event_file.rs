@@ -1,0 +1,86 @@
+use crate::hxmt::detector::HxmtDetectorType;
+use crate::hxmt::event::HxmtEvent;
+use crate::types::Time;
+
+pub(crate) struct EventFile {
+    // HDU 1: Events
+    time: Vec<f64>,
+    det_id: Vec<u8>,
+    channel: Vec<u8>,
+    // pulse_width: Vec<u8>,
+    acd: Vec<[bool; 18]>,
+    // event_type: Vec<u8>,
+    // flag: Vec<u8>,
+}
+
+impl EventFile {
+    pub(super) fn new(filename: &str) -> Result<Self, fitsio::errors::Error> {
+        let mut fptr = fitsio::FitsFile::open(filename)?;
+
+        // HDU 1: Events
+        let events = fptr.hdu("Events")?;
+        let time = events.read_col::<f64>(&mut fptr, "TIME")?;
+        let det_id = events.read_col::<u8>(&mut fptr, "DET_ID")?;
+        let channel = events.read_col::<u8>(&mut fptr, "CHANNEL")?;
+        // let pulse_width = events.read_col::<u8>(&mut fptr, "PULSE_WIDTH")?;
+        let acd_raw = events.read_col::<bool>(&mut fptr, "ACD")?;
+        let mut acd = Vec::new();
+        for chunk in acd_raw.chunks(18) {
+            let mut array = [false; 18];
+            for (i, &value) in chunk.iter().enumerate().take(18) {
+                array[i] = value;
+            }
+            acd.push(array);
+        }
+        // let event_type = events.read_col::<u8>(&mut fptr, "EVENT_TYPE")?;
+        // let flag = events.read_col::<u8>(&mut fptr, "FLAG")?;
+
+        Ok(Self {
+            time,
+            det_id,
+            channel,
+            // pulse_width,
+            acd,
+            // event_type,
+            // flag,
+        })
+    }
+}
+
+impl<'a> IntoIterator for &'a EventFile {
+    type Item = HxmtEvent;
+    type IntoIter = Iter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Iter {
+            event_file: self,
+            index: 0,
+        }
+    }
+}
+
+pub(crate) struct Iter<'a> {
+    event_file: &'a EventFile,
+    index: usize,
+}
+
+impl Iterator for Iter<'_> {
+    type Item = HxmtEvent;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.event_file.time.len() {
+            let event = HxmtEvent {
+                time: Time::new(self.event_file.time[self.index]),
+                energy: self.event_file.channel[self.index] as u16,
+                detector: HxmtDetectorType {
+                    id: self.event_file.det_id[self.index],
+                    acd: self.event_file.acd[self.index],
+                },
+            };
+            self.index += 1;
+            Some(event)
+        } else {
+            None
+        }
+    }
+}

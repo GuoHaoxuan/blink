@@ -5,7 +5,9 @@ use std::ffi::OsStr;
 use std::path::Path;
 
 use chrono::{prelude::*, Duration};
+use file::File;
 use itertools::Itertools;
+use position::Position;
 
 use crate::env::GBM_DAILY_PATH;
 use crate::lightning::Lightning;
@@ -14,16 +16,18 @@ use crate::types::{Event as _, Signal, Time, TimeUnits};
 
 use super::detector::FermiDetectorType;
 use super::event::FermiEvent;
-use super::file::{self, File};
-use super::{Fermi, Position};
+use super::Fermi;
 
-pub(crate) struct Hour {
+mod file;
+pub(crate) mod position;
+
+pub(crate) struct Instance {
     files: Vec<File>,
     position: Position,
     span: [Time<Fermi>; 2],
 }
 
-impl Hour {
+impl Instance {
     pub(crate) fn new(
         data: &[&str],
         position: &str,
@@ -188,7 +192,7 @@ impl Hour {
     }
 }
 
-impl<'a> IntoIterator for &'a Hour {
+impl<'a> IntoIterator for &'a Instance {
     type Item = FermiEvent;
     type IntoIter = Iter<'a>;
 

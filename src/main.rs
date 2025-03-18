@@ -1,6 +1,7 @@
 mod database;
 mod env;
 mod fermi;
+mod hxmt;
 mod lightning;
 mod search;
 mod types;
@@ -8,7 +9,7 @@ mod types;
 use rusqlite::Connection;
 
 use database::{fail_task, finish_task, get_task, write_signal};
-use fermi::Hour;
+use fermi::Instance;
 
 fn consume() {
     let hostname = hostname::get().unwrap().into_string().unwrap();
@@ -18,7 +19,7 @@ fn consume() {
     conn.busy_timeout(std::time::Duration::from_secs(3600))
         .unwrap();
     while let Some(epoch) = get_task(&conn, &worker, "Fermi", "GBM") {
-        let hour = Hour::from_epoch(&epoch);
+        let hour = Instance::from_epoch(&epoch);
         if let Err(e) = hour {
             fail_task(&conn, &epoch, "Fermi", "GBM", e);
             continue;
