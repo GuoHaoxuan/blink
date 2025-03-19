@@ -22,3 +22,7 @@ pub(crate) static LIGHTNING_CONNECTION: LazyLock<Mutex<Connection>> = LazyLock::
         conn
     })
 });
+
+pub(crate) static HXMT_1K_DIR: LazyLock<String> = LazyLock::new(|| {
+    env::var("HXMT_1K_DIR").unwrap_or_else(|_| "/hxmt/work/HXMT-DATA/1K".to_string())
+});
