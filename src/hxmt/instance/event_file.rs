@@ -24,17 +24,15 @@ impl EventFile {
         let time = events.read_col::<f64>(&mut fptr, "Time")?;
         let det_id = events.read_col::<u8>(&mut fptr, "Det_ID")?;
         let channel = events.read_col::<u8>(&mut fptr, "Channel")?;
-        println!("Channel Length: {}", channel.len());
         // let pulse_width = events.read_col::<u8>(&mut fptr, "PULSE_WIDTH")?;
 
         let acd_raw = events.read_col::<i16>(&mut fptr, "ACD")?;
-        println!("ACD Length: {}", acd_raw.len());
         let mut acd = Vec::with_capacity(acd_raw.len());
         for &value in &acd_raw {
             let mut array = [false; 18];
-            for i in 0..18 {
-                array[i] = ((value >> i) & 1) == 1;
-            }
+            array.iter_mut().enumerate().for_each(|(i, bit)| {
+                *bit = ((value >> i) & 1) == 1;
+            });
             acd.push(array);
         }
 
