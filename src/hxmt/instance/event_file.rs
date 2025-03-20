@@ -26,7 +26,7 @@ impl EventFile {
         let channel = events.read_col::<u8>(&mut fptr, "Channel")?;
         // let pulse_width = events.read_col::<u8>(&mut fptr, "PULSE_WIDTH")?;
 
-        let acd_raw = events.read_col::<i16>(&mut fptr, "ACD")?;
+        let acd_raw = events.read_col::<u32>(&mut fptr, "ACD")?;
         let mut acd = Vec::with_capacity(acd_raw.len());
         for &value in &acd_raw {
             let mut array = [false; 18];
