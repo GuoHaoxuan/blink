@@ -19,9 +19,9 @@ impl EventFile {
 
         // HDU 1: Events
         let events = fptr.hdu("Events")?;
-        let time = events.read_col::<f64>(&mut fptr, "TIME")?;
-        let det_id = events.read_col::<u8>(&mut fptr, "DET_ID")?;
-        let channel = events.read_col::<u8>(&mut fptr, "CHANNEL")?;
+        let time = events.read_col::<f64>(&mut fptr, "Time")?;
+        let det_id = events.read_col::<u8>(&mut fptr, "Det_ID")?;
+        let channel = events.read_col::<u8>(&mut fptr, "Channel")?;
         // let pulse_width = events.read_col::<u8>(&mut fptr, "PULSE_WIDTH")?;
         let acd_raw = events.read_col::<bool>(&mut fptr, "ACD")?;
         let mut acd = Vec::new();
