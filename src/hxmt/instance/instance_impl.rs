@@ -28,7 +28,7 @@ impl Instance {
             num = num
         );
         let prefix = format!(
-            "HXMT_{:04}{:02}{:02}T{:02}_HE_Evt_FFFFFF_V",
+            "HXMT_{:04}{:02}{:02}T{:02}_HE-Evt_FFFFFF_V",
             epoch.year(),
             epoch.month(),
             epoch.day(),
