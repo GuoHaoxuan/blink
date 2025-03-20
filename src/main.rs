@@ -41,9 +41,9 @@ use hxmt::Instance;
 // }
 
 fn local_test() {
-    let epoch = Utc.with_ymd_and_hms(2022, 1, 1, 0, 0, 0);
+    let epoch = Utc.with_ymd_and_hms(2022, 1, 1, 0, 0, 0).unwrap();
     println!("Epoch: {:?}", epoch);
-    let instance = Instance::from_epoch(&epoch.unwrap()).unwrap();
+    let instance = Instance::from_epoch(&epoch).unwrap();
 }
 
 fn main() {
