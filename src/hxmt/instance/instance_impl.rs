@@ -3,9 +3,12 @@ use std::path::Path;
 use anyhow::{anyhow, Result};
 use chrono::{prelude::*, TimeDelta};
 
-use crate::{hxmt::Hxmt, types::Time};
+use crate::{
+    hxmt::{event::HxmtEvent, Hxmt},
+    types::Time,
+};
 
-use super::event_file::EventFile;
+use super::event_file::{EventFile, Iter};
 
 pub(crate) struct Instance {
     event_file: EventFile,
@@ -71,4 +74,13 @@ fn get_file(folder: &str, prefix: &str) -> Result<String> {
         .into_os_string()
         .into_string()
         .unwrap())
+}
+
+impl<'a> IntoIterator for &'a Instance {
+    type Item = HxmtEvent;
+    type IntoIter = Iter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.event_file.into_iter()
+    }
 }
