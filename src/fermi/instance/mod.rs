@@ -12,7 +12,7 @@ use position::Position;
 use crate::env::GBM_DAILY_PATH;
 use crate::lightning::Lightning;
 use crate::search::algorithms::{search, SearchConfig};
-use crate::types::{Event as _, Signal, Time, TimeUnits};
+use crate::types::{Event as _, Signal, Span, Time, TimeUnits};
 
 use super::detector::FermiDetectorType;
 use super::event::FermiEvent;
@@ -122,7 +122,7 @@ impl Instance {
     pub(crate) fn search(&self) -> Result<Vec<Signal>, Box<dyn Error>> {
         let events: Vec<FermiEvent> = self
             .into_iter()
-            .dedup_by_with_count(|a, b| b.time() - a.time() < 0.3e-6.seconds())
+            .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
             .filter(|(count, _)| *count == 1)
             .map(|(_, event)| event)
             .filter(|event| match event.detector() {
@@ -153,7 +153,7 @@ impl Instance {
             .map(|(interval, fp_year)| {
                 let start = interval[0];
                 let stop = interval[1];
-                let extend = 1.0.milliseconds();
+                let extend = Span::milliseconds(1.0);
                 let start_extended = start - extend;
                 let stop_extended = stop + extend;
                 let events = self

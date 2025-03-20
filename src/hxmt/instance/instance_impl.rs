@@ -5,7 +5,8 @@ use chrono::{prelude::*, TimeDelta};
 
 use crate::{
     hxmt::{event::HxmtEvent, Hxmt},
-    types::Time,
+    search::lightcurve::light_curve,
+    types::{Event, Signal, Span, Time},
 };
 
 use super::event_file::{EventFile, Iter};
@@ -46,6 +47,57 @@ impl Instance {
                 Time::<Hxmt>::from(*epoch + TimeDelta::hours(1)),
             ],
         })
+    }
+
+    pub(crate) fn search(&self) -> Result<Vec<Signal>> {
+        let events = self
+            .into_iter()
+            .filter(|event| event.energy() >= 38)
+            .map(|event| event.time())
+            .collect::<Vec<_>>();
+        let fp_year = 20.0;
+        let min_count = 8;
+        let mut bin_size = Span::seconds(10e-6);
+        let mut results = Vec::new();
+
+        while bin_size < Span::seconds(1e-3) {
+            results.extend((0..4).flat_map(|shift| {
+                let shift = bin_size * shift as f64 / 4.0;
+                let bins = ((self.span[1] - self.span[0]) / bin_size).ceil();
+                let time_estimated_light_curve = bins / 500_000.0;
+                let time_length = events.len() as f64;
+                let time_estimated_direct = time_length / 50_000.0;
+
+                if time_estimated_light_curve < time_estimated_direct {
+                    let lc = light_curve(&events, shift, self.span[1] - self.span[0], bin_size);
+                    let prefix_sum = Hxmt::prefix_sum(&lc);
+                    Hxmt::search_light_curve(&prefix_sum, shift, bin_size, 100, fp_year, min_count)
+                } else {
+                    Hxmt::search_raw(
+                        &events,
+                        shift,
+                        self.span[1] - self.span[0],
+                        bin_size,
+                        100,
+                        fp_year,
+                        min_count,
+                    )
+                }
+            }));
+            bin_size *= 2.0;
+        }
+        results.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap());
+        results
+            .into_iter()
+            .coalesce(|prev, next| {
+                if prev.mergeable(&next, 0) {
+                    Ok(prev.merge(&next))
+                } else {
+                    Err((prev, next))
+                }
+            })
+            .map(|trigger| record::Record::new(&trigger, Epoch::from_str(&date_obs).unwrap()))
+            .collect()
     }
 }
 

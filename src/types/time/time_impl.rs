@@ -133,13 +133,6 @@ pub(crate) struct Time<T: Satellite> {
 }
 
 impl<T: Satellite> Time<T> {
-    pub(crate) fn new(time: f64) -> Self {
-        Self {
-            time: NotNan::new(time).unwrap(),
-            _phantom: PhantomData,
-        }
-    }
-
     pub(crate) fn to_hifitime(self) -> DateTime<Utc> {
         let seconds = self.time.into_inner();
         let whole_seconds = seconds.trunc() as i64;
@@ -153,6 +146,13 @@ impl<T: Satellite> Time<T> {
             }
         }
         time
+    }
+
+    pub(crate) fn seconds(seconds: f64) -> Self {
+        Self {
+            time: NotNan::new(seconds).unwrap(),
+            _phantom: PhantomData,
+        }
     }
 }
 
@@ -168,13 +168,7 @@ impl<S: Satellite> From<DateTime<Utc>> for Time<S> {
                 time += 1.0;
             }
         }
-        Self::new(time)
-    }
-}
-
-impl<S: Satellite> From<NotNan<f64>> for Time<S> {
-    fn from(value: NotNan<f64>) -> Self {
-        Self::new(value.into_inner())
+        Self::seconds(time)
     }
 }
 
@@ -205,7 +199,7 @@ impl<T: Satellite> Sub<Span<T>> for Time<T> {
     type Output = Self;
 
     fn sub(self, rhs: Span<T>) -> Self::Output {
-        Self::from(self.time - rhs.time)
+        Self::seconds(self.time.into_inner() - rhs.time.into_inner())
     }
 }
 
@@ -213,6 +207,6 @@ impl<T: Satellite> Add<Span<T>> for Time<T> {
     type Output = Self;
 
     fn add(self, rhs: Span<T>) -> Self::Output {
-        Self::from(self.time + rhs.time)
+        Self::seconds(self.time.into_inner() + rhs.time.into_inner())
     }
 }

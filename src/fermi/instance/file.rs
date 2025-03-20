@@ -61,7 +61,7 @@ impl File {
 
     pub(super) fn gti(&self) -> Vec<[Time<Fermi>; 2]> {
         zip(&self.gti_start, &self.gti_stop)
-            .map(|(start, stop)| [Time::new(*start), Time::new(*stop)])
+            .map(|(start, stop)| [Time::seconds(*start), Time::seconds(*stop)])
             .collect()
     }
 
@@ -97,7 +97,7 @@ impl Iterator for Iter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.file.events_time.len() {
             let event = FermiEvent {
-                time: Time::new(self.file.events_time[self.index]),
+                time: Time::seconds(self.file.events_time[self.index]),
                 energy: self.file.events_pha[self.index],
                 detector: self.file.detector,
             };

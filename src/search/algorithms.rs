@@ -11,8 +11,8 @@ pub struct SearchConfig<T: Satellite> {
 impl<T: Satellite> Default for SearchConfig<T> {
     fn default() -> Self {
         Self {
-            max_duration: 1.0.milliseconds(),
-            neighbor: 1.0.seconds(),
+            max_duration: Span::milliseconds(1.0),
+            neighbor: Span::seconds(1.0),
             fp_year: 20.0,
         }
     }

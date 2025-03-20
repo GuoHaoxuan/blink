@@ -1,6 +1,6 @@
 use std::{
     marker::PhantomData,
-    ops::{Div, Sub},
+    ops::{Div, Mul, Sub},
 };
 
 use ordered_float::NotNan;
@@ -14,9 +14,16 @@ pub(crate) struct Span<T: Satellite> {
 }
 
 impl<T: Satellite> Span<T> {
-    pub(crate) fn new(time: f64) -> Self {
+    pub(crate) fn seconds(seconds: f64) -> Self {
         Self {
-            time: NotNan::new(time).unwrap(),
+            time: NotNan::new(seconds).unwrap(),
+            _phantom: PhantomData,
+        }
+    }
+
+    pub(crate) fn milliseconds(milliseconds: f64) -> Self {
+        Self {
+            time: NotNan::new(milliseconds / 1000.0).unwrap(),
             _phantom: PhantomData,
         }
     }
@@ -37,23 +44,31 @@ impl<T: Satellite> Div<f64> for Span<T> {
     }
 }
 
-impl<T: Satellite> Div<Span<T>> for Span<T> {
-    type Output = Self;
+impl<T: Satellite> Div for Span<T> {
+    type Output = f64;
 
     fn div(self, rhs: Self) -> Self::Output {
-        Self {
-            time: NotNan::new((self.time).into_inner() / (rhs.time).into_inner()).unwrap(),
-            _phantom: PhantomData,
-        }
+        (self.time).into_inner() / (rhs.time).into_inner()
     }
 }
 
-impl<T: Satellite> Sub<Span<T>> for Span<T> {
+impl<T: Satellite> Sub for Span<T> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
             time: self.time - rhs.time,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<T: Satellite> Mul<f64> for Span<T> {
+    type Output = Self;
+
+    fn mul(self, rhs: f64) -> Self::Output {
+        Self {
+            time: NotNan::new((self.time).into_inner() * rhs).unwrap(),
             _phantom: PhantomData,
         }
     }
