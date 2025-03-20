@@ -55,9 +55,6 @@ fn get_file(folder: &str, prefix: &str) -> Result<String> {
             path.file_name()
                 .and_then(|name| name.to_str().map(String::from))
         })
-        .inspect(|name| {
-            println!("Found file: {}", name);
-        })
         .filter(|name| name.starts_with(prefix))
         .max_by(|a, b| {
             let extract_version = |name: &str| {
