@@ -1,3 +1,5 @@
+use fitsio::sys::printf;
+
 use crate::hxmt::detector::HxmtDetectorType;
 use crate::hxmt::event::HxmtEvent;
 use crate::types::Time;
@@ -22,16 +24,20 @@ impl EventFile {
         let time = events.read_col::<f64>(&mut fptr, "Time")?;
         let det_id = events.read_col::<u8>(&mut fptr, "Det_ID")?;
         let channel = events.read_col::<u8>(&mut fptr, "Channel")?;
+        println!("Channel Length: {}", channel.len());
         // let pulse_width = events.read_col::<u8>(&mut fptr, "PULSE_WIDTH")?;
-        let acd_raw = events.read_col::<bool>(&mut fptr, "ACD")?;
-        let mut acd = Vec::new();
-        for chunk in acd_raw.chunks(18) {
+
+        let acd_raw = events.read_col::<i16>(&mut fptr, "ACD")?;
+        println!("ACD Length: {}", acd_raw.len());
+        let mut acd = Vec::with_capacity(acd_raw.len());
+        for &value in &acd_raw {
             let mut array = [false; 18];
-            for (i, &value) in chunk.iter().enumerate().take(18) {
-                array[i] = value;
+            for i in 0..18 {
+                array[i] = ((value >> i) & 1) == 1;
             }
             acd.push(array);
         }
+
         // let event_type = events.read_col::<u8>(&mut fptr, "EVENT_TYPE")?;
         // let flag = events.read_col::<u8>(&mut fptr, "FLAG")?;
 
