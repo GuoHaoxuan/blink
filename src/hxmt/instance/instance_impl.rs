@@ -2,10 +2,11 @@ use std::path::Path;
 
 use anyhow::{anyhow, Result};
 use chrono::{prelude::*, TimeDelta};
+use itertools::Itertools;
 
 use crate::{
     hxmt::{event::HxmtEvent, Hxmt},
-    search::lightcurve::light_curve,
+    search::lightcurve::{light_curve, prefix_sum, search_light_curve, Trigger},
     types::{Event, Signal, Span, Time},
 };
 
@@ -49,7 +50,7 @@ impl Instance {
         })
     }
 
-    pub(crate) fn search(&self) -> Result<Vec<Signal>> {
+    pub(crate) fn search(&self) -> Result<Vec<Trigger<Hxmt>>> {
         let events = self
             .into_iter()
             .filter(|event| event.energy() >= 38)
@@ -63,31 +64,21 @@ impl Instance {
         while bin_size < Span::seconds(1e-3) {
             results.extend((0..4).flat_map(|shift| {
                 let shift = bin_size * shift as f64 / 4.0;
-                let bins = ((self.span[1] - self.span[0]) / bin_size).ceil();
-                let time_estimated_light_curve = bins / 500_000.0;
-                let time_length = events.len() as f64;
-                let time_estimated_direct = time_length / 50_000.0;
-
-                if time_estimated_light_curve < time_estimated_direct {
-                    let lc = light_curve(&events, shift, self.span[1] - self.span[0], bin_size);
-                    let prefix_sum = Hxmt::prefix_sum(&lc);
-                    Hxmt::search_light_curve(&prefix_sum, shift, bin_size, 100, fp_year, min_count)
-                } else {
-                    Hxmt::search_raw(
-                        &events,
-                        shift,
-                        self.span[1] - self.span[0],
-                        bin_size,
-                        100,
-                        fp_year,
-                        min_count,
-                    )
-                }
+                let lc = light_curve(&events, self.span[0] + shift, self.span[1], bin_size);
+                let prefix_sum = prefix_sum(&lc);
+                search_light_curve(
+                    &prefix_sum,
+                    self.span[0] + shift,
+                    bin_size,
+                    100,
+                    fp_year,
+                    min_count,
+                )
             }));
             bin_size *= 2.0;
         }
         results.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap());
-        results
+        let results = results
             .into_iter()
             .coalesce(|prev, next| {
                 if prev.mergeable(&next, 0) {
@@ -96,8 +87,8 @@ impl Instance {
                     Err((prev, next))
                 }
             })
-            .map(|trigger| record::Record::new(&trigger, Epoch::from_str(&date_obs).unwrap()))
-            .collect()
+            .collect::<Vec<_>>();
+        Ok(results)
     }
 }
 

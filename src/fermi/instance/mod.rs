@@ -12,7 +12,7 @@ use position::Position;
 use crate::env::GBM_DAILY_PATH;
 use crate::lightning::Lightning;
 use crate::search::algorithms::{search, SearchConfig};
-use crate::types::{Event as _, Signal, Span, Time, TimeUnits};
+use crate::types::{Event as _, Signal, Span, Time};
 
 use super::detector::FermiDetectorType;
 use super::event::FermiEvent;

@@ -1,6 +1,6 @@
 use statrs::distribution::{DiscreteCDF, Poisson};
 
-use crate::types::{Event, Group, Satellite, Span, Time, TimeUnits};
+use crate::types::{Event, Group, Satellite, Span, Time};
 
 pub struct SearchConfig<T: Satellite> {
     pub max_duration: Span<T>,

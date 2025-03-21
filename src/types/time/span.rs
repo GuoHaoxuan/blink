@@ -1,6 +1,6 @@
 use std::{
     marker::PhantomData,
-    ops::{Div, Mul, Sub},
+    ops::{Div, Mul, MulAssign, Sub},
 };
 
 use ordered_float::NotNan;
@@ -71,5 +71,11 @@ impl<T: Satellite> Mul<f64> for Span<T> {
             time: NotNan::new((self.time).into_inner() * rhs).unwrap(),
             _phantom: PhantomData,
         }
+    }
+}
+
+impl<T: Satellite> MulAssign<f64> for Span<T> {
+    fn mul_assign(&mut self, rhs: f64) {
+        self.time = NotNan::new((self.time).into_inner() * rhs).unwrap();
     }
 }

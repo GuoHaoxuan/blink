@@ -1,5 +1,3 @@
-use fitsio::sys::printf;
-
 use crate::hxmt::detector::HxmtDetectorType;
 use crate::hxmt::event::HxmtEvent;
 use crate::types::Time;
@@ -74,7 +72,7 @@ impl Iterator for Iter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.event_file.time.len() {
             let event = HxmtEvent {
-                time: Time::new(self.event_file.time[self.index]),
+                time: Time::seconds(self.event_file.time[self.index]),
                 energy: self.event_file.channel[self.index] as u16,
                 detector: HxmtDetectorType {
                     id: self.event_file.det_id[self.index],
