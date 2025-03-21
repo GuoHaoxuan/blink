@@ -4,10 +4,11 @@ use std::{
 };
 
 use ordered_float::NotNan;
+use serde::Serialize;
 
 use crate::types::Satellite;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Serialize)]
 pub(crate) struct Span<T: Satellite> {
     pub(super) time: NotNan<f64>,
     pub(super) _phantom: PhantomData<T>,

@@ -45,7 +45,10 @@ fn local_test() {
     println!("[DEBUG] Epoch: {:?}", epoch);
     let instance = Instance::from_epoch(&epoch).unwrap();
     let results = instance.search().unwrap();
-    println!("[DEBUG] Results: {:?}", results);
+    println!(
+        "[DEBUG] Results: {:?}",
+        serde_json::to_string(&results).unwrap()
+    );
 }
 
 fn main() {

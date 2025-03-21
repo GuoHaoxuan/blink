@@ -1,10 +1,11 @@
 use itertools::Itertools;
+use serde::Serialize;
 use statrs::distribution::{DiscreteCDF, Poisson};
 use std::fmt::Debug;
 
 use crate::types::{Satellite, Span, Time};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Trigger<S: Satellite> {
     pub start: Time<S>,
     pub stop: Time<S>,
