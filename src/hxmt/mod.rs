@@ -1,6 +1,7 @@
 mod detector;
 mod event;
 mod instance;
+pub mod saturation;
 mod time;
 
 use serde::Serialize;

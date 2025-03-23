@@ -41,14 +41,13 @@ use hxmt::Instance;
 // }
 
 fn local_test() {
-    let epoch = Utc.with_ymd_and_hms(2022, 1, 1, 0, 0, 0).unwrap();
-    println!("[DEBUG] Epoch: {:?}", epoch);
-    let instance = Instance::from_epoch(&epoch).unwrap();
-    let results = instance.search().unwrap();
-    println!(
-        "[DEBUG] Results: {}",
-        serde_json::to_string(&results).unwrap()
-    );
+    let epoch_str = "2022-01-01T00:02:48.940735042Z";
+    let epoch: DateTime<Utc> = DateTime::parse_from_rfc3339(epoch_str)
+        .unwrap()
+        .with_timezone(&Utc);
+
+    let all_file = hxmt::saturation::get_all_filenames(epoch);
+    println!("All files: {:?}", all_file);
 }
 
 fn main() {
