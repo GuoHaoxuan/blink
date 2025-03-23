@@ -138,23 +138,22 @@ pub(crate) fn continuous(
     if triggers.is_empty() {
         return triggers;
     }
-    let mut continuous = vec![0; triggers.len()];
+    let mut veto = vec![false; triggers.len()];
     let mut last_time = triggers[0].start;
     let mut begin = 0;
     for i in 1..triggers.len() {
         let time = triggers[i].start;
         if (time - last_time) > interval || i == triggers.len() - 1 {
             if ((last_time - triggers[begin].start) > duration) || i - begin >= count as usize {
-                continuous[begin..i].fill(1);
+                veto[begin..i].fill(true);
             }
             begin = i;
         }
         last_time = time;
     }
-    continuous
-        .into_iter()
+    veto.into_iter()
         .zip(triggers)
-        .filter(|(c, _)| *c == 1)
+        .filter(|(c, _)| !(*c))
         .map(|(_, t)| t)
         .collect()
 }
