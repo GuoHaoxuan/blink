@@ -88,6 +88,7 @@ impl Instance {
                 }
             })
             .collect::<Vec<_>>();
+        let results = continuous(results, Span::seconds(10.0), Span::seconds(1.0), 10);
         Ok(results)
     }
 }
@@ -126,4 +127,34 @@ impl<'a> IntoIterator for &'a Instance {
     fn into_iter(self) -> Self::IntoIter {
         self.event_file.into_iter()
     }
+}
+
+pub(crate) fn continuous(
+    triggers: Vec<Trigger<Hxmt>>,
+    interval: Span<Hxmt>,
+    duration: Span<Hxmt>,
+    count: i32,
+) -> Vec<Trigger<Hxmt>> {
+    if triggers.is_empty() {
+        return triggers;
+    }
+    let mut continuous = vec![0; triggers.len()];
+    let mut last_time = triggers[0].start;
+    let mut begin = 0;
+    for i in 1..triggers.len() {
+        let time = triggers[i].start;
+        if (time - last_time) > interval || i == triggers.len() - 1 {
+            if ((last_time - triggers[begin].start) > duration) || i - begin >= count as usize {
+                continuous[begin..i].fill(1);
+            }
+            begin = i;
+        }
+        last_time = time;
+    }
+    continuous
+        .into_iter()
+        .zip(triggers)
+        .filter(|(c, _)| *c == 1)
+        .map(|(_, t)| t)
+        .collect()
 }
