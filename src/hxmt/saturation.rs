@@ -150,21 +150,22 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Stri
     path
 }
 
-pub fn get_all_filenames(time: DateTime<Utc>) -> Vec<String> {
-    let mut all_files = Vec::new();
+pub fn get_all_filenames(time: DateTime<Utc>) -> [[String; 3]; 2] {
     let types = ["eng", "sci"];
     let serial_nums = ["A", "B", "C"];
 
-    for &type_ in &types {
-        for &serial_num in &serial_nums {
-            let filename = find_filename(type_, time, serial_num);
-            if !filename.is_empty() {
-                all_files.push(filename);
-            }
-        }
-    }
-
-    all_files
+    [
+        [
+            find_filename(types[0], time, serial_nums[0]),
+            find_filename(types[0], time, serial_nums[1]),
+            find_filename(types[0], time, serial_nums[2]),
+        ],
+        [
+            find_filename(types[1], time, serial_nums[0]),
+            find_filename(types[1], time, serial_nums[1]),
+            find_filename(types[1], time, serial_nums[2]),
+        ],
+    ]
 }
 
 pub fn rec_sci_data_calc(

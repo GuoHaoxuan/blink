@@ -5,24 +5,25 @@ use chrono::{prelude::*, TimeDelta};
 use itertools::Itertools;
 
 use crate::{
-    hxmt::{event::HxmtEvent, Hxmt},
+    hxmt::{event::HxmtEvent, saturation::get_all_filenames, Hxmt},
     search::lightcurve::{light_curve, prefix_sum, search_light_curve, Trigger},
     types::{Event, Signal, Span, Time},
 };
 
-use super::event_file::{EventFile, Iter};
+use super::{
+    eng_file::EngFile,
+    event_file::{EventFile, Iter},
+    sci_file::{self, SciFile},
+};
 
 pub(crate) struct Instance {
     event_file: EventFile,
+    eng_files: [EngFile; 3],
+    sci_files: [SciFile; 3],
     span: [Time<Hxmt>; 2],
 }
 
 impl Instance {
-    pub(crate) fn new(event_file_path: &str, span: [Time<Hxmt>; 2]) -> Result<Self> {
-        let event_file = EventFile::new(event_file_path)?;
-        Ok(Self { event_file, span })
-    }
-
     pub(crate) fn from_epoch(epoch: &DateTime<Utc>) -> Result<Self> {
         let num = (*epoch - Utc.with_ymd_and_hms(2017, 6, 15, 0, 0, 0).unwrap()).num_days() + 1;
         let folder = format!(
@@ -41,8 +42,21 @@ impl Instance {
         );
         let event_file_path = get_file(&folder, &prefix)?;
         let event_file = EventFile::new(&event_file_path)?;
+        let [eng_files, sci_files] = get_all_filenames(*epoch);
+        let eng_files = [
+            EngFile::new(&eng_files[0])?,
+            EngFile::new(&eng_files[1])?,
+            EngFile::new(&eng_files[2])?,
+        ];
+        let sci_files = [
+            SciFile::new(&sci_files[0])?,
+            SciFile::new(&sci_files[1])?,
+            SciFile::new(&sci_files[2])?,
+        ];
         Ok(Self {
             event_file,
+            eng_files,
+            sci_files,
             span: [
                 Time::<Hxmt>::from(*epoch),
                 Time::<Hxmt>::from(*epoch + TimeDelta::hours(1)),
