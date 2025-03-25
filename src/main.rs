@@ -46,8 +46,8 @@ fn local_test() {
         .unwrap()
         .with_timezone(&Utc);
 
-    let all_file = hxmt::saturation::get_all_filenames(epoch);
-    println!("All files: {:?}", all_file);
+    let instance = Instance::from_epoch(&epoch).unwrap();
+    println!("OK");
 }
 
 fn main() {
