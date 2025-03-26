@@ -103,7 +103,15 @@ impl Instance {
             })
             .collect::<Vec<_>>();
         let results = continuous(results, Span::seconds(10.0), Span::seconds(1.0), 10);
+        let results = results
+            .into_iter()
+            .filter(|trigger| !self.check_saturation(trigger.start))
+            .collect();
         Ok(results)
+    }
+
+    pub(crate) fn check_saturation(self: &Self, time: Time<Hxmt>) -> bool {
+        false
     }
 }
 
