@@ -47,6 +47,8 @@ fn local_test() {
         .with_timezone(&Utc);
 
     let instance = Instance::from_epoch(&epoch).unwrap();
+    let search_results = instance.search().unwrap();
+    println!("{:?}", search_results);
     println!("OK");
 }
 
