@@ -66,6 +66,8 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Stri
                     );
 
                     println!("[DEBUG] Checking folder name: {}", folder_name);
+                    println!("[DEBUG] Folder name length: {}", folder_name.len());
+                    println!("[DEBUG] Prefix: {}", prefix);
 
                     if folder_name.len() >= 40
                         && folder_name.starts_with(&prefix)
