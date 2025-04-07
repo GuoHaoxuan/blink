@@ -3,8 +3,8 @@ use anyhow::Result;
 pub(crate) struct EngFile {
     // HDU 1: HE_Eng
     // Only extract useful columns
-    time: Vec<i32>,
-    bus_time_bdc: Vec<[u8; 6]>,
+    pub(crate) time: Vec<i32>,
+    pub(crate) bus_time_bdc: Vec<[u8; 6]>,
 }
 
 impl EngFile {

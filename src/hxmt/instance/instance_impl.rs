@@ -5,15 +5,19 @@ use chrono::{prelude::*, TimeDelta};
 use itertools::Itertools;
 
 use crate::{
-    hxmt::{event::HxmtEvent, saturation::get_all_filenames, Hxmt},
+    hxmt::{
+        event::HxmtEvent,
+        saturation::{get_all_filenames, rec_sci_data, SerialNum},
+        Hxmt,
+    },
     search::lightcurve::{light_curve, prefix_sum, search_light_curve, Trigger},
-    types::{Event, Signal, Span, Time},
+    types::{Event, Span, Time},
 };
 
 use super::{
     eng_file::EngFile,
     event_file::{EventFile, Iter},
-    sci_file::{self, SciFile},
+    sci_file::SciFile,
 };
 
 pub(crate) struct Instance {
@@ -110,8 +114,10 @@ impl Instance {
         Ok(results)
     }
 
-    pub(crate) fn check_saturation(self: &Self, time: Time<Hxmt>) -> bool {
-        false
+    pub(crate) fn check_saturation(&self, time: Time<Hxmt>) -> bool {
+        rec_sci_data(time, SerialNum::A, &self.eng_files[0], &self.sci_files[0])
+            || rec_sci_data(time, SerialNum::B, &self.eng_files[1], &self.sci_files[1])
+            || rec_sci_data(time, SerialNum::C, &self.eng_files[2], &self.sci_files[2])
     }
 }
 

@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 pub(crate) struct SciFile {
-    ccsds: Vec<[u8; 882]>,
+    pub(crate) ccsds: Vec<[u8; 882]>,
 }
 
 impl SciFile {
