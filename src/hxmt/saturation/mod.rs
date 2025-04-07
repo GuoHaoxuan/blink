@@ -59,10 +59,10 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Stri
                     let prefix = format!(
                         "HXMT_1B_{}_{}{:02}{:02}T{:02}",
                         code,
-                        loop_time.year(),
-                        loop_time.month(),
-                        loop_time.day(),
-                        loop_time.hour()
+                        time.year(),
+                        time.month(),
+                        time.day(),
+                        time.hour()
                     );
 
                     println!("[DEBUG] Checking folder name: {}", folder_name);
