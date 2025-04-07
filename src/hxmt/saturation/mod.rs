@@ -81,6 +81,7 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Stri
                             .and_then(|c| c.to_digit(10))
                             .map(|d| d as i32)
                             .unwrap_or(-1);
+                        println!("[DEBUG] Found version: {}", ver);
 
                         if ver > version {
                             version = ver;
