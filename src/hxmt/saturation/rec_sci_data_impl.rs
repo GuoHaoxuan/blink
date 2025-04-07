@@ -34,7 +34,10 @@ pub fn rec_sci_data(
     eng_data: &EngFile,
     sci_data: &SciFile,
 ) -> bool {
-    let (stime_a, evt_utc_stamp, _) = find_stime(eng_data, time);
+    let (stime_a, evt_utc_stamp, _) = match find_stime(eng_data, time) {
+        Ok(result) => result,
+        Err(_) => return true,
+    };
 
     let evt_range = 2; // 选取 evt 发生点前后多长时间的数据，evt_range / 2，单位是秒
     let evt_utc_floor = evt_utc_stamp - evt_range / 2;
