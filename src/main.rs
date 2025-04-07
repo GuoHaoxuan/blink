@@ -41,7 +41,7 @@ use hxmt::Instance;
 // }
 
 fn local_test() {
-    let epoch_str = "2022-01-01T00:02:48.940735042Z";
+    let epoch_str = "2022-01-01T14:51:17.919900Z";
     let epoch: DateTime<Utc> = DateTime::parse_from_rfc3339(epoch_str)
         .unwrap()
         .with_timezone(&Utc);
@@ -49,7 +49,6 @@ fn local_test() {
     let instance = Instance::from_epoch(&epoch).unwrap();
     let search_results = instance.search().unwrap();
     println!("{:?}", search_results);
-    println!("OK");
 }
 
 fn main() {
