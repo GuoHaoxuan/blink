@@ -37,6 +37,10 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Stri
             .join(format!("{:02}", loop_time.day()))
             .join(code);
 
+        println!(
+            "[DEBUG] Searching in folder: {}",
+            folder_path.to_string_lossy()
+        );
         if !folder_path.exists() {
             continue;
         }
@@ -45,6 +49,7 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Stri
         if let Ok(entries) = std::fs::read_dir(folder_path) {
             for entry in entries.flatten() {
                 let entry_path = entry.path();
+                println!("[DEBUG] Checking entry: {}", entry_path.to_string_lossy());
                 if entry_path.is_dir() {
                     let folder_name = entry_path
                         .file_name()
@@ -59,6 +64,8 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Stri
                         loop_time.day(),
                         loop_time.hour()
                     );
+
+                    println!("[DEBUG] Checking folder name: {}", folder_name);
 
                     if folder_name.len() >= 40
                         && folder_name.starts_with(&prefix)
