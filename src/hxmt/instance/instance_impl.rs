@@ -47,8 +47,6 @@ impl Instance {
         let event_file_path = get_file(&folder, &prefix)?;
         let event_file = EventFile::new(&event_file_path)?;
         let [eng_files, sci_files] = get_all_filenames(*epoch);
-        println!("[DEBUG] Open eng file: {:?}", eng_files);
-        println!("[DEBUG] Open sci file: {:?}", sci_files);
         let eng_files = [
             EngFile::new(&eng_files[0])?,
             EngFile::new(&eng_files[1])?,
