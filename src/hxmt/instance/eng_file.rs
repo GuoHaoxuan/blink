@@ -9,6 +9,7 @@ pub(crate) struct EngFile {
 
 impl EngFile {
     pub(crate) fn new(filename: &str) -> Result<Self> {
+        println!("[DEBUG] Open eng file: {}", filename);
         let mut fptr = fitsio::FitsFile::open(filename)?;
 
         // HDU 1: HE_Eng
