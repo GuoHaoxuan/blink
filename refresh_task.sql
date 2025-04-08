@@ -13,14 +13,14 @@ OR IGNORE INTO tasks (
 WITH RECURSIVE
     hours AS (
         SELECT
-            DATETIME ('2016-01-01 00:00:00') AS hour
+            DATETIME ('2022-01-01 00:00:00') AS hour
         UNION ALL
         SELECT
             DATETIME (hour, '+1 hour')
         FROM
             hours
         WHERE
-            hour < DATETIME ('2016-12-31 23:00:00')
+            hour < DATETIME ('2022-12-31 23:00:00')
     )
 SELECT
     DATETIME ('now') AS created_at,
@@ -30,7 +30,7 @@ SELECT
     'Pending' AS status,
     '' AS error,
     hour AS time,
-    'Fermi' AS satellite,
-    'GBM' AS detector
+    'HXMT' AS satellite,
+    'HE' AS detector
 FROM
     hours;
