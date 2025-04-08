@@ -11,7 +11,7 @@ use crate::{
         Hxmt,
     },
     search::lightcurve::{light_curve, prefix_sum, search_light_curve, Trigger},
-    types::{Event, Span, Time},
+    types::{Event, Instance as InstanceTrait, Signal, Span, Time},
 };
 
 use super::{
@@ -28,7 +28,15 @@ pub(crate) struct Instance {
 }
 
 impl Instance {
-    pub(crate) fn from_epoch(epoch: &DateTime<Utc>) -> Result<Self> {
+    pub(crate) fn check_saturation(&self, time: Time<Hxmt>) -> bool {
+        rec_sci_data(time, SerialNum::A, &self.eng_files[0], &self.sci_files[0])
+            || rec_sci_data(time, SerialNum::B, &self.eng_files[1], &self.sci_files[1])
+            || rec_sci_data(time, SerialNum::C, &self.eng_files[2], &self.sci_files[2])
+    }
+}
+
+impl InstanceTrait for Instance {
+    fn from_epoch(epoch: &DateTime<Utc>) -> Result<Self> {
         let num = (*epoch - Utc.with_ymd_and_hms(2017, 6, 15, 0, 0, 0).unwrap()).num_days() + 1;
         let folder = format!(
             "/hxmt/work/HXMT-DATA/1K/Y{year:04}{month:02}/{year:04}{month:02}{day:02}-{num:04}",
@@ -68,7 +76,7 @@ impl Instance {
         })
     }
 
-    pub(crate) fn search(&self) -> Result<Vec<Trigger<Hxmt>>> {
+    fn search(&self) -> Result<Vec<Signal>> {
         let events = self
             .into_iter()
             .filter(|event| event.energy() >= 38)
@@ -110,14 +118,22 @@ impl Instance {
         let results = results
             .into_iter()
             .filter(|trigger| !self.check_saturation(trigger.start))
-            .collect();
-        Ok(results)
-    }
-
-    pub(crate) fn check_saturation(&self, time: Time<Hxmt>) -> bool {
-        rec_sci_data(time, SerialNum::A, &self.eng_files[0], &self.sci_files[0])
-            || rec_sci_data(time, SerialNum::B, &self.eng_files[1], &self.sci_files[1])
-            || rec_sci_data(time, SerialNum::C, &self.eng_files[2], &self.sci_files[2])
+            .collect::<Vec<_>>();
+        let signals = results
+            .into_iter()
+            .map(|trigger| Signal {
+                start: trigger.start.to_chrono(),
+                stop: trigger.stop.to_chrono(),
+                fp_year: trigger.fp_year,
+                events: vec![],                 // TODO
+                longitude: 0.0,                 // TODO
+                latitude: 0.0,                  // TODO
+                altitude: 0.0,                  // TODO
+                position_debug: "".to_string(), // TODO
+                lightnings: vec![],             // TODO
+            })
+            .collect::<Vec<_>>();
+        Ok(signals)
     }
 }
 

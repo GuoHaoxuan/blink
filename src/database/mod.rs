@@ -1,16 +1,9 @@
-use std::error::Error;
-
 use chrono::prelude::*;
 use rusqlite::{params, Connection};
 
 use crate::types::Signal;
 
-pub fn get_task(
-    conn: &Connection,
-    worker: &str,
-    satellite: &str,
-    detector: &str,
-) -> Option<DateTime<Utc>> {
+pub fn get_task(conn: &Connection, worker: &str) -> Option<(DateTime<Utc>, String, String)> {
     conn.prepare(
         "
             UPDATE tasks
@@ -26,23 +19,30 @@ pub fn get_task(
                         tasks
                     WHERE
                         status = 'Pending'
-                        AND satellite = ?2
-                        AND detector = ?3
                     LIMIT
                         1
-                ) RETURNING time;
+                ) RETURNING time, satellite, detector;
             ",
     )
     .unwrap()
-    .query_map(params![worker, satellite, detector], |row| {
-        row.get::<_, String>(0)
+    .query_map(params![worker], |row| {
+        Ok((
+            row.get::<_, String>(0).unwrap(),
+            row.get::<_, String>(1).unwrap(),
+            row.get::<_, String>(2).unwrap(),
+        ))
     })
     .unwrap()
     .next()
     .map(|x| {
-        NaiveDateTime::parse_from_str(&x.unwrap(), "%Y-%m-%d %H:%M:%S")
-            .unwrap()
-            .and_utc()
+        let (time, satellite, detector) = x.unwrap();
+        (
+            NaiveDateTime::parse_from_str(&time, "%Y-%m-%d %H:%M:%S")
+                .unwrap()
+                .and_utc(),
+            satellite,
+            detector,
+        )
     })
 }
 
@@ -72,7 +72,7 @@ pub fn fail_task(
     time: &DateTime<Utc>,
     satellite: &str,
     detector: &str,
-    error: Box<dyn Error>,
+    error: anyhow::Error,
 ) {
     conn.execute(
         "

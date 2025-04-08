@@ -31,7 +31,7 @@ impl crate::types::Event for HxmtEvent {
 
     fn to_general(&self, ebounds: &crate::types::Ebounds) -> GenericEvent {
         GenericEvent {
-            time: self.time.to_hifitime(),
+            time: self.time.to_chrono(),
             energy: [
                 ebounds[self.energy as usize][0],
                 ebounds[self.energy as usize][1],

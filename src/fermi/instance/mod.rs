@@ -1,6 +1,5 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::error::Error;
 use std::ffi::OsStr;
 use std::path::Path;
 
@@ -12,7 +11,7 @@ use position::Position;
 use crate::env::GBM_DAILY_PATH;
 use crate::lightning::Lightning;
 use crate::search::algorithms::{search, SearchConfig};
-use crate::types::{Event as _, Signal, Span, Time};
+use crate::types::{Event as _, Instance as InstanceTrait, Signal, Span, Time};
 
 use super::detector::FermiDetectorType;
 use super::event::FermiEvent;
@@ -55,43 +54,6 @@ impl Instance {
         })
     }
 
-    pub(crate) fn from_epoch(epoch: &DateTime<Utc>) -> Result<Self, Box<dyn Error>> {
-        let y = epoch.year();
-        let m = epoch.month();
-        let d = epoch.day();
-        let h = epoch.hour();
-        let folder = Path::new(&*GBM_DAILY_PATH)
-            .join(format!("{:04}/{:02}/{:02}/current", y, m, d))
-            .into_os_string();
-        let filenames: Vec<String> = (0..14)
-            .map(|i| -> Result<String, Box<dyn Error>> {
-                let prefix = format!(
-                    "glg_tte_{}_{:02}{:02}{:02}_{:02}z_v",
-                    if i < 12 {
-                        format!("n{:x}", i)
-                    } else {
-                        format!("b{:x}", i - 12)
-                    },
-                    y % 100,
-                    m,
-                    d,
-                    h,
-                );
-                get_file(&folder, &prefix)
-            })
-            .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
-        let position_prefix = format!("glg_poshist_all_{:02}{:02}{:02}_v", y % 100, m, d);
-        let position_file = get_file(&folder, &position_prefix)?;
-        Ok(Self::new(
-            &filenames.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
-            &position_file,
-            [
-                Time::<Fermi>::from(*epoch),
-                Time::<Fermi>::from(*epoch + Duration::hours(1)),
-            ],
-        )?)
-    }
-
     pub(crate) fn gti(&self) -> Vec<[Time<Fermi>; 2]> {
         self.files
             .iter()
@@ -118,8 +80,47 @@ impl Instance {
             })
             .unwrap()
     }
+}
 
-    pub(crate) fn search(&self) -> Result<Vec<Signal>, Box<dyn Error>> {
+impl InstanceTrait for Instance {
+    fn from_epoch(epoch: &DateTime<Utc>) -> anyhow::Result<Self> {
+        let y = epoch.year();
+        let m = epoch.month();
+        let d = epoch.day();
+        let h = epoch.hour();
+        let folder = Path::new(&*GBM_DAILY_PATH)
+            .join(format!("{:04}/{:02}/{:02}/current", y, m, d))
+            .into_os_string();
+        let filenames: Vec<String> = (0..14)
+            .map(|i| -> anyhow::Result<String> {
+                let prefix = format!(
+                    "glg_tte_{}_{:02}{:02}{:02}_{:02}z_v",
+                    if i < 12 {
+                        format!("n{:x}", i)
+                    } else {
+                        format!("b{:x}", i - 12)
+                    },
+                    y % 100,
+                    m,
+                    d,
+                    h,
+                );
+                get_file(&folder, &prefix)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let position_prefix = format!("glg_poshist_all_{:02}{:02}{:02}_v", y % 100, m, d);
+        let position_file = get_file(&folder, &position_prefix)?;
+        Ok(Self::new(
+            &filenames.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
+            &position_file,
+            [
+                Time::<Fermi>::from(*epoch),
+                Time::<Fermi>::from(*epoch + Duration::hours(1)),
+            ],
+        )?)
+    }
+
+    fn search(&self) -> anyhow::Result<Vec<Signal>> {
         let events: Vec<FermiEvent> = self
             .into_iter()
             .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
@@ -132,7 +133,7 @@ impl Instance {
             .collect();
         let gti = self.gti();
 
-        let intervals: Result<Vec<([Time<Fermi>; 2], f64)>, Box<dyn Error>> = Ok(gti
+        let intervals: anyhow::Result<Vec<([Time<Fermi>; 2], f64)>> = Ok(gti
             .iter()
             .flat_map(|interval| {
                 search(
@@ -165,7 +166,7 @@ impl Instance {
                 let time_tolerance = Duration::milliseconds(5);
                 let distance_tolerance = 800_000.0;
                 let lightnings = Lightning::associated_lightning(
-                    (start + (stop - start) / 2.0).to_hifitime(),
+                    (start + (stop - start) / 2.0).to_chrono(),
                     position.sc_lat as f64,
                     position.sc_lon as f64,
                     time_tolerance,
@@ -173,8 +174,8 @@ impl Instance {
                 );
 
                 Signal {
-                    start: start.to_hifitime(),
-                    stop: stop.to_hifitime(),
+                    start: start.to_chrono(),
+                    stop: stop.to_chrono(),
                     fp_year,
                     events,
                     longitude: position.sc_lon as f64,
@@ -232,7 +233,7 @@ impl Iterator for Iter<'_> {
     }
 }
 
-fn get_file(folder: &OsStr, prefix: &str) -> Result<String, Box<dyn Error>> {
+fn get_file(folder: &OsStr, prefix: &str) -> anyhow::Result<String> {
     let name = std::fs::read_dir(folder)?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
@@ -253,7 +254,9 @@ fn get_file(folder: &OsStr, prefix: &str) -> Result<String, Box<dyn Error>> {
             };
             extract_version(a).cmp(&extract_version(b))
         })
-        .ok_or_else(|| format!("No files found matching pattern for detector {}", prefix))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("No files found matching pattern for detector {}", prefix)
+        })?;
     Ok(Path::new(&folder)
         .join(name)
         .into_os_string()

@@ -133,7 +133,7 @@ pub(crate) struct Time<T: Satellite> {
 }
 
 impl<T: Satellite> Time<T> {
-    pub(crate) fn to_hifitime(self) -> DateTime<Utc> {
+    pub(crate) fn to_chrono(self) -> DateTime<Utc> {
         let seconds = self.time.into_inner();
         let whole_seconds = seconds.trunc() as i64;
         let nanoseconds = ((seconds.fract() * 1_000_000_000.0) as i64).clamp(0, 999_999_999);
@@ -174,13 +174,13 @@ impl<S: Satellite> From<DateTime<Utc>> for Time<S> {
 
 impl<T: Satellite> Debug for Time<T> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        self.to_hifitime().fmt(f)
+        self.to_chrono().fmt(f)
     }
 }
 
 impl<T: Satellite> Serialize for Time<T> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.to_hifitime().serialize(serializer)
+        self.to_chrono().serialize(serializer)
     }
 }
 
