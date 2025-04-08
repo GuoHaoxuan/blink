@@ -175,6 +175,9 @@ pub fn rec_sci_data(
         start_sec_ptime = gps_list[temp][1];
     } else {
         start_sec_index = 0;
+        if evt_list.is_empty() {
+            return true;
+        }
         start_sec_ptime = evt_list[0].0;
     }
 
