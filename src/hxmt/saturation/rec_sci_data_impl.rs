@@ -223,15 +223,15 @@ pub fn rec_sci_data(
         .filter(|&x| !matches!(serial_num, SerialNum::C) || x.7 != 4)
         .collect::<Vec<_>>();
 
-    // 恢复部分缺失数据点
-    let mut rawx_err: Vec<f64> = vec![-1.0; evt_phy_list.iter().map(|x| x.1).unique().count()];
-    let mut raw_time = rawx_err.clone();
-    let mut raw_cnt_rate = rawx_err.clone();
-    let mut pack_time_l = rawx_err.clone();
-    let mut pack_time_r = rawx_err.clone();
-    let mut cur_pack_all_cnt = rawx_err.clone();
-    let mut cur_pack_phy_cnt = rawx_err.clone();
     let pack_index_list = evt_list.iter().map(|x| x.1).unique().collect::<Vec<_>>();
+    // 恢复部分缺失数据点
+    // let mut rawx_err: Vec<f64> = vec![-1.0; evt_phy_list.iter().map(|x| x.1).unique().count()];
+    // let mut raw_time = vec![-1.0; evt_phy_list.iter().map(|x| x.1).unique().count()];
+    // let mut raw_cnt_rate = vec![-1.0; evt_phy_list.iter().map(|x| x.1).unique().count()];
+    let mut pack_time_l = vec![-1.0; evt_phy_list.iter().map(|x| x.1).unique().count()];
+    let mut pack_time_r = vec![-1.0; evt_phy_list.iter().map(|x| x.1).unique().count()];
+    // let mut cur_pack_all_cnt = vec![-1.0; evt_phy_list.iter().map(|x| x.1).unique().count()];
+    // let mut cur_pack_phy_cnt = vec![-1.0; evt_phy_list.iter().map(|x| x.1).unique().count()];
 
     // 查看原始数据包的计数情况（全部事例）
     // 找出不重复的每个事例数据包，已排序
@@ -245,25 +245,25 @@ pub fn rec_sci_data(
             .iter()
             .map(|&index| evt_list[index].4)
             .collect::<Vec<_>>();
-        // unit in second, 当前 pack 的时间宽度的一半
-        rawx_err[temp_index] = (cur_pack_ptime
-            .iter()
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap()
-            - cur_pack_ptime
-                .iter()
-                .min_by(|a, b| a.partial_cmp(b).unwrap())
-                .unwrap())
-            / 2.0;
-        raw_time[temp_index] = (cur_pack_ptime
-            .iter()
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap()
-            + cur_pack_ptime
-                .iter()
-                .min_by(|a, b| a.partial_cmp(b).unwrap())
-                .unwrap())
-            / 2.0;
+        // // unit in second, 当前 pack 的时间宽度的一半
+        // rawx_err[temp_index] = (cur_pack_ptime
+        //     .iter()
+        //     .max_by(|a, b| a.partial_cmp(b).unwrap())
+        //     .unwrap()
+        //     - cur_pack_ptime
+        //         .iter()
+        //         .min_by(|a, b| a.partial_cmp(b).unwrap())
+        //         .unwrap())
+        //     / 2.0;
+        // raw_time[temp_index] = (cur_pack_ptime
+        //     .iter()
+        //     .max_by(|a, b| a.partial_cmp(b).unwrap())
+        //     .unwrap()
+        //     + cur_pack_ptime
+        //         .iter()
+        //         .min_by(|a, b| a.partial_cmp(b).unwrap())
+        //         .unwrap())
+        //     / 2.0;
         // 当前 pack 包的计数率
         raw_all_cnt_rate.push(
             cur_pack_index.len() as f64
@@ -285,14 +285,14 @@ pub fn rec_sci_data(
             .iter()
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap();
-        let cur_pack_phy_index = evt_phy_list
-            .iter()
-            .positions(|&x| x.1 == *i)
-            .collect::<Vec<_>>();
-        cur_pack_phy_cnt[temp_index] = cur_pack_phy_index.len() as f64;
-        cur_pack_all_cnt[temp_index] = cur_pack_index.len() as f64;
+        // let cur_pack_phy_index = evt_phy_list
+        //     .iter()
+        //     .positions(|&x| x.1 == *i)
+        //     .collect::<Vec<_>>();
+        // cur_pack_phy_cnt[temp_index] = cur_pack_phy_index.len() as f64;
+        // cur_pack_all_cnt[temp_index] = cur_pack_index.len() as f64;
         // 当前 pack 包的计数率
-        raw_cnt_rate[temp_index] = cur_pack_phy_index.len() as f64 / cur_pack_ptime.len() as f64;
+        // raw_cnt_rate[temp_index] = cur_pack_phy_index.len() as f64 / cur_pack_ptime.len() as f64;
     }
     // 找出相邻 pack 的时间差，如果过大说明有丢数
     let pack_time_gap = pack_time_r[..pack_time_r.len() - 1]
