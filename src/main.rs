@@ -6,7 +6,6 @@ mod lightning;
 mod search;
 mod types;
 
-// use chrono::prelude::*;
 use rusqlite::Connection;
 use types::Instance;
 
@@ -60,14 +59,16 @@ fn consume() {
 }
 
 // fn local_test() {
-//     let epoch_str = "2022-01-01T14:51:17.919900Z";
-//     let epoch: DateTime<Utc> = DateTime::parse_from_rfc3339(epoch_str)
+//     let eng_data = hxmt::EngFile::new("HXMT_1B_0766_20200428T140000_G025146_000_004.fits").unwrap();
+//     let sci_data = hxmt::SciFile::new("HXMT_1B_0642_20200428T140000_G025146_000_004.fits").unwrap();
+//     let epoch_str = "2020-04-28T14:34:24.000000Z";
+//     let epoch: Time<Hxmt> = DateTime::parse_from_rfc3339(epoch_str)
 //         .unwrap()
-//         .with_timezone(&Utc);
+//         .with_timezone(&Utc)
+//         .into();
 
-//     let instance = hxmt::Instance::from_epoch(&epoch).unwrap();
-//     let search_results = instance.search().unwrap();
-//     println!("{:?}", search_results);
+//     let saturation = rec_sci_data(epoch, &eng_data, &sci_data);
+//     println!("Saturation: {}", saturation);
 // }
 
 fn main() {

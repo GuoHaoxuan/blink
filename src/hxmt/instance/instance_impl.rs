@@ -5,9 +5,10 @@ use chrono::{prelude::*, TimeDelta};
 use itertools::Itertools;
 
 use crate::{
+    env::HXMT_1K_DIR,
     hxmt::{
         event::HxmtEvent,
-        saturation::{get_all_filenames, rec_sci_data, SerialNum},
+        saturation::{get_all_filenames, rec_sci_data},
         Hxmt,
     },
     search::lightcurve::{light_curve, prefix_sum, search_light_curve, Trigger},
@@ -29,9 +30,9 @@ pub(crate) struct Instance {
 
 impl Instance {
     pub(crate) fn check_saturation(&self, time: Time<Hxmt>) -> bool {
-        rec_sci_data(time, SerialNum::A, &self.eng_files[0], &self.sci_files[0])
-            || rec_sci_data(time, SerialNum::B, &self.eng_files[1], &self.sci_files[1])
-            || rec_sci_data(time, SerialNum::C, &self.eng_files[2], &self.sci_files[2])
+        rec_sci_data(time, &self.eng_files[0], &self.sci_files[0])
+            || rec_sci_data(time, &self.eng_files[1], &self.sci_files[1])
+            || rec_sci_data(time, &self.eng_files[2], &self.sci_files[2])
     }
 }
 
@@ -39,7 +40,8 @@ impl InstanceTrait for Instance {
     fn from_epoch(epoch: &DateTime<Utc>) -> Result<Self> {
         let num = (*epoch - Utc.with_ymd_and_hms(2017, 6, 15, 0, 0, 0).unwrap()).num_days() + 1;
         let folder = format!(
-            "/hxmt/work/HXMT-DATA/1K/Y{year:04}{month:02}/{year:04}{month:02}{day:02}-{num:04}",
+            "{HXMT_1K_DIR}/Y{year:04}{month:02}/{year:04}{month:02}{day:02}-{num:04}",
+            HXMT_1K_DIR = HXMT_1K_DIR.as_str(),
             year = epoch.year(),
             month = epoch.month(),
             day = epoch.day(),

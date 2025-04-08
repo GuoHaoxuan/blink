@@ -10,7 +10,6 @@ use chrono::TimeDelta;
 use crate::env::HXMT_1B_DIR;
 
 pub use rec_sci_data_impl::rec_sci_data;
-pub use rec_sci_data_impl::SerialNum;
 
 pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> String {
     let code = match (type_, serial_num) {
