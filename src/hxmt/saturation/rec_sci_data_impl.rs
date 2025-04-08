@@ -87,9 +87,10 @@ pub fn rec_sci_data(
                         + ((row[7] & 0b1100_0000) >> 6);
                     if stime == stime_a as u64 - evt_range / 2 {
                         // 开始的秒事例的位置
+                        burst_found |= 1;
                         start_sec = [stime as usize, ptime as usize, i, j];
                     } else if stime == stime_a as u64 + evt_range / 2 {
-                        burst_found = 1;
+                        burst_found |= 2;
                         stop_sec = [stime as usize, ptime as usize, i, j];
                         break;
                     } else {
@@ -98,12 +99,17 @@ pub fn rec_sci_data(
                 }
             }
         }
-        if burst_found == 1 {
+        if burst_found == 3 {
             // println!("Burst GPS evt found in unit-{}!!", serial_num);
             // println!("Start sec evt: {:?}", start_sec);
             // println!("Stop sec evt: {:?}", stop_sec);
             break;
         }
+    }
+
+    if burst_found != 3 {
+        // println!("Burst GPS evt not found in unit-{}!!", serial_num);
+        return true;
     }
 
     let mut evt_index = 0;
