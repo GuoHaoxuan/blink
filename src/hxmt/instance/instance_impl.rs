@@ -12,7 +12,7 @@ use crate::{
         Hxmt,
     },
     search::lightcurve::{light_curve, prefix_sum, search_light_curve, Trigger},
-    types::{Event, Instance as InstanceTrait, Signal, Span, Time},
+    types::{Event, GenericEvent, Instance as InstanceTrait, Signal, Span, Time},
 };
 
 use super::{
@@ -127,7 +127,14 @@ impl InstanceTrait for Instance {
                 start: trigger.start.to_chrono(),
                 stop: trigger.stop.to_chrono(),
                 fp_year: trigger.fp_year(),
-                events: vec![],                 // TODO
+                events: self
+                    .into_iter()
+                    .filter(|event| event.time() >= trigger.start && event.time() <= trigger.stop)
+                    .map(|event| {
+                        // TODO: Use the correct energy range
+                        event.to_general(&(0..256).map(|i| [i as f64, i as f64 + 1.0]).collect())
+                    })
+                    .collect::<Vec<_>>(),
                 longitude: 0.0,                 // TODO
                 latitude: 0.0,                  // TODO
                 altitude: 0.0,                  // TODO
