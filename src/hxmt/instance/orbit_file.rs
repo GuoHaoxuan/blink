@@ -1,9 +1,9 @@
 pub(crate) struct OrbitFile {
     // HDU 1: Orbit
     time: Vec<f64>,
-    lon: Vec<i32>,
-    lat: Vec<i32>,
-    alt: Vec<i32>,
+    lon: Vec<f64>,
+    lat: Vec<f64>,
+    alt: Vec<f64>,
 }
 
 impl OrbitFile {
@@ -13,9 +13,9 @@ impl OrbitFile {
         // HDU 1: Orbit
         let orbit = fptr.hdu("Orbit")?;
         let time = orbit.read_col::<f64>(&mut fptr, "Time")?;
-        let lon = orbit.read_col::<i32>(&mut fptr, "Lon")?;
-        let lat = orbit.read_col::<i32>(&mut fptr, "Lat")?;
-        let alt = orbit.read_col::<i32>(&mut fptr, "Alt")?;
+        let lon = orbit.read_col::<f64>(&mut fptr, "Lon")?;
+        let lat = orbit.read_col::<f64>(&mut fptr, "Lat")?;
+        let alt = orbit.read_col::<f64>(&mut fptr, "Alt")?;
 
         Ok(Self {
             time,
@@ -36,12 +36,12 @@ impl OrbitFile {
 
         let t0 = self.time[i];
         let t1 = self.time[i + 1];
-        let lon0 = self.lon[i] as f64;
-        let lon1 = self.lon[i + 1] as f64;
-        let lat0 = self.lat[i] as f64;
-        let lat1 = self.lat[i + 1] as f64;
-        let alt0 = self.alt[i] as f64;
-        let alt1 = self.alt[i + 1] as f64;
+        let lon0 = self.lon[i];
+        let lon1 = self.lon[i + 1];
+        let lat0 = self.lat[i];
+        let lat1 = self.lat[i + 1];
+        let alt0 = self.alt[i];
+        let alt1 = self.alt[i + 1];
 
         let lon = lon0 + (lon1 - lon0) * (time - t0) / (t1 - t0);
         let lat = lat0 + (lat1 - lat0) * (time - t0) / (t1 - t0);
