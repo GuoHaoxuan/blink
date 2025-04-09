@@ -58,18 +58,18 @@ fn consume() {
     }
 }
 
-// fn local_test() {
-//     let eng_data = hxmt::EngFile::new("HXMT_1B_0766_20200428T140000_G025146_000_004.fits").unwrap();
-//     let sci_data = hxmt::SciFile::new("HXMT_1B_0642_20200428T140000_G025146_000_004.fits").unwrap();
-//     let epoch_str = "2020-04-28T14:34:24.000000Z";
-//     let epoch: Time<Hxmt> = DateTime::parse_from_rfc3339(epoch_str)
-//         .unwrap()
-//         .with_timezone(&Utc)
-//         .into();
+fn local_test() {
+    let eng_data = hxmt::EngFile::new("HXMT_1B_0766_20200428T140000_G025146_000_004.fits").unwrap();
+    let sci_data = hxmt::SciFile::new("HXMT_1B_0642_20200428T140000_G025146_000_004.fits").unwrap();
+    let epoch_str = "2020-04-28T14:34:24.000000Z";
+    let epoch: types::Time<hxmt::Hxmt> = chrono::DateTime::parse_from_rfc3339(epoch_str)
+        .unwrap()
+        .with_timezone(&chrono::Utc)
+        .into();
 
-//     let saturation = rec_sci_data(epoch, &eng_data, &sci_data);
-//     println!("Saturation: {}", saturation);
-// }
+    let saturation = hxmt::saturation::rec_sci_data(epoch, &eng_data, &sci_data);
+    println!("Saturation: {}", saturation);
+}
 
 fn main() {
     consume();

@@ -20,7 +20,7 @@ pub fn find_stime(eng_file: &EngFile, evt_time: Time<Hxmt>) -> Result<(i32, u64,
     // --- find burst stime from unit A
     // 获取整列数据，6字节，并转换成十进制数。
     let bus_time_bdc = &eng_file.bus_time_bdc;
-    let mut bus_time: Vec<u64> = Vec::from_iter(bus_time_bdc.into_iter().map(|code| {
+    let mut bus_time: Vec<u64> = Vec::from_iter(bus_time_bdc.iter().map(|code| {
         ((code[6 - 1] as u64 & 127) << 24)
             + ((code[5 - 1] as u64) << 16)
             + ((code[4 - 1] as u64) << 8)
