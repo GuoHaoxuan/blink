@@ -15,17 +15,10 @@ pub struct Trigger<S: Satellite> {
     pub delay: Span<S>,
     pub count: u32,
     pub average: f64,
-    pub fp_year: f64,
 }
 
 impl<S: Satellite> Trigger<S> {
-    pub fn new(
-        start: Time<S>,
-        stop: Time<S>,
-        count: u32,
-        average: f64,
-        fp_year: f64,
-    ) -> Trigger<S> {
+    pub fn new(start: Time<S>, stop: Time<S>, count: u32, average: f64) -> Trigger<S> {
         let bin_size = stop - start;
         Trigger {
             start,
@@ -36,12 +29,15 @@ impl<S: Satellite> Trigger<S> {
             delay: Span::seconds(0.0),
             count,
             average,
-            fp_year,
         }
     }
 
     pub fn sf(&self) -> f64 {
         Poisson::new(self.average).unwrap().sf(self.count as u64)
+    }
+
+    pub fn fp_year(&self) -> f64 {
+        (1.0 - self.sf()) * (Span::seconds(3600.0) * 24.0 * 365.0 / (self.stop - self.start))
     }
 
     pub fn mergeable(&self, other: &Self, vision: u32) -> bool {
@@ -55,24 +51,16 @@ impl<S: Satellite> Trigger<S> {
             bin_size_max: res.bin_size_max.max(other.bin_size_max),
             ..res
         };
-        if other.sf() < res.sf() {
+        if other.fp_year() < res.fp_year() {
             res = Trigger {
                 count: other.count,
                 average: other.average,
                 bin_size_best: other.bin_size_best,
-                fp_year: other.fp_year,
                 delay: other.start - res.start,
                 ..res
             };
         }
         res
-    }
-
-    pub fn threshold(&self) -> u32 {
-        poisson_isf(
-            self.fp_year / (Span::seconds(3600.0) * 24.0 * 365.0 / (self.stop - self.start)),
-            self.average,
-        )
     }
 }
 
@@ -111,7 +99,6 @@ pub fn search_light_curve<S: Satellite>(
                     start + bin_size * (i + 1) as f64,
                     count,
                     average,
-                    fp_year,
                 ))
             } else {
                 None

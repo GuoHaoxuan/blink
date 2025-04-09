@@ -126,7 +126,7 @@ impl InstanceTrait for Instance {
             .map(|trigger| Signal {
                 start: trigger.start.to_chrono(),
                 stop: trigger.stop.to_chrono(),
-                fp_year: trigger.fp_year,
+                fp_year: trigger.fp_year(),
                 events: vec![],                 // TODO
                 longitude: 0.0,                 // TODO
                 latitude: 0.0,                  // TODO
