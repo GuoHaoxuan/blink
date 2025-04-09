@@ -37,7 +37,7 @@ impl<S: Satellite> Trigger<S> {
     }
 
     pub fn fp_year(&self) -> f64 {
-        (1.0 - self.sf()) * (Span::seconds(3600.0) * 24.0 * 365.0 / (self.stop - self.start))
+        self.sf() * (Span::seconds(3600.0) * 24.0 * 365.0 / (self.stop - self.start))
     }
 
     pub fn mergeable(&self, other: &Self, vision: u32) -> bool {
@@ -51,7 +51,7 @@ impl<S: Satellite> Trigger<S> {
             bin_size_max: res.bin_size_max.max(other.bin_size_max),
             ..res
         };
-        if other.fp_year() < res.fp_year() {
+        if other.sf() < res.sf() {
             res = Trigger {
                 count: other.count,
                 average: other.average,
