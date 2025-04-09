@@ -18,6 +18,7 @@ use crate::{
 use super::{
     eng_file::EngFile,
     event_file::{EventFile, Iter},
+    orbit_file::OrbitFile,
     sci_file::SciFile,
 };
 
@@ -25,6 +26,7 @@ pub(crate) struct Instance {
     event_file: EventFile,
     eng_files: [EngFile; 3],
     sci_files: [SciFile; 3],
+    pub(crate) orbit_file: OrbitFile,
     span: [Time<Hxmt>; 2],
 }
 
@@ -56,6 +58,15 @@ impl InstanceTrait for Instance {
         );
         let event_file_path = get_file(&folder, &prefix)?;
         let event_file = EventFile::new(&event_file_path)?;
+        let orbit_prefix = format!(
+            "HXMT_{:04}{:02}{:02}T{:02}_Orbit_FFFFFF_V",
+            epoch.year(),
+            epoch.month(),
+            epoch.day(),
+            epoch.hour()
+        );
+        let orbit_file_path = get_file(&folder, &orbit_prefix)?;
+        let orbit_file = OrbitFile::new(&orbit_file_path)?;
         let [eng_files, sci_files] = get_all_filenames(*epoch);
         let eng_files = [
             EngFile::new(&eng_files[0])?,
@@ -71,6 +82,7 @@ impl InstanceTrait for Instance {
             event_file,
             eng_files,
             sci_files,
+            orbit_file,
             span: [
                 Time::<Hxmt>::from(*epoch),
                 Time::<Hxmt>::from(*epoch + TimeDelta::hours(1)),
@@ -123,23 +135,30 @@ impl InstanceTrait for Instance {
             .collect::<Vec<_>>();
         let signals = results
             .into_iter()
-            .map(|trigger| Signal {
-                start: trigger.start.to_chrono(),
-                stop: trigger.stop.to_chrono(),
-                fp_year: trigger.fp_year(),
-                events: self
+            .map(|trigger| {
+                let events = self
                     .into_iter()
                     .filter(|event| event.time() >= trigger.start && event.time() <= trigger.stop)
                     .map(|event| {
                         // TODO: Use the correct energy range
                         event.to_general(&(0..256).map(|i| [i as f64, i as f64 + 1.0]).collect())
                     })
-                    .collect::<Vec<_>>(),
-                longitude: 0.0,                 // TODO
-                latitude: 0.0,                  // TODO
-                altitude: 0.0,                  // TODO
-                position_debug: "".to_string(), // TODO
-                lightnings: vec![],             // TODO
+                    .collect::<Vec<_>>();
+                let (longitude, latitude, altitude) = self
+                    .orbit_file
+                    .interpolate(trigger.start.time.into_inner())
+                    .unwrap_or((0.0, 0.0, 0.0));
+                Signal {
+                    start: trigger.start.to_chrono(),
+                    stop: trigger.stop.to_chrono(),
+                    fp_year: trigger.fp_year(),
+                    events,
+                    longitude,
+                    latitude,
+                    altitude,
+                    position_debug: "".to_string(), // TODO
+                    lightnings: vec![],             // TODO
+                }
             })
             .collect::<Vec<_>>();
         Ok(signals)
