@@ -36,12 +36,12 @@ impl OrbitFile {
 
         let t0 = self.time[i];
         let t1 = self.time[i + 1];
-        let lon0 = self.lon[i] as f64;
-        let lon1 = self.lon[i + 1] as f64;
-        let lat0 = self.lat[i] as f64;
-        let lat1 = self.lat[i + 1] as f64;
-        let alt0 = self.alt[i] as f64;
-        let alt1 = self.alt[i + 1] as f64;
+        let lon0 = self.lon[i] as f64 * 1e-5;
+        let lon1 = self.lon[i + 1] as f64 * 1e-5;
+        let lat0 = self.lat[i] as f64 * 1e-5;
+        let lat1 = self.lat[i + 1] as f64 * 1e-5;
+        let alt0 = self.alt[i] as f64 * 0.1;
+        let alt1 = self.alt[i + 1] as f64 * 0.1;
 
         let lon = lon0 + (lon1 - lon0) * (time - t0) / (t1 - t0);
         let lat = lat0 + (lat1 - lat0) * (time - t0) / (t1 - t0);
