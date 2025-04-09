@@ -47,6 +47,7 @@ impl Lightning {
         time: DateTime<Utc>,
         lat: f64,
         lon: f64,
+        alt: f64,
         time_tolerance: Duration,
         distance_tolerance: f64,
     ) -> Vec<Self> {
@@ -98,7 +99,7 @@ impl Lightning {
 
         rows.retain(|lightning| {
             let dist = distance(lat, lon, lightning.lat, lightning.lon);
-            let time_of_arrival_value = time_of_arrival(dist, 550_000.0, 15_000.0);
+            let time_of_arrival_value = time_of_arrival(dist, alt, 15_000.0);
             let fixed_time = time - time_of_arrival_value;
             let time_delta = lightning.time - fixed_time;
             time_delta.abs() <= time_tolerance && dist <= distance_tolerance

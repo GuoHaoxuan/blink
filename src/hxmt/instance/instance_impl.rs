@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
-use chrono::{prelude::*, TimeDelta};
+use chrono::{prelude::*, Duration, TimeDelta};
 use itertools::Itertools;
 
 use crate::{
@@ -11,6 +11,7 @@ use crate::{
         saturation::{get_all_filenames, rec_sci_data},
         Hxmt,
     },
+    lightning::Lightning,
     search::lightcurve::{light_curve, prefix_sum, search_light_curve, Trigger},
     types::{Event, GenericEvent, Instance as InstanceTrait, Signal, Span, Time},
 };
@@ -136,6 +137,9 @@ impl InstanceTrait for Instance {
         let signals = results
             .into_iter()
             .map(|trigger| {
+                let start = trigger.start.to_chrono();
+                let stop = trigger.stop.to_chrono();
+                let middle = start + (stop - start) / 2;
                 let events = self
                     .into_iter()
                     .filter(|event| event.time() >= trigger.start && event.time() <= trigger.stop)
@@ -148,16 +152,25 @@ impl InstanceTrait for Instance {
                     .orbit_file
                     .interpolate(trigger.start.time.into_inner())
                     .unwrap_or((0.0, 0.0, 0.0));
+                let time_tolerance = Duration::milliseconds(5);
+                let distance_tolerance = 800_000.0;
                 Signal {
-                    start: trigger.start.to_chrono(),
-                    stop: trigger.stop.to_chrono(),
+                    start,
+                    stop,
                     fp_year: trigger.fp_year(),
                     events,
                     longitude,
                     latitude,
                     altitude,
                     position_debug: "".to_string(), // TODO
-                    lightnings: vec![],             // TODO
+                    lightnings: Lightning::associated_lightning(
+                        middle,
+                        latitude,
+                        longitude,
+                        altitude,
+                        time_tolerance,
+                        distance_tolerance,
+                    ),
                 }
             })
             .collect::<Vec<_>>();

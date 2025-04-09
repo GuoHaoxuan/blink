@@ -169,6 +169,7 @@ impl InstanceTrait for Instance {
                     (start + (stop - start) / 2.0).to_chrono(),
                     position.sc_lat as f64,
                     position.sc_lon as f64,
+                    altitude(&position.pos) as f64,
                     time_tolerance,
                     distance_tolerance,
                 );
