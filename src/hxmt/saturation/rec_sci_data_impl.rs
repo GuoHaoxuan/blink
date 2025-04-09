@@ -126,13 +126,13 @@ pub fn rec_sci_data(time: Time<Hxmt>, eng_data: &EngFile, sci_data: &SciFile) ->
         .scan(stime_pivot as u64 - evt_range / 2, |stime_cache, packs| {
             let times = packs
                 .iter()
-                .map(|pack| match pack {
-                    Pack::Event { ptime, .. } => *stime_cache as f64 + *ptime as f64 * 2e-6,
+                .filter_map(|pack| match pack {
+                    Pack::Event { ptime, .. } => Some(*stime_cache as f64 + *ptime as f64 * 2e-6),
                     Pack::Second { stime, ptime } => {
                         *stime_cache = *stime;
-                        *stime_cache as f64 + *ptime as f64 * 2e-6
+                        Some(*stime_cache as f64 + *ptime as f64 * 2e-6)
                     }
-                    Pack::Error => panic!("Error in data"),
+                    Pack::Error => None,
                 })
                 .collect::<Vec<_>>();
             Some((
