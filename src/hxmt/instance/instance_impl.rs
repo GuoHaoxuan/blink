@@ -8,6 +8,7 @@ use crate::{
     env::HXMT_1K_DIR,
     hxmt::{
         event::HxmtEvent,
+        interpolate_point,
         saturation::{get_all_filenames, rec_sci_data},
         Hxmt,
     },
@@ -157,6 +158,9 @@ impl InstanceTrait for Instance {
 
                 let mut veto_counts = 0;
                 if -fp_year.log10() < 0.0 {
+                    veto_counts += 1;
+                }
+                if interpolate_point(longitude, latitude) > 700.0 {
                     veto_counts += 1;
                 }
                 if trigger.average / trigger.bin_size_best.to_seconds() < 8000.0 {
