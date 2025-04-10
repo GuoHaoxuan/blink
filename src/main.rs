@@ -43,7 +43,7 @@ fn consume() {
                 for result in results {
                     write_signal(&conn, &result);
                 }
-                finish_task(&conn, &time, "Fermi", "GBM");
+                finish_task(&conn, &time, &satellite, &detector);
             }
             Err(e) => {
                 fail_task(
