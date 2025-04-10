@@ -136,7 +136,7 @@ impl InstanceTrait for Instance {
             .collect::<Vec<_>>();
         let signals = results
             .into_iter()
-            .map(|trigger| {
+            .filter_map(|trigger| {
                 let start = trigger.start.to_chrono();
                 let stop = trigger.stop.to_chrono();
                 let middle = start + (stop - start) / 2;
@@ -154,23 +154,52 @@ impl InstanceTrait for Instance {
                     .unwrap_or((0.0, 0.0, 0.0));
                 let time_tolerance = Duration::milliseconds(5);
                 let distance_tolerance = 800_000.0;
-                Signal {
-                    start,
-                    stop,
-                    fp_year: trigger.fp_year(),
-                    events,
-                    longitude,
-                    latitude,
-                    altitude,
-                    position_debug: "".to_string(), // TODO
-                    lightnings: Lightning::associated_lightning(
-                        middle,
-                        latitude,
+
+                let mut veto_counts = 0;
+                if -fp_year.log10() < 0.0 {
+                    veto_counts += 1;
+                }
+                if trigger.average / trigger.bin_size_best.to_seconds() < 8000.0 {
+                    veto_counts += 1;
+                }
+                if trigger.stop - trigger.start < Span::seconds(40e-6) {
+                    veto_counts += 1;
+                }
+                if trigger.bin_size_best <= Span::seconds(40e-6)
+                    || trigger.bin_size_best >= Span::seconds(640e-6)
+                {
+                    veto_counts += 1;
+                }
+                if trigger.bin_size_min <= Span::seconds(20e-6)
+                    || trigger.bin_size_best >= Span::seconds(320e-6)
+                {
+                    veto_counts += 1;
+                }
+                if trigger.bin_size_max <= Span::seconds(40e-6) {
+                    veto_counts += 1;
+                }
+
+                if veto_counts >= 2 {
+                    None
+                } else {
+                    Some(Signal {
+                        start,
+                        stop,
+                        fp_year: trigger.fp_year(),
+                        events,
                         longitude,
+                        latitude,
                         altitude,
-                        time_tolerance,
-                        distance_tolerance,
-                    ),
+                        position_debug: "".to_string(), // TODO
+                        lightnings: Lightning::associated_lightning(
+                            middle,
+                            latitude,
+                            longitude,
+                            altitude,
+                            time_tolerance,
+                            distance_tolerance,
+                        ),
+                    })
                 }
             })
             .collect::<Vec<_>>();
