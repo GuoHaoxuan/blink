@@ -183,7 +183,7 @@ impl InstanceTrait for Instance {
                     veto_counts += 1;
                 }
 
-                if veto_counts >= 2 {
+                if false {
                     None
                 } else {
                     Some(Signal {
@@ -194,7 +194,9 @@ impl InstanceTrait for Instance {
                         longitude,
                         latitude,
                         altitude,
-                        position_debug: "".to_string(), // TODO
+                        position_debug: serde_json::to_value(trigger)
+                            .unwrap_or_default()
+                            .to_string(),
                         lightnings: Lightning::associated_lightning(
                             middle,
                             latitude,
