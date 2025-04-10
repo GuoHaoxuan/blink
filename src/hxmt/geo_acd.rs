@@ -12,7 +12,13 @@ fn get_acd_data() -> Vec<Vec<f64>> {
     }
 
     // 读取文件
-    let file = File::open("acd.txt").expect("无法打开ACD文件");
+    // Get the directory of the current file
+    let current_file = std::path::Path::new(file!());
+    let parent_dir = current_file
+        .parent()
+        .expect("Failed to get parent directory");
+    let acd_path = parent_dir.join("acd.txt");
+    let file = File::open(&acd_path).expect("无法打开ACD文件");
     let reader = BufReader::new(file);
 
     // 解析文件内容到向量
