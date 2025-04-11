@@ -36,7 +36,7 @@ impl crate::types::Event for HxmtEvent {
                 ebounds[self.energy as usize][0],
                 ebounds[self.energy as usize][1],
             ],
-            detector: self.detector.to_string(),
+            detector: serde_json::to_string(&self.detector).unwrap(),
         }
     }
 }
