@@ -141,9 +141,12 @@ impl InstanceTrait for Instance {
                 let start = trigger.start.to_chrono();
                 let stop = trigger.stop.to_chrono();
                 let middle = start + (stop - start) / 2;
+                let extend = Span::milliseconds(1.0);
+                let start_extended = trigger.start - extend;
+                let stop_extended = trigger.stop + extend;
                 let events = self
                     .into_iter()
-                    .filter(|event| event.time() >= trigger.start && event.time() <= trigger.stop)
+                    .filter(|event| event.time() >= start_extended && event.time() <= stop_extended)
                     .map(|event| {
                         // TODO: Use the correct energy range
                         event.to_general(&(0..256).map(|i| [i as f64, i as f64 + 1.0]).collect())
