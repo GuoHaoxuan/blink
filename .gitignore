@@ -7,3 +7,5 @@ venv
 *.fit
 *.pha
 *.db
+lightcurve
+output

@@ -45,45 +45,6 @@ signals = [
     for row in data
 ]
 
-found = 0
-all = 0
-first_line = True
-
-with open("gbm_tgf_catalog_offline.csv") as csvfile:
-    reader = csv.reader(csvfile)
-    for row in reader:
-        if first_line:
-            first_line = False
-            continue
-        if len(row) < 4:
-            continue
-        time_str = row[6] + " " + row[7]
-        try:
-            # 确保所有datetime对象都是naive的（不带时区信息）
-            time = parser.parse(time_str)
-            if time.tzinfo is not None:
-                time = time.replace(tzinfo=None)
-
-            if time > datetime(2016, 1, 1):
-                all += 1
-                for signal in signals:
-                    signal_start = signal.start
-                    signal_stop = signal.stop
-
-                    # 确保signal的datetime也是naive的
-                    if signal_start.tzinfo is not None:
-                        signal_start = signal_start.replace(tzinfo=None)
-                    if signal_stop.tzinfo is not None:
-                        signal_stop = signal_stop.replace(tzinfo=None)
-
-                    if signal_start <= time <= signal_stop:
-                        found += 1
-                        break
-        except Exception as e:
-            print(f"Error parsing time {time_str}: {e}")
-
-print(f"Found {found} out of {all} signals in the database.")
-
 # 收集所有数据点
 lons = []
 lats = []
