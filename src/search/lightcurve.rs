@@ -40,8 +40,8 @@ impl<S: Satellite> Trigger<S> {
         self.sf() * (Span::seconds(3600.0) * 24.0 * 365.0 / (self.stop - self.start))
     }
 
-    pub fn mergeable(&self, other: &Self, vision: u32) -> bool {
-        self.stop + self.bin_size_max.max(other.bin_size_max) * (vision as f64) > other.start
+    pub fn mergeable(&self, other: &Self, vision: f64) -> bool {
+        self.stop + self.bin_size_max.max(other.bin_size_max) * vision > other.start
     }
     pub fn merge(&self, other: &Self) -> Self {
         let mut res = self.clone();
