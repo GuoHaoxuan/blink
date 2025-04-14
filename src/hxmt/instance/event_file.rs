@@ -7,7 +7,7 @@ pub(crate) struct EventFile {
     time: Vec<f64>,
     det_id: Vec<u8>,
     channel: Vec<u8>,
-    // pulse_width: Vec<u8>,
+    pulse_width: Vec<u8>,
     acd: Vec<[bool; 18]>,
     // event_type: Vec<u8>,
     // flag: Vec<u8>,
@@ -22,7 +22,7 @@ impl EventFile {
         let time = events.read_col::<f64>(&mut fptr, "Time")?;
         let det_id = events.read_col::<u8>(&mut fptr, "Det_ID")?;
         let channel = events.read_col::<u8>(&mut fptr, "Channel")?;
-        // let pulse_width = events.read_col::<u8>(&mut fptr, "PULSE_WIDTH")?;
+        let pulse_width = events.read_col::<u8>(&mut fptr, "PULSE_WIDTH")?;
 
         let acd_raw = events.read_col::<u32>(&mut fptr, "ACD")?;
         let mut acd = Vec::with_capacity(acd_raw.len());
@@ -41,7 +41,7 @@ impl EventFile {
             time,
             det_id,
             channel,
-            // pulse_width,
+            pulse_width,
             acd,
             // event_type,
             // flag,
@@ -77,6 +77,7 @@ impl Iterator for Iter<'_> {
                 detector: HxmtDetectorType {
                     id: self.event_file.det_id[self.index],
                     acd: self.event_file.acd[self.index],
+                    pulse_width: self.event_file.pulse_width[self.index],
                 },
             };
             self.index += 1;
