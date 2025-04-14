@@ -96,7 +96,7 @@ impl InstanceTrait for Instance {
         let events = self
             .into_iter()
             .filter(|event| event.energy() >= 38)
-            .filter(|event| !event.detector().acd.iter().any(|acd| *acd))
+            // .filter(|event| !event.detector().acd.iter().any(|acd| *acd))
             .map(|event| event.time())
             .collect::<Vec<_>>();
         let fp_year = 20.0;
