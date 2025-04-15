@@ -22,7 +22,7 @@ impl EventFile {
         let time = events.read_col::<f64>(&mut fptr, "Time")?;
         let det_id = events.read_col::<u8>(&mut fptr, "Det_ID")?;
         let channel = events.read_col::<u8>(&mut fptr, "Channel")?;
-        let pulse_width = events.read_col::<u8>(&mut fptr, "PULSE_WIDTH")?;
+        let pulse_width = events.read_col::<u8>(&mut fptr, "Pulse_Width")?;
 
         let acd_raw = events.read_col::<u32>(&mut fptr, "ACD")?;
         let mut acd = Vec::with_capacity(acd_raw.len());
