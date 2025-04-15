@@ -14,7 +14,7 @@ use crate::{
     },
     lightning::Lightning,
     search::lightcurve::{light_curve, prefix_sum, search_light_curve, Trigger},
-    types::{Event, GenericEvent, Instance as InstanceTrait, Signal, Span, Time},
+    types::{Event, Instance as InstanceTrait, Signal, Span, Time},
 };
 
 use super::{
@@ -198,9 +198,7 @@ impl InstanceTrait for Instance {
                         longitude,
                         latitude,
                         altitude,
-                        position_debug: serde_json::to_value(trigger)
-                            .unwrap_or_default()
-                            .to_string(),
+                        position_debug: serde_json::to_string(&trigger).unwrap(),
                         lightnings: Lightning::associated_lightning(
                             middle,
                             latitude,
