@@ -30,7 +30,6 @@ impl crate::types::Event for HxmtEvent {
     }
 
     fn to_general(&self, ebounds: &crate::types::Ebounds) -> GenericEvent {
-        println!("{}", serde_json::to_string(&self.detector).unwrap());
         GenericEvent {
             time: self.time.to_chrono(),
             energy: [
