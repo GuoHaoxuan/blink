@@ -50,10 +50,11 @@ impl HxmtEc {
             .filter_map(|entry| entry.ok())
             .map(|entry| entry.path())
             .filter(|path| path.is_file())
-            .map(|path| path.to_str().unwrap().to_string())
-            .filter(|path| path.ends_with("_EC_Nor.txt"))
+            .map(|path| path.file_name().unwrap().to_str().unwrap().to_string())
+            .filter(|name| name.ends_with("_EC_Nor.txt"))
             .collect::<Vec<_>>();
         names.sort_by_key(|name| {
+            println!("file name: {}", name);
             let file_time = NaiveDateTime::parse_from_str(
                 &(name[..10].to_string() + " 00:00:00"),
                 "%Y-%m-%d %H:%M:%S",
