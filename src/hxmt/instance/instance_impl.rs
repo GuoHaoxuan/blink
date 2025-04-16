@@ -124,7 +124,7 @@ impl InstanceTrait for Instance {
         let results = results
             .into_iter()
             .coalesce(|prev, next| {
-                if prev.mergeable(&next, 1.01) {
+                if prev.mergeable(&next, 0.0) {
                     Ok(prev.merge(&next))
                 } else {
                     Err((prev, next))

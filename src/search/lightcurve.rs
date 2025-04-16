@@ -41,7 +41,7 @@ impl<S: Satellite> Trigger<S> {
     }
 
     pub fn mergeable(&self, other: &Self, vision: f64) -> bool {
-        self.stop + self.bin_size_max.max(other.bin_size_max) * vision > other.start
+        self.stop + self.bin_size_max.max(other.bin_size_max) * vision >= other.start
     }
     pub fn merge(&self, other: &Self) -> Self {
         let mut res = self.clone();
