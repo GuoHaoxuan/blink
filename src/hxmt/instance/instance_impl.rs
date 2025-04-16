@@ -160,40 +160,12 @@ impl InstanceTrait for Instance {
                 let time_tolerance = Duration::milliseconds(5);
                 let distance_tolerance = 800_000.0;
 
-                let mut veto_counts = 0;
-                if -fp_year.log10() < 0.0 {
-                    veto_counts += 1;
-                }
-                if interpolate_point(longitude, latitude) > 700.0 {
-                    veto_counts += 1;
-                }
-                if trigger.average / trigger.bin_size_best.to_seconds() < 8000.0 {
-                    veto_counts += 1;
-                }
-                if trigger.stop - trigger.start < Span::seconds(40e-6) {
-                    veto_counts += 1;
-                }
-                if trigger.bin_size_best <= Span::seconds(40e-6)
-                    || trigger.bin_size_best >= Span::seconds(640e-6)
-                {
-                    veto_counts += 1;
-                }
-                if trigger.bin_size_min <= Span::seconds(20e-6)
-                    || trigger.bin_size_best >= Span::seconds(320e-6)
-                {
-                    veto_counts += 1;
-                }
-                if trigger.bin_size_max <= Span::seconds(40e-6) {
-                    veto_counts += 1;
-                }
-
-                if false {
-                    None
-                } else {
+                let fp_year = trigger.fp_year();
+                if fp_year <= 1e-3 {
                     Some(Signal {
                         start,
                         stop,
-                        fp_year: trigger.fp_year(),
+                        fp_year,
                         events,
                         longitude,
                         latitude,
@@ -208,6 +180,8 @@ impl InstanceTrait for Instance {
                             distance_tolerance,
                         ),
                     })
+                } else {
+                    None
                 }
             })
             .collect::<Vec<_>>();
