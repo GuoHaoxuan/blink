@@ -97,11 +97,11 @@ pub fn fail_task(
     .unwrap();
 }
 
-pub(crate) fn write_signal(conn: &Connection, signal: &Signal) {
+pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detector: &str) {
     conn.execute(
         "
-            INSERT INTO signals (start, stop, fp_year, longitude, latitude, altitude, position_debug, events, lightnings)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9);
+            INSERT INTO signals (start, stop, fp_year, longitude, latitude, altitude, events, lightnings, satellite, detector)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10);
         ",
         params![
             signal.start.to_string(),
@@ -110,9 +110,10 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal) {
             signal.longitude,
             signal.latitude,
             signal.altitude,
-            signal.position_debug,
             serde_json::to_string(&signal.events).unwrap(),
             serde_json::to_string(&signal.lightnings).unwrap(),
+            satellite,
+            detector,
         ],
     )
     .unwrap();

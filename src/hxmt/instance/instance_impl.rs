@@ -170,7 +170,6 @@ impl InstanceTrait for Instance {
                         longitude,
                         latitude,
                         altitude,
-                        position_debug: serde_json::to_string(&trigger).unwrap(),
                         lightnings: Lightning::associated_lightning(
                             middle,
                             latitude,

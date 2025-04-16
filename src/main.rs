@@ -41,7 +41,7 @@ fn consume() {
         match results {
             Ok(results) => {
                 for result in results {
-                    write_signal(&conn, &result);
+                    write_signal(&conn, &result, &satellite, &detector);
                 }
                 finish_task(&conn, &time, &satellite, &detector);
             }
