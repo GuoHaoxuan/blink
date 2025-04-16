@@ -54,7 +54,6 @@ impl HxmtEc {
             .filter(|name| name.ends_with("_EC_Nor.txt"))
             .collect::<Vec<_>>();
         names.sort_by_key(|name| {
-            println!("file name: {}", name);
             let file_time = NaiveDateTime::parse_from_str(
                 &(name[..10].to_string() + " 00:00:00"),
                 "%Y-%m-%d %H:%M:%S",
