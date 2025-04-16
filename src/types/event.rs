@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use super::{Ebounds, Group, Satellite, Time};
+use super::{Group, Satellite, Time};
 
 pub(crate) trait Event: Serialize + Eq + Ord + Copy + Group {
     type Satellite: Satellite;
@@ -11,7 +11,7 @@ pub(crate) trait Event: Serialize + Eq + Ord + Copy + Group {
     fn time(&self) -> Time<Self::Satellite>;
     fn energy(&self) -> Self::EnergyType;
     // fn detector(&self) -> Self::DetectorType;
-    fn to_general(&self, ebounds: &Ebounds) -> GenericEvent;
+    fn to_general(&self, ec_function: impl Fn(&Self) -> [f64; 2]) -> GenericEvent;
 }
 
 #[derive(Debug, Clone, Serialize)]

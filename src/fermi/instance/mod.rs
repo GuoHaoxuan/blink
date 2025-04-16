@@ -160,7 +160,14 @@ impl InstanceTrait for Instance {
                 let events = self
                     .into_iter()
                     .filter(|event| event.time() >= start_extended && event.time() <= stop_extended)
-                    .map(|event| event.to_general(&ebounds))
+                    .map(|event| {
+                        event.to_general(|event| {
+                            [
+                                ebounds[event.energy() as usize][0],
+                                ebounds[event.energy() as usize][1],
+                            ]
+                        })
+                    })
                     .collect::<Vec<_>>();
                 let position = self.position.get_row(start);
                 let time_tolerance = Duration::milliseconds(5);

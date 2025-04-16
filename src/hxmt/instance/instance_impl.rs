@@ -152,9 +152,11 @@ impl InstanceTrait for Instance {
                 let events = self
                     .into_iter()
                     .filter(|event| event.time() >= start_extended && event.time() <= stop_extended)
+                    // TODO: Use the correct energy range
                     .map(|event| {
-                        // TODO: Use the correct energy range
-                        event.to_general(&(0..256).map(|i| [i as f64, i as f64 + 1.0]).collect())
+                        event.to_general(|event| {
+                            [event.energy() as f64, event.energy() as f64 + 1.0]
+                        })
                     })
                     .collect::<Vec<_>>();
                 let (longitude, latitude, altitude) = self

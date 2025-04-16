@@ -30,13 +30,10 @@ impl crate::types::Event for HxmtEvent {
         self.energy
     }
 
-    fn to_general(&self, ebounds: &crate::types::Ebounds) -> GenericEvent {
+    fn to_general(&self, ec_function: impl Fn(&Self) -> [f64; 2]) -> GenericEvent {
         GenericEvent {
             time: self.time.to_chrono(),
-            energy: [
-                ebounds[self.energy as usize][0],
-                ebounds[self.energy as usize][1],
-            ],
+            energy: ec_function(self),
             detector: serde_json::to_string(&self.detector).unwrap(),
         }
     }
