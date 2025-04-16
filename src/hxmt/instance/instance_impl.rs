@@ -95,6 +95,10 @@ impl InstanceTrait for Instance {
     fn search(&self) -> Result<Vec<Signal>> {
         let events = self
             .into_iter()
+            .filter(|event| event.event_type == 0)
+            .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
+            .filter(|(count, _)| *count == 1)
+            .map(|(_, event)| event)
             .filter(|event| event.energy() >= 38)
             // .filter(|event| !event.detector().acd.iter().any(|acd| *acd))
             .map(|event| event.time())

@@ -9,7 +9,7 @@ pub(crate) struct EventFile {
     channel: Vec<u8>,
     pulse_width: Vec<u8>,
     acd: Vec<[bool; 18]>,
-    // event_type: Vec<u8>,
+    event_type: Vec<u8>,
     // flag: Vec<u8>,
 }
 
@@ -34,7 +34,7 @@ impl EventFile {
             acd.push(array);
         }
 
-        // let event_type = events.read_col::<u8>(&mut fptr, "EVENT_TYPE")?;
+        let event_type = events.read_col::<u8>(&mut fptr, "Event_Type")?;
         // let flag = events.read_col::<u8>(&mut fptr, "FLAG")?;
 
         Ok(Self {
@@ -43,7 +43,7 @@ impl EventFile {
             channel,
             pulse_width,
             acd,
-            // event_type,
+            event_type,
             // flag,
         })
     }
@@ -79,6 +79,7 @@ impl Iterator for Iter<'_> {
                     acd: self.event_file.acd[self.index],
                     pulse_width: self.event_file.pulse_width[self.index],
                 },
+                event_type: self.event_file.event_type[self.index],
             };
             self.index += 1;
             Some(event)

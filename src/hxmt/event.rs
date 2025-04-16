@@ -9,6 +9,7 @@ pub(crate) struct HxmtEvent {
     pub(super) time: Time<Hxmt>,
     pub(super) energy: u16,
     pub(super) detector: HxmtDetectorType,
+    pub(super) event_type: u8,
 }
 
 impl HxmtEvent {
