@@ -1,3 +1,4 @@
+mod ec;
 mod eng_file;
 mod event_file;
 mod instance_impl;

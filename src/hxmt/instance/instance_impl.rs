@@ -18,6 +18,7 @@ use crate::{
 };
 
 use super::{
+    ec::HxmtEc,
     eng_file::EngFile,
     event_file::{EventFile, Iter},
     orbit_file::OrbitFile,
@@ -29,6 +30,7 @@ pub(crate) struct Instance {
     eng_files: [EngFile; 3],
     sci_files: [SciFile; 3],
     pub(crate) orbit_file: OrbitFile,
+    pub(crate) hxmt_ec: HxmtEc,
     span: [Time<Hxmt>; 2],
 }
 
@@ -80,11 +82,13 @@ impl InstanceTrait for Instance {
             SciFile::new(&sci_files[1])?,
             SciFile::new(&sci_files[2])?,
         ];
+        let hxmt_ec = HxmtEc::from_datetime(epoch)?;
         Ok(Self {
             event_file,
             eng_files,
             sci_files,
             orbit_file,
+            hxmt_ec,
             span: [
                 Time::<Hxmt>::from(*epoch),
                 Time::<Hxmt>::from(*epoch + TimeDelta::hours(1)),
@@ -152,10 +156,12 @@ impl InstanceTrait for Instance {
                 let events = self
                     .into_iter()
                     .filter(|event| event.time() >= start_extended && event.time() <= stop_extended)
-                    // TODO: Use the correct energy range
                     .map(|event| {
                         event.to_general(|event| {
-                            [event.energy() as f64, event.energy() as f64 + 1.0]
+                            let k = self.hxmt_ec.rows[event.detector().id as usize].k;
+                            let b = self.hxmt_ec.rows[event.detector().id as usize].b;
+                            let energy = k * event.energy() as f64 + b;
+                            [energy, energy]
                         })
                     })
                     .collect::<Vec<_>>();
