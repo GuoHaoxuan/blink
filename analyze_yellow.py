@@ -84,10 +84,13 @@ class Signal:
         self.count = debugs["count"]
         events = json.loads(row[8])
         acd_count = 0
-        for evevt in events:
-            if "true" in evevt["detector"]:
-                acd_count += 1
-        self.acd_ratio = acd_count / len(events)
+        total_count = 0
+        for event in events:
+            if event["time"] > row[0] and event["time"] < row[1]:
+                total_count += 1
+                if "true" in event["detector"]:
+                    acd_count += 1
+        self.acd_ratio = acd_count / total_count if total_count > 0 else 0
         self.acd_rate = interpolate_point(self.longitude, self.latitude)
 
 
