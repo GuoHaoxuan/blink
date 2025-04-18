@@ -176,7 +176,7 @@ impl InstanceTrait for Instance {
                 let distance_tolerance = 800_000.0;
 
                 let fp_year = trigger.fp_year();
-                if true {
+                if fp_year < 1e-3 {
                     Some(Signal {
                         start,
                         stop,
