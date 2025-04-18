@@ -100,9 +100,9 @@ impl InstanceTrait for Instance {
         let events = self
             .into_iter()
             .filter(|event| event.event_type == 0)
-            .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
-            .filter(|(count, _)| *count == 1)
-            .map(|(_, event)| event)
+            // .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
+            // .filter(|(count, _)| *count == 1)
+            // .map(|(_, event)| event)
             .filter(|event| event.energy() >= 38)
             // .filter(|event| !event.detector().acd.iter().any(|acd| *acd))
             .map(|event| event.time())
@@ -160,8 +160,11 @@ impl InstanceTrait for Instance {
                         event.to_general(|event| {
                             let k = self.hxmt_ec.rows[event.detector().id as usize].k;
                             let b = self.hxmt_ec.rows[event.detector().id as usize].b;
-                            let energy = k * event.energy() as f64 + b;
-                            [energy, energy]
+                            let k_err = self.hxmt_ec.rows[event.detector().id as usize].k_err;
+                            let b_err = self.hxmt_ec.rows[event.detector().id as usize].b_err;
+                            let energy_lower = (k - k_err) * event.energy() as f64 + (b - b_err);
+                            let energy_upper = (k + k_err) * event.energy() as f64 + (b + b_err);
+                            [energy_lower, energy_upper]
                         })
                     })
                     .collect::<Vec<_>>();

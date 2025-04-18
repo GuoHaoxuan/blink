@@ -1,8 +1,30 @@
 use serde::Serialize;
+use std::fmt;
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub(crate) enum HxmtScintillator {
+    NaI,
+    CsI,
+}
+
+impl fmt::Display for HxmtScintillator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            HxmtScintillator::NaI => write!(f, "NaI"),
+            HxmtScintillator::CsI => write!(f, "CsI"),
+        }
+    }
+}
+
+impl Serialize for HxmtScintillator {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_string().serialize(serializer)
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize)]
 pub(crate) struct HxmtDetectorType {
     pub id: u8,
-    pub acd: [bool; 18],
-    pub pulse_width: u8,
+    pub veto: bool,
+    pub scintillator: HxmtScintillator,
 }

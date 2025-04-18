@@ -1,4 +1,4 @@
-use crate::hxmt::detector::HxmtDetectorType;
+use crate::hxmt::detector::{HxmtDetectorType, HxmtScintillator};
 use crate::hxmt::event::HxmtEvent;
 use crate::types::Time;
 
@@ -71,13 +71,21 @@ impl Iterator for Iter<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.event_file.time.len() {
+            let mut energy = self.event_file.channel[self.index] as u16;
+            if energy < 20 {
+                energy += 256;
+            }
             let event = HxmtEvent {
                 time: Time::seconds(self.event_file.time[self.index]),
-                energy: self.event_file.channel[self.index] as u16,
+                energy,
                 detector: HxmtDetectorType {
                     id: self.event_file.det_id[self.index],
-                    acd: self.event_file.acd[self.index],
-                    pulse_width: self.event_file.pulse_width[self.index],
+                    veto: self.event_file.acd[self.index].iter().any(|&x| x),
+                    scintillator: if self.event_file.pulse_width[self.index] < 75 {
+                        HxmtScintillator::NaI
+                    } else {
+                        HxmtScintillator::CsI
+                    },
                 },
                 event_type: self.event_file.event_type[self.index],
             };
