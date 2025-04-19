@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 pub(crate) struct EngFile {
     // HDU 1: HE_Eng
@@ -9,12 +9,26 @@ pub(crate) struct EngFile {
 
 impl EngFile {
     pub(crate) fn new(filename: &str) -> Result<Self> {
-        let mut fptr = fitsio::FitsFile::open(filename)?;
+        let mut fptr = fitsio::FitsFile::open(filename)
+            .with_context(|| format!("Failed to open file: {}", filename))?;
 
         // HDU 1: HE_Eng
-        let eng = fptr.hdu("HE_Eng")?;
-        let time = eng.read_col::<i32>(&mut fptr, "Time")?;
-        let bus_time_bdc_raw: Vec<u8> = eng.read_col(&mut fptr, "BUS_Time_Bdc")?;
+        let eng = fptr
+            .hdu("HE_Eng")
+            .with_context(|| format!("Failed to find HDU HE_Eng in file: {}", filename))?;
+        let time = eng.read_col::<i32>(&mut fptr, "Time").with_context(|| {
+            format!(
+                "Failed to read column Time from HDU HE_Eng in file: {}",
+                filename
+            )
+        })?;
+        let bus_time_bdc_raw: Vec<u8> =
+            eng.read_col(&mut fptr, "BUS_Time_Bdc").with_context(|| {
+                format!(
+                    "Failed to read column BUS_Time_Bdc from HDU HE_Eng in file: {}",
+                    filename
+                )
+            })?;
         let mut bus_time_bdc = Vec::with_capacity(bus_time_bdc_raw.len() / 6);
         for chunk in bus_time_bdc_raw.chunks_exact(6) {
             let mut array = [0; 6];

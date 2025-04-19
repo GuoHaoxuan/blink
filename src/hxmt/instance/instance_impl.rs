@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{prelude::*, Duration, TimeDelta};
 use itertools::Itertools;
 
@@ -61,7 +61,9 @@ impl InstanceTrait for Instance {
             epoch.hour()
         );
         let event_file_path = get_file(&folder, &prefix)?;
-        let event_file = EventFile::new(&event_file_path)?;
+        let event_file = EventFile::new(&event_file_path).with_context(|| {
+            format!("Failed to create EventFile from file: {}", event_file_path)
+        })?;
         let orbit_prefix = format!(
             "HXMT_{:04}{:02}{:02}T{:02}_Orbit_FFFFFF_V",
             epoch.year(),
@@ -69,20 +71,30 @@ impl InstanceTrait for Instance {
             epoch.day(),
             epoch.hour()
         );
-        let orbit_file_path = get_file(&folder, &orbit_prefix)?;
-        let orbit_file = OrbitFile::new(&orbit_file_path)?;
+        let orbit_file_path = get_file(&folder, &orbit_prefix)
+            .with_context(|| format!("Failed to get orbit file: {}", orbit_prefix))?;
+        let orbit_file = OrbitFile::new(&orbit_file_path).with_context(|| {
+            format!("Failed to create OrbitFile from file: {}", orbit_file_path)
+        })?;
         let [eng_files, sci_files] = get_all_filenames(*epoch);
         let eng_files = [
-            EngFile::new(&eng_files[0])?,
-            EngFile::new(&eng_files[1])?,
-            EngFile::new(&eng_files[2])?,
+            EngFile::new(&eng_files[0])
+                .with_context(|| format!("Failed to create EngFile from file: {}", eng_files[0]))?,
+            EngFile::new(&eng_files[1])
+                .with_context(|| format!("Failed to create EngFile from file: {}", eng_files[1]))?,
+            EngFile::new(&eng_files[2])
+                .with_context(|| format!("Failed to create EngFile from file: {}", eng_files[2]))?,
         ];
         let sci_files = [
-            SciFile::new(&sci_files[0])?,
-            SciFile::new(&sci_files[1])?,
-            SciFile::new(&sci_files[2])?,
+            SciFile::new(&sci_files[0])
+                .with_context(|| format!("Failed to create SciFile from file: {}", sci_files[0]))?,
+            SciFile::new(&sci_files[1])
+                .with_context(|| format!("Failed to create SciFile from file: {}", sci_files[1]))?,
+            SciFile::new(&sci_files[2])
+                .with_context(|| format!("Failed to create SciFile from file: {}", sci_files[2]))?,
         ];
-        let hxmt_ec = HxmtEc::from_datetime(epoch)?;
+        let hxmt_ec = HxmtEc::from_datetime(epoch)
+            .with_context(|| format!("Failed to create HxmtEc from datetime: {}", epoch))?;
         Ok(Self {
             event_file,
             eng_files,

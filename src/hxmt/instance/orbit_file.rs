@@ -1,3 +1,5 @@
+use anyhow::{anyhow, Context, Result};
+
 pub(crate) struct OrbitFile {
     // HDU 1: Orbit
     time: Vec<f64>,
@@ -7,15 +9,36 @@ pub(crate) struct OrbitFile {
 }
 
 impl OrbitFile {
-    pub(super) fn new(filename: &str) -> Result<Self, fitsio::errors::Error> {
-        let mut fptr = fitsio::FitsFile::open(filename)?;
+    pub(super) fn new(filename: &str) -> Result<Self> {
+        let mut fptr = fitsio::FitsFile::open(filename)
+            .with_context(|| format!("Failed to open file: {}", filename))?;
 
         // HDU 1: Orbit
         let orbit = fptr.hdu("Orbit")?;
-        let time = orbit.read_col::<f64>(&mut fptr, "Time")?;
-        let lon = orbit.read_col::<f64>(&mut fptr, "Lon")?;
-        let lat = orbit.read_col::<f64>(&mut fptr, "Lat")?;
-        let alt = orbit.read_col::<f64>(&mut fptr, "Alt")?;
+        let time = orbit.read_col::<f64>(&mut fptr, "Time").with_context(|| {
+            format!(
+                "Failed to read column Time from HDU Orbit in file: {}",
+                filename
+            )
+        })?;
+        let lon = orbit.read_col::<f64>(&mut fptr, "Lon").with_context(|| {
+            format!(
+                "Failed to read column Lon from HDU Orbit in file: {}",
+                filename
+            )
+        })?;
+        let lat = orbit.read_col::<f64>(&mut fptr, "Lat").with_context(|| {
+            format!(
+                "Failed to read column Lat from HDU Orbit in file: {}",
+                filename
+            )
+        })?;
+        let alt = orbit.read_col::<f64>(&mut fptr, "Alt").with_context(|| {
+            format!(
+                "Failed to read column Alt from HDU Orbit in file: {}",
+                filename
+            )
+        })?;
 
         Ok(Self {
             time,
@@ -25,13 +48,13 @@ impl OrbitFile {
         })
     }
 
-    pub fn interpolate(&self, time: f64) -> anyhow::Result<(f64, f64, f64)> {
+    pub fn interpolate(&self, time: f64) -> Result<(f64, f64, f64)> {
         let mut i = 0;
         while i < self.time.len() - 1 && self.time[i + 1] < time {
             i += 1;
         }
         if i == self.time.len() - 1 {
-            return Err(anyhow::anyhow!("Time out of bounds"));
+            return Err(anyhow!("Time {} is out of bounds for the orbit data", time));
         }
 
         let t0 = self.time[i];
