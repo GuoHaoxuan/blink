@@ -76,7 +76,7 @@ impl InstanceTrait for Instance {
         let orbit_file = OrbitFile::new(&orbit_file_path).with_context(|| {
             format!("Failed to create OrbitFile from file: {}", orbit_file_path)
         })?;
-        let [eng_files, sci_files] = get_all_filenames(*epoch);
+        let [eng_files, sci_files] = get_all_filenames(*epoch)?;
         let eng_files = [
             EngFile::new(&eng_files[0])?,
             EngFile::new(&eng_files[1])?,
