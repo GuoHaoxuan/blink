@@ -91,7 +91,7 @@ pub fn fail_task(
             format!("{}", time.format("%Y-%m-%d %H:%M:%S").to_string()),
             satellite,
             detector,
-            error.to_string()
+            format!("{:#}", error),
         ],
     )
     .unwrap();

@@ -4,6 +4,7 @@ mod rec_sci_data_impl;
 
 use std::path::Path;
 
+use anyhow::{anyhow, Context, Result};
 use chrono::prelude::*;
 use chrono::TimeDelta;
 
@@ -11,7 +12,7 @@ use crate::env::HXMT_1B_DIR;
 
 pub use rec_sci_data_impl::rec_sci_data;
 
-pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> String {
+pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Option<String> {
     let code = match (type_, serial_num) {
         ("eng", "A") => "0766",
         ("eng", "B") => "1009",
@@ -22,7 +23,7 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Stri
         _ => panic!("Invalid type or serial number"),
     };
 
-    let mut path = String::new();
+    let mut path = None;
     let mut version = -1;
 
     // 创建前一天和后一天的时间
@@ -76,10 +77,12 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Stri
 
                         if ver > version {
                             version = ver;
-                            path = entry_path
-                                .join(format!("{}.fits", folder_name))
-                                .to_string_lossy()
-                                .into_owned();
+                            path = Some(
+                                entry_path
+                                    .join(format!("{}.fits", folder_name))
+                                    .to_string_lossy()
+                                    .into_owned(),
+                            );
                         }
                     }
                 }
@@ -90,20 +93,56 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Stri
     path
 }
 
-pub fn get_all_filenames(time: DateTime<Utc>) -> [[String; 3]; 2] {
+pub fn get_all_filenames(time: DateTime<Utc>) -> Result<[[String; 3]; 2]> {
     let types = ["eng", "sci"];
     let serial_nums = ["A", "B", "C"];
 
-    [
+    Ok([
         [
-            find_filename(types[0], time, serial_nums[0]),
-            find_filename(types[0], time, serial_nums[1]),
-            find_filename(types[0], time, serial_nums[2]),
+            find_filename(types[0], time, serial_nums[0]).ok_or_else(|| {
+                anyhow!(
+                    "Failed to find eng file for {} with serial {}",
+                    time.format("%Y-%m-%d %H:%M:%S"),
+                    serial_nums[0]
+                )
+            })?,
+            find_filename(types[0], time, serial_nums[1]).ok_or_else(|| {
+                anyhow!(
+                    "Failed to find eng file for {} with serial {}",
+                    time.format("%Y-%m-%d %H:%M:%S"),
+                    serial_nums[1]
+                )
+            })?,
+            find_filename(types[0], time, serial_nums[2]).ok_or_else(|| {
+                anyhow!(
+                    "Failed to find eng file for {} with serial {}",
+                    time.format("%Y-%m-%d %H:%M:%S"),
+                    serial_nums[2]
+                )
+            })?,
         ],
         [
-            find_filename(types[1], time, serial_nums[0]),
-            find_filename(types[1], time, serial_nums[1]),
-            find_filename(types[1], time, serial_nums[2]),
+            find_filename(types[1], time, serial_nums[0]).ok_or_else(|| {
+                anyhow!(
+                    "Failed to find sci file for {} with serial {}",
+                    time.format("%Y-%m-%d %H:%M:%S"),
+                    serial_nums[0]
+                )
+            })?,
+            find_filename(types[1], time, serial_nums[1]).ok_or_else(|| {
+                anyhow!(
+                    "Failed to find sci file for {} with serial {}",
+                    time.format("%Y-%m-%d %H:%M:%S"),
+                    serial_nums[1]
+                )
+            })?,
+            find_filename(types[1], time, serial_nums[2]).ok_or_else(|| {
+                anyhow!(
+                    "Failed to find sci file for {} with serial {}",
+                    time.format("%Y-%m-%d %H:%M:%S"),
+                    serial_nums[2]
+                )
+            })?,
         ],
-    ]
+    ])
 }

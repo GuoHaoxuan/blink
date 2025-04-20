@@ -78,20 +78,14 @@ impl InstanceTrait for Instance {
         })?;
         let [eng_files, sci_files] = get_all_filenames(*epoch);
         let eng_files = [
-            EngFile::new(&eng_files[0])
-                .with_context(|| format!("Failed to create EngFile from file: {}", eng_files[0]))?,
-            EngFile::new(&eng_files[1])
-                .with_context(|| format!("Failed to create EngFile from file: {}", eng_files[1]))?,
-            EngFile::new(&eng_files[2])
-                .with_context(|| format!("Failed to create EngFile from file: {}", eng_files[2]))?,
+            EngFile::new(&eng_files[0])?,
+            EngFile::new(&eng_files[1])?,
+            EngFile::new(&eng_files[2])?,
         ];
         let sci_files = [
-            SciFile::new(&sci_files[0])
-                .with_context(|| format!("Failed to create SciFile from file: {}", sci_files[0]))?,
-            SciFile::new(&sci_files[1])
-                .with_context(|| format!("Failed to create SciFile from file: {}", sci_files[1]))?,
-            SciFile::new(&sci_files[2])
-                .with_context(|| format!("Failed to create SciFile from file: {}", sci_files[2]))?,
+            SciFile::new(&sci_files[0])?,
+            SciFile::new(&sci_files[1])?,
+            SciFile::new(&sci_files[2])?,
         ];
         let hxmt_ec = HxmtEc::from_datetime(epoch)
             .with_context(|| format!("Failed to create HxmtEc from datetime: {}", epoch))?;
