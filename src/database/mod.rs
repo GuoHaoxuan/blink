@@ -80,7 +80,6 @@ pub fn fail_task(
             SET
                 status = 'Failed',
                 updated_at = DATETIME ('now'),
-                retry_times = retry_times + 1,
                 error = ?4
             WHERE
                 time = ?1
