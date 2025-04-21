@@ -27,8 +27,9 @@ pub(crate) static HXMT_1K_DIR: LazyLock<String> = LazyLock::new(|| {
     env::var("HXMT_1K_DIR").unwrap_or_else(|_| "/hxmt/work/HXMT-DATA/1K".to_string())
 });
 
-pub(crate) static HXMT_1B_DIR: LazyLock<String> =
-    LazyLock::new(|| env::var("HXMT_1B_DIR").unwrap_or_else(|_| "/hxmt/data/1B".to_string()));
+pub(crate) static HXMT_1B_DIR: LazyLock<String> = LazyLock::new(|| {
+    env::var("HXMT_1B_DIR").unwrap_or_else(|_| "/hxmtfs/data/Archive_tmp/1B".to_string())
+});
 
 pub(crate) static HXMT_EC_DIR: LazyLock<String> = LazyLock::new(|| {
     env::var("HXMT_EC_DIR")

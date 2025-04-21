@@ -33,8 +33,13 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Opti
     // 遍历三个时间点
     for loop_time in [one_day_before, time, one_day_after].iter() {
         let folder_path = Path::new(HXMT_1B_DIR.as_str())
-            .join(format!("{}{:02}", loop_time.year(), loop_time.month()))
-            .join(format!("{:02}", loop_time.day()))
+            .join(format!("{}", loop_time.year()))
+            .join(format!(
+                "{}{:02}{:02}",
+                loop_time.year(),
+                loop_time.month(),
+                loop_time.day()
+            ))
             .join(code);
 
         if !folder_path.exists() {
