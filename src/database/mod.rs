@@ -90,7 +90,11 @@ pub fn fail_task(
             format!("{}", time.format("%Y-%m-%d %H:%M:%S").to_string()),
             satellite,
             detector,
-            format!("{:#}", error),
+            error
+                .chain()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join("\n-> "),
         ],
     )
     .unwrap();
