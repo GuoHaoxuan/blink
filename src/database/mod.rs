@@ -52,7 +52,8 @@ pub fn finish_task(conn: &Connection, time: &DateTime<Utc>, satellite: &str, det
             UPDATE tasks
             SET
                 status = 'Finished',
-                updated_at = DATETIME ('now')
+                updated_at = DATETIME ('now'),
+                error = '',
             WHERE
                 time = ?1
                 AND satellite = ?2
