@@ -26,69 +26,56 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Opti
     let mut path = None;
     let mut version = -1;
 
-    // 创建前一天和后一天的时间
-    let one_day_before = time - TimeDelta::days(1);
-    let one_day_after = time + TimeDelta::days(1);
+    let folder_path = Path::new(HXMT_1B_DIR.as_str())
+        .join(format!("{}", time.year()))
+        .join(format!(
+            "{}{:02}{:02}",
+            time.year(),
+            time.month(),
+            time.day()
+        ))
+        .join(code);
 
-    // 遍历三个时间点
-    for loop_time in [one_day_before, time, one_day_after].iter() {
-        let folder_path = Path::new(HXMT_1B_DIR.as_str())
-            .join(format!("{}", loop_time.year()))
-            .join(format!(
-                "{}{:02}{:02}",
-                loop_time.year(),
-                loop_time.month(),
-                loop_time.day()
-            ))
-            .join(code);
+    if !folder_path.exists() {
+        return None;
+    }
 
-        if !folder_path.exists() {
-            continue;
-        }
+    let prefix = format!(
+        "HXMT_1B_{}_{}{:02}{:02}T{:02}",
+        code,
+        time.year(),
+        time.month(),
+        time.day(),
+        time.hour()
+    );
 
-        // 读取目录内容
-        if let Ok(entries) = std::fs::read_dir(folder_path) {
-            for entry in entries.flatten() {
-                let entry_path = entry.path();
-                if entry_path.is_dir() {
-                    let folder_name = entry_path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
+    // 读取目录内容
+    if let Ok(entries) = std::fs::read_dir(folder_path) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if entry_path.is_file() {
+                let filename = entry_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("");
+                if filename.len() >= 40
+                    && filename.starts_with(&prefix)
+                    && filename
+                        .chars()
+                        .nth(39)
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false)
+                {
+                    let ver = filename
+                        .chars()
+                        .nth(39)
+                        .and_then(|c| c.to_digit(10))
+                        .map(|d| d as i32)
+                        .unwrap_or(-1);
 
-                    let prefix = format!(
-                        "HXMT_1B_{}_{}{:02}{:02}T{:02}",
-                        code,
-                        time.year(),
-                        time.month(),
-                        time.day(),
-                        time.hour()
-                    );
-
-                    if folder_name.len() >= 40
-                        && folder_name.starts_with(&prefix)
-                        && folder_name
-                            .chars()
-                            .nth(39)
-                            .map(|c| c.is_ascii_digit())
-                            .unwrap_or(false)
-                    {
-                        let ver = folder_name
-                            .chars()
-                            .nth(39)
-                            .and_then(|c| c.to_digit(10))
-                            .map(|d| d as i32)
-                            .unwrap_or(-1);
-
-                        if ver > version {
-                            version = ver;
-                            path = Some(
-                                entry_path
-                                    .join(format!("{}.fits", folder_name))
-                                    .to_string_lossy()
-                                    .into_owned(),
-                            );
-                        }
+                    if ver > version {
+                        version = ver;
+                        path = Some(entry_path.to_string_lossy().into_owned());
                     }
                 }
             }
