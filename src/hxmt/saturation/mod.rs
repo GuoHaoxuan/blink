@@ -36,8 +36,6 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Opti
         ))
         .join(code);
 
-    println!("[DEBUG] Folder path: {:?}", folder_path);
-
     if !folder_path.exists() {
         return None;
     }
@@ -52,17 +50,14 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Opti
     );
 
     // 读取目录内容
-    println!("[DEBUG] Searching in folder: {:?}", folder_path);
     if let Ok(entries) = std::fs::read_dir(folder_path) {
         for entry in entries.flatten() {
             let entry_path = entry.path();
             if entry_path.is_file() {
-                println!("[DEBUG] Found file: {:?}", entry_path);
                 let filename = entry_path
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("");
-                println!("[DEBUG] Checking file: {:?}", filename);
                 if filename.len() >= 40
                     && filename.starts_with(&prefix)
                     && filename
@@ -71,7 +66,6 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Opti
                         .map(|c| c.is_ascii_digit())
                         .unwrap_or(false)
                 {
-                    println!("[DEBUG] Valid file: {:?}", filename);
                     let ver = filename
                         .chars()
                         .nth(39)
