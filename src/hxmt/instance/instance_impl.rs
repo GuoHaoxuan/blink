@@ -8,7 +8,6 @@ use crate::{
     env::HXMT_1K_DIR,
     hxmt::{
         event::HxmtEvent,
-        interpolate_point,
         saturation::{get_all_filenames, rec_sci_data},
         Hxmt,
     },

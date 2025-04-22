@@ -251,7 +251,7 @@ fn get_file(folder: &OsStr, prefix: &str) -> anyhow::Result<String> {
         .max_by(|a, b| {
             let extract_version = |name: &str| {
                 name.split('_')
-                    .last()
+                    .next_back()
                     .and_then(|s| s.strip_prefix('v'))
                     .and_then(|s| s.get(..2))
                     .and_then(|s| s.parse::<u32>().ok())
@@ -274,7 +274,7 @@ fn altitude(coord: &[f32]) -> f32 {
     // semi-major axis
     let wgs84_a = 6378137.0; // meters
                              // reciprocal of flattening
-    let wgs84_1overf = 298.257223563;
+    let wgs84_1overf = 298.257_23;
 
     let rho = (coord[0].powi(2) + coord[1].powi(2)).sqrt();
     let f: f32 = 1.0 / wgs84_1overf;
