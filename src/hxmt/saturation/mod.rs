@@ -4,9 +4,8 @@ mod rec_sci_data_impl;
 
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use chrono::prelude::*;
-use chrono::TimeDelta;
 
 use crate::env::HXMT_1B_DIR;
 
