@@ -1,0 +1,245 @@
+import json
+import math
+import sqlite3
+from dataclasses import dataclass
+from datetime import datetime
+
+import cartopy.crs as ccrs
+import matplotlib.pyplot as plt
+import numpy as np
+from dateutil.parser import parse
+
+acd = np.loadtxt("src/hxmt/acd.txt")
+
+
+def interpolate_point(lon, lat):
+    """
+    Interpolate a point in the given data set.
+
+    Parameters:
+    - data: numpy array, the data set to interpolate from
+    - lon: float, the longitude of the point
+    - lat: float, the latitude of the point
+
+    Returns:
+    - interpolated_value: float, the interpolated value at the given point
+    """
+    acdx = acd[0:180, :]
+    acdy = acd[180:360, :]
+    data1 = acd[360::]
+    data = np.nan_to_num(data1)
+    lon_indices = np.searchsorted(acdx[0, :], lon)
+    lat_indices = np.searchsorted(acdy[:, 0], lat)
+
+    lon_index = min(lon_indices, len(acdx[0, :]) - 1)
+    lat_index = min(lat_indices, len(acdy[:, 0]) - 1)
+
+    lon_fraction = (lon - acdx[0, lon_index - 1]) / (
+        acdx[0, lon_index] - acdx[0, lon_index - 1]
+    )
+    lat_fraction = (lat - acdy[lat_index - 1, 0]) / (
+        acdy[lat_index, 0] - acdy[lat_index - 1, 0]
+    )
+
+    interpolated_value = (
+        (1 - lon_fraction) * (1 - lat_fraction) * data[lat_index - 1, lon_index - 1]
+        + lon_fraction * (1 - lat_fraction) * data[lat_index - 1, lon_index]
+        + (1 - lon_fraction) * lat_fraction * data[lat_index, lon_index - 1]
+        + lon_fraction * lat_fraction * data[lat_index, lon_index]
+    )
+
+    return interpolated_value
+
+
+@dataclass
+class Signal:
+    start: datetime
+    stop: datetime
+    fp_year: float
+    longitude: float
+    latitude: float
+    altitude: float
+    lightnings: str
+    # average: float
+    # bin_size_best: float
+    # bin_size_max: float
+    # bin_size_min: float
+    # count: int
+    # acd_ratio: float
+    acd_rate: float
+
+    def __init__(self, row):
+        self.start = parse(row[0])
+        self.stop = parse(row[1])
+        self.fp_year = min(-math.log10(row[2]) if row[2] > 0 else 100, 14.5)
+        self.longitude = float(row[3])
+        self.latitude = float(row[4])
+        self.altitude = float(row[5])
+        self.lightnings = row[6]
+        # debugs = json.loads(row[7])
+        # self.average = debugs["average"]
+        # self.bin_size_best = debugs["bin_size_best"]["time"]
+        # self.bin_size_max = debugs["bin_size_max"]["time"]
+        # self.bin_size_min = debugs["bin_size_min"]["time"]
+        # self.count = debugs["count"]
+        # events = json.loads(row[8])
+        # acd_count = 0
+        # total_count = 0
+        # for event in events:
+        #     if event["time"] > row[0] and event["time"] < row[1]:
+        #         total_count += 1
+        #         if "true" in event["detector"]:
+        #             acd_count += 1
+        # self.acd_ratio = acd_count / total_count if total_count > 0 else 0
+        self.acd_rate = interpolate_point(self.longitude, self.latitude)
+
+
+def plot_map(ax_drop, signals):
+    ax_drop.set_extent([-180, 180, -43, 43], crs=ccrs.PlateCarree())
+    ax_drop.coastlines(linewidth=1.5)
+    ax_drop.scatter(
+        [signal.longitude for signal in signals if signal.lightnings == "[]"],
+        [signal.latitude for signal in signals if signal.lightnings == "[]"],
+        s=1,
+        c="C0",
+        transform=ccrs.PlateCarree(),
+        label="Signal",
+    )
+    ax_drop.scatter(
+        [signal.longitude for signal in signals if signal.lightnings != "[]"],
+        [signal.latitude for signal in signals if signal.lightnings != "[]"],
+        s=1,
+        c="C1",
+        transform=ccrs.PlateCarree(),
+        label="Signal with Lightnings",
+    )
+    ax_drop.legend(
+        loc=(0.25, 0.05),
+        markerscale=5,
+    )
+    SAA_Lon_ARR_Raw = np.array(
+        [-74.3, -88.2, -96, -92, -70, -45, -33, -15, 0.8, 18.2, 31, 27.3, 22, -74.3]
+    )
+    SAA_Lat_ARR_Raw = np.array(
+        [-45, -28, -13, -9, -2.5, 3, 2.1, -15, -18.8, -23, -31, -39, -45, -45]
+    )
+    ax_drop.plot(
+        SAA_Lon_ARR_Raw,
+        SAA_Lat_ARR_Raw,
+        color="#4B5361",
+        linewidth=1,
+        linestyle="--",
+        label="SAA",
+        transform=ccrs.PlateCarree(),
+    )
+
+
+def plot_distribution(ax_fp_year, bins, all_fp_year, filtered_fp_year, log=False):
+    ax_fp_year.hist(
+        all_fp_year,
+        bins=bins,
+        facecolor="none",
+        edgecolor="#005D9B",
+        label="All",
+        hatch="/",
+    )
+    ax_fp_year.hist(
+        filtered_fp_year,
+        bins=bins,
+        facecolor="none",
+        edgecolor="#9A131A",
+        label="Lightnings",
+        hatch="/",
+    )
+    ax_fp_year.legend(loc="upper right")
+    ax_fp_year.set_yscale("log")
+    ax_fp_year.set_ylabel("Number")
+    percentage = np.zeros(len(bins) - 1)
+    for j in range(len(bins) - 1):
+        percentage[j] = np.sum(
+            (filtered_fp_year >= bins[j]) & (filtered_fp_year < bins[j + 1])
+        ) / np.sum((all_fp_year >= bins[j]) & (all_fp_year < bins[j + 1]))
+    ax2 = ax_fp_year.twinx()
+    ax2.plot(
+        bins[:-1] + (bins[1] - bins[0]) / 2
+        if not log
+        else np.exp(np.log(bins[:-1]) + (np.log(bins[1]) - np.log(bins[0])) / 2),
+        percentage,
+        color="#4B5361",
+        marker="x",
+    )
+    ax2.set_ylabel("Percentage")
+    if log:
+        ax_fp_year.set_xscale("log")
+
+
+def get_signals():
+    conn = sqlite3.connect("blink.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT start, stop, fp_year, longitude, latitude, altitude, lightnings, events
+        FROM signals
+        """
+    )
+    data = cursor.fetchall()
+    conn.close()
+    signals = [Signal(row) for row in data]
+    return signals
+
+
+signals = get_signals()
+
+fig = plt.figure(figsize=(16, 9), dpi=300)
+gs = fig.add_gridspec(5, 1)
+
+
+bins = np.linspace(-1.5, 15, 34)
+ax_fp_year = fig.add_subplot(gs[4, :])
+all_fp_year = np.array([signal.fp_year for signal in signals])
+filtered_fp_year = np.array(
+    [signal.fp_year for signal in signals if signal.lightnings != "[]"]
+)
+plot_distribution(ax_fp_year, bins, all_fp_year, filtered_fp_year)
+ax_fp_year.set_title("-log10(FP year)")
+fp_year_yellow = 0.5
+fp_year_green = 0.5
+ax_fp_year.axvspan(-1.5, fp_year_yellow, alpha=0.1, color="red")
+ax_fp_year.axvspan(fp_year_yellow, fp_year_green, alpha=0.1, color="yellow")
+ax_fp_year.axvspan(fp_year_green, 15, alpha=0.3, color="green")
+
+signals_take = []
+signals_drop = []
+
+for signal in signals:
+    if signal.fp_year >= fp_year_green:
+        signals_take.append(signal)
+    else:
+        signals_drop.append(signal)
+
+ax_take = fig.add_subplot(gs[0:2, 0], projection=ccrs.PlateCarree())
+plot_map(ax_take, signals_take)
+ax_take.set_title(
+    "Take {} signals, {}({:.2f}%) lightnings".format(
+        len(signals_take),
+        len([s for s in signals_take if s.lightnings != "[]"]),
+        len([s for s in signals_take if s.lightnings != "[]"])
+        / len(signals_take)
+        * 100,
+    )
+)
+
+ax_drop = fig.add_subplot(gs[2:4, 0], projection=ccrs.PlateCarree())
+plot_map(ax_drop, signals_drop)
+ax_drop.set_title(
+    "Drop {} signals, {}({:.2f}%) lightnings".format(
+        len(signals_drop),
+        len([s for s in signals_drop if s.lightnings != "[]"]),
+        len([s for s in signals_drop if s.lightnings != "[]"])
+        / len(signals_take)
+        * 100,
+    )
+)
+
+plt.tight_layout()
+plt.savefig("green.png")
