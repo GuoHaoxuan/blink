@@ -11,7 +11,7 @@ use crate::{
         saturation::{get_all_filenames, rec_sci_data},
         Hxmt,
     },
-    lightning::Lightning,
+    lightning::{associated_lightning, coincidence_prob},
     search::lightcurve::{light_curve, prefix_sum, search_light_curve, Trigger},
     types::{Event, Instance as InstanceTrait, Signal, Span, Time},
 };
@@ -190,13 +190,22 @@ impl InstanceTrait for Instance {
                         longitude,
                         latitude,
                         altitude,
-                        lightnings: Lightning::associated_lightning(
+                        lightnings: associated_lightning(
                             middle,
                             latitude,
                             longitude,
                             altitude,
                             time_tolerance,
                             distance_tolerance,
+                        ),
+                        coincidence_probability: coincidence_prob(
+                            middle,
+                            latitude,
+                            longitude,
+                            altitude,
+                            time_tolerance,
+                            distance_tolerance,
+                            Duration::seconds(10),
                         ),
                     })
                 } else {
