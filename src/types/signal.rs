@@ -15,4 +15,5 @@ pub(crate) struct Signal {
     pub(crate) latitude: f64,
     pub(crate) altitude: f64,
     pub(crate) lightnings: Vec<Lightning>,
+    pub(crate) coincidence_probability: f64,
 }
