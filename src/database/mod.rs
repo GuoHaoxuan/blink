@@ -100,13 +100,26 @@ pub fn fail_task(
 pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detector: &str) {
     conn.execute(
         "
-            INSERT INTO signals (start, stop, fp_year, longitude, latitude, altitude, events, lightnings, coincidence_probability, satellite, detector)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11);
+            INSERT INTO signals (
+                start,
+                stop,
+                fp_year,
+                background,
+                longitude,
+                latitude,
+                altitude,
+                events,
+                lightnings,
+                coincidence_probability,
+                satellite,
+                detector
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12);
         ",
         params![
             signal.start.format("%Y-%m-%dT%H:%M:%S%.9f%:z").to_string(),
             signal.stop.format("%Y-%m-%dT%H:%M:%S%.9f%:z").to_string(),
             signal.fp_year,
+            signal.background,
             signal.longitude,
             signal.latitude,
             signal.altitude,

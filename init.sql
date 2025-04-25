@@ -17,6 +17,7 @@ CREATE TABLE
         start TEXT NOT NULL, -- 开始时间
         stop TEXT NOT NULL, -- 结束时间
         fp_year REAL NOT NULL, -- 年误触发个数
+        background REAL NOT NULL, -- 每秒本底
         longitude REAL NOT NULL, -- 经度
         latitude REAL NOT NULL, -- 纬度
         altitude REAL NOT NULL, -- 高度
