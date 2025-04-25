@@ -185,6 +185,7 @@ impl InstanceTrait for Instance {
                     start: start.to_chrono(),
                     stop: stop.to_chrono(),
                     fp_year,
+                    background: 0.0, // TODO: calculate background
                     events,
                     longitude: position.sc_lon as f64,
                     latitude: position.sc_lat as f64,

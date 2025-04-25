@@ -186,6 +186,7 @@ impl InstanceTrait for Instance {
                         start,
                         stop,
                         fp_year,
+                        background: trigger.average / trigger.bin_size_best.to_seconds(),
                         events,
                         longitude,
                         latitude,
