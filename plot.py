@@ -33,7 +33,7 @@ def main():
     conn = sqlite3.connect("blink.db")
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings FROM signals WHERE lightnings != '[]'"
+        "SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings FROM signals WHERE start < '2025-01-01' AND fp_year > 10 AND lightnings != '[]'"
     )
     data = cursor.fetchall()
     conn.close()
