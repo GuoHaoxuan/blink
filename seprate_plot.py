@@ -8,47 +8,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from dateutil.parser import parse
 
-acd = np.loadtxt("src/hxmt/acd.txt")
-
-
-def interpolate_point(lon, lat):
-    """
-    Interpolate a point in the given data set.
-
-    Parameters:
-    - data: numpy array, the data set to interpolate from
-    - lon: float, the longitude of the point
-    - lat: float, the latitude of the point
-
-    Returns:
-    - interpolated_value: float, the interpolated value at the given point
-    """
-    acdx = acd[0:180, :]
-    acdy = acd[180:360, :]
-    data1 = acd[360::]
-    data = np.nan_to_num(data1)
-    lon_indices = np.searchsorted(acdx[0, :], lon)
-    lat_indices = np.searchsorted(acdy[:, 0], lat)
-
-    lon_index = min(lon_indices, len(acdx[0, :]) - 1)
-    lat_index = min(lat_indices, len(acdy[:, 0]) - 1)
-
-    lon_fraction = (lon - acdx[0, lon_index - 1]) / (
-        acdx[0, lon_index] - acdx[0, lon_index - 1]
-    )
-    lat_fraction = (lat - acdy[lat_index - 1, 0]) / (
-        acdy[lat_index, 0] - acdy[lat_index - 1, 0]
-    )
-
-    interpolated_value = (
-        (1 - lon_fraction) * (1 - lat_fraction) * data[lat_index - 1, lon_index - 1]
-        + lon_fraction * (1 - lat_fraction) * data[lat_index - 1, lon_index]
-        + (1 - lon_fraction) * lat_fraction * data[lat_index, lon_index - 1]
-        + lon_fraction * lat_fraction * data[lat_index, lon_index]
-    )
-
-    return interpolated_value
-
 
 @dataclass
 class Signal:
@@ -59,6 +18,7 @@ class Signal:
     latitude: float
     altitude: float
     lightnings: str
+    coincidence_probability: float
     acd_rate: float
 
     def __init__(self, row):
@@ -68,8 +28,8 @@ class Signal:
         self.longitude = float(row[3])
         self.latitude = float(row[4])
         self.altitude = float(row[5])
-        self.lightnings = row[6]
-        self.acd_rate = interpolate_point(self.longitude, self.latitude)
+        self.lightnings = row[7]
+        self.coincidence_probability = float(row[8])
 
 
 def plot_map(ax_drop, signals):
@@ -156,7 +116,7 @@ def get_signals():
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT start, stop, fp_year, longitude, latitude, altitude, lightnings, events
+        SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings, coincidence_probability
         FROM signals
         WHERE start < '2025-01-01'
         """
@@ -197,24 +157,40 @@ for signal in signals:
 ax_take = fig.add_subplot(gs[0:2, 0], projection=ccrs.PlateCarree())
 plot_map(ax_take, signals_take)
 ax_take.set_title(
-    "Take {} signals, {}({:.2f}%) lightnings".format(
+    "Take {} signals, {}({:.2f}%) lightnings, {:.2f} accident coincidence total, {:.2f} accident coincidence associated".format(
         len(signals_take),
         len([s for s in signals_take if s.lightnings != "[]"]),
         len([s for s in signals_take if s.lightnings != "[]"])
         / len(signals_take)
         * 100,
+        sum([signal.coincidence_probability for signal in signals_take]),
+        sum(
+            [
+                signal.coincidence_probability
+                for signal in signals_take
+                if signal.lightnings != "[]"
+            ]
+        ),
     )
 )
 
 ax_drop = fig.add_subplot(gs[2:4, 0], projection=ccrs.PlateCarree())
 plot_map(ax_drop, signals_drop)
 ax_drop.set_title(
-    "Drop {} signals, {}({:.2f}%) lightnings".format(
+    "Drop {} signals, {}({:.2f}%) lightnings, {:.2f} accident coincidence total, {:.2f} accident coincidence associated".format(
         len(signals_drop),
         len([s for s in signals_drop if s.lightnings != "[]"]),
         len([s for s in signals_drop if s.lightnings != "[]"])
         / len(signals_take)
         * 100,
+        sum([signal.coincidence_probability for signal in signals_drop]),
+        sum(
+            [
+                signal.coincidence_probability
+                for signal in signals_drop
+                if signal.lightnings != "[]"
+            ]
+        ),
     )
 )
 
