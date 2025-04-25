@@ -104,8 +104,8 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, 
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11);
         ",
         params![
-            signal.start.to_string(),
-            signal.stop.to_string(),
+            signal.start.format("%Y-%m-%dT%H:%M:%S%.9f%:z").to_string(),
+            signal.stop.format("%Y-%m-%dT%H:%M:%S%.9f%:z").to_string(),
             signal.fp_year,
             signal.longitude,
             signal.latitude,
