@@ -10,6 +10,7 @@ pub(crate) struct Signal {
     pub(crate) start: DateTime<Utc>,
     pub(crate) stop: DateTime<Utc>,
     pub(crate) fp_year: f64,
+    pub(crate) background: f64, // counts per second
     pub(crate) events: Vec<GenericEvent>,
     pub(crate) longitude: f64,
     pub(crate) latitude: f64,
