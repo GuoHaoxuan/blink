@@ -126,7 +126,6 @@ impl InstanceTrait for Instance {
                     &prefix_sum,
                     self.span[0] + shift,
                     bin_size,
-                    100,
                     fp_year,
                     min_count,
                 )
