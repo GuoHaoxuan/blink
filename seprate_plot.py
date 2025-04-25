@@ -157,40 +157,26 @@ for signal in signals:
 ax_take = fig.add_subplot(gs[0:2, 0], projection=ccrs.PlateCarree())
 plot_map(ax_take, signals_take)
 ax_take.set_title(
-    "Take {} signals, {}({:.2f}%) lightnings, {:.2f} accident coincidence total, {:.2f} accident coincidence associated".format(
+    "Take {} signals, {}({:.2f}%) lightnings, {:.2f} accident coincidence total".format(
         len(signals_take),
         len([s for s in signals_take if s.lightnings != "[]"]),
         len([s for s in signals_take if s.lightnings != "[]"])
         / len(signals_take)
         * 100,
         sum([signal.coincidence_probability for signal in signals_take]),
-        sum(
-            [
-                signal.coincidence_probability
-                for signal in signals_take
-                if signal.lightnings != "[]"
-            ]
-        ),
     )
 )
 
 ax_drop = fig.add_subplot(gs[2:4, 0], projection=ccrs.PlateCarree())
 plot_map(ax_drop, signals_drop)
 ax_drop.set_title(
-    "Drop {} signals, {}({:.2f}%) lightnings, {:.2f} accident coincidence total, {:.2f} accident coincidence associated".format(
+    "Drop {} signals, {}({:.2f}%) lightnings, {:.2f} accident coincidence".format(
         len(signals_drop),
         len([s for s in signals_drop if s.lightnings != "[]"]),
         len([s for s in signals_drop if s.lightnings != "[]"])
         / len(signals_take)
         * 100,
         sum([signal.coincidence_probability for signal in signals_drop]),
-        sum(
-            [
-                signal.coincidence_probability
-                for signal in signals_drop
-                if signal.lightnings != "[]"
-            ]
-        ),
     )
 )
 
