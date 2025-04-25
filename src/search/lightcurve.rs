@@ -68,11 +68,12 @@ pub fn search_light_curve<S: Satellite>(
     light_curve_prefix_sum: &[u32],
     start: Time<S>,
     bin_size: Span<S>,
-    num_neighbors: usize,
     fp_year: f64,
     min_count: u32,
 ) -> Vec<Trigger<S>> {
     let mut cache = vec![0; 100_000];
+    let num_neighbors = (Span::seconds(1.0) / bin_size).round() as usize;
+    let num_neighbors_hollow = (Span::seconds(1e-2) / bin_size).round() as usize;
 
     std::iter::once(0)
         .chain(light_curve_prefix_sum.iter().cloned())
@@ -85,9 +86,18 @@ pub fn search_light_curve<S: Satellite>(
             }
             let index_start = (i as isize - num_neighbors as isize / 2).max(0) as usize;
             let index_stop = (i + num_neighbors / 2).min(light_curve_prefix_sum.len() - 1);
-            let average = (light_curve_prefix_sum[index_stop] - light_curve_prefix_sum[index_start])
-                as f64
-                / (index_stop - index_start + 1) as f64;
+            let average_length = (index_stop - index_start + 1) as f64;
+            let average_count =
+                (light_curve_prefix_sum[index_stop] - light_curve_prefix_sum[index_start]) as f64;
+
+            let hollow_start = (i as isize - num_neighbors_hollow as isize / 2).max(0) as usize;
+            let hollow_stop = (i + num_neighbors_hollow / 2).min(light_curve_prefix_sum.len() - 1);
+            let hollow_length = (hollow_stop - hollow_start + 1) as f64;
+            let hollow_count =
+                (light_curve_prefix_sum[hollow_stop] - light_curve_prefix_sum[hollow_start]) as f64;
+
+            let average = (average_count - hollow_count) / (average_length - hollow_length);
+
             let threshold = poisson_isf_cached(
                 fp_year / (Span::seconds(3600.0) * 24.0 * 365.0 / bin_size),
                 average,
