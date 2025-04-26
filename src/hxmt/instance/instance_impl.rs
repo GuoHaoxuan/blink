@@ -162,16 +162,21 @@ impl InstanceTrait for Instance {
                     .filter(|event| event.time() >= start_extended && event.time() <= stop_extended)
                     .map(|event| {
                         event.to_general(|event| {
-                            let k = self.hxmt_ec.rows[event.detector().id as usize].k;
-                            let b = self.hxmt_ec.rows[event.detector().id as usize].b;
-                            let k_err = self.hxmt_ec.rows[event.detector().id as usize].k_err;
-                            let b_err = self.hxmt_ec.rows[event.detector().id as usize].b_err;
-                            let energy_lower = (k - k_err) * event.energy() as f64 + (b - b_err);
-                            let energy_upper = (k + k_err) * event.energy() as f64 + (b + b_err);
-                            [energy_lower, energy_upper]
+                            // let k = self.hxmt_ec.rows[event.detector().id as usize].k;
+                            // let b = self.hxmt_ec.rows[event.detector().id as usize].b;
+                            // let k_err = self.hxmt_ec.rows[event.detector().id as usize].k_err;
+                            // let b_err = self.hxmt_ec.rows[event.detector().id as usize].b_err;
+                            // let energy_lower = (k - k_err) * event.energy() as f64 + (b - b_err);
+                            // let energy_upper = (k + k_err) * event.energy() as f64 + (b + b_err);
+                            // [energy_lower, energy_upper]
+                            [event.energy() as f64, event.energy() as f64]
                         })
                     })
                     .collect::<Vec<_>>();
+                if events.len() >= 1000 {
+                    eprintln!("Too many events({}) in signal: {}", events.len(), start);
+                    return None;
+                }
                 let (longitude, latitude, altitude) = self
                     .orbit_file
                     .interpolate(trigger.start.time.into_inner())
