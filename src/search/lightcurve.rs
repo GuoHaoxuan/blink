@@ -33,7 +33,13 @@ impl<S: Satellite> Trigger<S> {
     }
 
     pub fn sf(&self) -> f64 {
-        Poisson::new(self.average).unwrap().sf(self.count as u64)
+        Poisson::new(self.average)
+            .inspect_err(|e| {
+                eprintln!("Error in Poisson distribution: {}", e);
+                eprintln!("Average: {}", self.average);
+            })
+            .unwrap()
+            .sf(self.count as u64)
     }
 
     pub fn fp_year(&self) -> f64 {
