@@ -130,5 +130,9 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, 
             detector,
         ],
     )
+    .inspect_err(|e| {
+        eprintln!("Error writing signal to database: {}", e);
+        eprintln!("Signal: {:?}", signal);
+    })
     .unwrap();
 }
