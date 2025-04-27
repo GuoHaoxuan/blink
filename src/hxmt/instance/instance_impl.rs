@@ -104,7 +104,7 @@ impl InstanceTrait for Instance {
     fn search(&self) -> Result<Vec<Signal>> {
         let events = self
             .into_iter()
-            .filter(|event| event.event_type == 0)
+            .filter(|event| !event.detector.am241)
             // .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
             // .filter(|(count, _)| *count == 1)
             // .map(|(_, event)| event)
@@ -153,11 +153,12 @@ impl InstanceTrait for Instance {
             .filter_map(|trigger| {
                 let start = trigger.start.to_chrono();
                 let stop = trigger.stop.to_chrono();
-                let middle = start + (stop - start) / 2;
+                let middle =
+                    start + trigger.delay.to_chrono() + trigger.bin_size_best.to_chrono() / 2;
                 let extend = Span::milliseconds(1.0);
                 let start_extended = trigger.start - extend;
                 let stop_extended = trigger.stop + extend;
-                let events = self
+                let events_record = self
                     .into_iter()
                     .filter(|event| event.time() >= start_extended && event.time() <= stop_extended)
                     .map(|event| {
@@ -173,10 +174,10 @@ impl InstanceTrait for Instance {
                         })
                     })
                     .collect::<Vec<_>>();
-                if events.len() >= 100000 {
+                if events_record.len() >= 100000 {
                     eprintln!(
                         "Too many events({}) in signal: {} - {}",
-                        events.len(),
+                        events_record.len(),
                         start,
                         stop
                     );
@@ -188,18 +189,63 @@ impl InstanceTrait for Instance {
                     .unwrap_or((0.0, 0.0, 0.0));
                 let time_tolerance = Duration::milliseconds(5);
                 let distance_tolerance = 800_000.0;
+                let lightning_window = TimeDelta::minutes(2);
 
                 let fp_year = trigger.fp_year();
+                let lightnings = associated_lightning(
+                    middle,
+                    latitude,
+                    longitude,
+                    altitude,
+                    time_tolerance,
+                    distance_tolerance,
+                    lightning_window,
+                );
+                let associated_lightning_count = lightnings
+                    .iter()
+                    .filter(|lightning| lightning.is_associated)
+                    .count() as u32;
                 if true {
                     Some(Signal {
                         start,
                         stop,
+                        best_start: start
+                            + TimeDelta::nanoseconds(trigger.delay.to_nanoseconds() as i64),
+                        best_stop: start
+                            + TimeDelta::nanoseconds(
+                                trigger.delay.to_nanoseconds() as i64
+                                    + trigger.bin_size_best.to_nanoseconds() as i64,
+                            ),
                         fp_year,
+                        count: events
+                            .iter()
+                            .filter(|event| **event >= trigger.start && **event <= trigger.stop)
+                            .count() as u32,
+                        best_count: trigger.count,
                         background: trigger.average / trigger.bin_size_best.to_seconds(),
-                        events,
+                        events: events_record,
+                        light_curve: light_curve(
+                            &self
+                                .into_iter()
+                                .map(|event| event.time())
+                                .collect::<Vec<_>>(),
+                            trigger.start - Span::seconds(0.5),
+                            trigger.start + Span::seconds(0.5),
+                            Span::seconds(1e-3),
+                        ),
+                        light_curve_filtered: light_curve(
+                            &events,
+                            trigger.start - Span::seconds(0.5),
+                            trigger.start + Span::seconds(0.5),
+                            Span::seconds(1e-3),
+                        ),
                         longitude,
                         latitude,
                         altitude,
+                        orbit: self.orbit_file.window(
+                            trigger.start.time.into_inner(),
+                            lightning_window.num_nanoseconds().unwrap() as f64 / 1e9,
+                        ),
                         lightnings: associated_lightning(
                             middle,
                             latitude,
@@ -207,7 +253,9 @@ impl InstanceTrait for Instance {
                             altitude,
                             time_tolerance,
                             distance_tolerance,
+                            lightning_window,
                         ),
+                        associated_lightning_count,
                         coincidence_probability: coincidence_prob(
                             middle,
                             latitude,
@@ -215,7 +263,7 @@ impl InstanceTrait for Instance {
                             altitude,
                             time_tolerance,
                             distance_tolerance,
-                            Duration::seconds(10),
+                            lightning_window,
                         ),
                     })
                 } else {

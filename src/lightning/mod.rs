@@ -33,6 +33,12 @@ fn time_of_arrival(distance: f64, h1: f64, h2: f64) -> Duration {
 }
 
 #[derive(Debug, Serialize)]
+pub(crate) struct LightningAssociation {
+    pub(crate) lightning: Lightning,
+    pub(crate) is_associated: bool,
+}
+
+#[derive(Debug, Serialize)]
 pub(crate) struct Lightning {
     pub(crate) time: DateTime<Utc>,
     pub(crate) lat: f64,
@@ -98,22 +104,26 @@ pub(crate) fn associated_lightning(
     alt: f64,
     time_tolerance: Duration,
     distance_tolerance: f64,
-) -> Vec<Lightning> {
-    let time_start = time - time_tolerance - Duration::seconds(1);
-    let time_end = time + time_tolerance + Duration::seconds(1);
-    let mut rows = get_lightnings(time_start, time_end);
+    time_window: Duration,
+) -> Vec<LightningAssociation> {
+    let time_start = time - time_tolerance - time_window / 2;
+    let time_end = time + time_tolerance + time_window / 2;
+    let rows = get_lightnings(time_start, time_end);
 
-    rows.retain(|lightning| {
-        let dist = distance(lat, lon, lightning.lat, lightning.lon);
-        let time_of_arrival_value = time_of_arrival(dist, alt, LIGHTNING_ALTITUDE);
-        let fixed_time = time - time_of_arrival_value;
-        let time_delta = lightning.time - fixed_time;
-        time_delta.abs() <= time_tolerance && dist <= distance_tolerance
-    });
-
-    rows.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
-
-    rows
+    rows.into_iter()
+        .map(|lightning| {
+            let dist = distance(lat, lon, lightning.lat, lightning.lon);
+            let time_of_arrival_value = time_of_arrival(dist, alt, LIGHTNING_ALTITUDE);
+            let fixed_time = time - time_of_arrival_value;
+            let time_delta = lightning.time - fixed_time;
+            (lightning, dist, time_delta)
+        })
+        .filter(|(_, dist, _)| *dist <= distance_tolerance)
+        .map(|(lightning, _, time_delta)| LightningAssociation {
+            lightning,
+            is_associated: time_delta.abs() <= time_tolerance,
+        })
+        .collect()
 }
 
 fn coincidence_window(

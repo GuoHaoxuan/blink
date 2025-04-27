@@ -32,6 +32,14 @@ impl<T: Satellite> Span<T> {
     pub(crate) fn to_seconds(self) -> f64 {
         (self.time).into_inner()
     }
+
+    pub(crate) fn to_nanoseconds(self) -> f64 {
+        (self.time).into_inner() * 1e9
+    }
+
+    pub(crate) fn to_chrono(self) -> chrono::TimeDelta {
+        chrono::Duration::nanoseconds((self.time).into_inner() as i64 * 1e9 as i64)
+    }
 }
 
 impl<T: Satellite> Div<f64> for Span<T> {

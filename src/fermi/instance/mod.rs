@@ -179,18 +179,27 @@ impl InstanceTrait for Instance {
                     altitude(&position.pos) as f64,
                     time_tolerance,
                     distance_tolerance,
+                    Duration::minutes(2),
                 );
 
                 Signal {
                     start: start.to_chrono(),
                     stop: stop.to_chrono(),
+                    best_start: start.to_chrono(), // TODO
+                    best_stop: stop.to_chrono(),   // TODO
                     fp_year,
-                    background: 0.0, // TODO: calculate background
+                    count: 0,        // TODO
+                    best_count: 0,   // TODO
+                    background: 0.0, // TODO
                     events,
+                    light_curve: vec![],          // TODO
+                    light_curve_filtered: vec![], // TODO
                     longitude: position.sc_lon as f64,
                     latitude: position.sc_lat as f64,
                     altitude: altitude(&position.pos) as f64,
                     lightnings,
+                    associated_lightning_count: 0, // TODO
+                    orbit: vec![],                 // TODO
                     coincidence_probability: coincidence_prob(
                         (start + (stop - start) / 2.0).to_chrono(),
                         position.sc_lat as f64,
