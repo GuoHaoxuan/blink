@@ -6,7 +6,7 @@ use crate::types::Signal;
 pub fn get_task(conn: &Connection, worker: &str) -> Option<(DateTime<Utc>, String, String)> {
     conn.prepare(
         "
-            UPDATE tasks
+            UPDATE task
             SET
                 worker = ?1,
                 status = 'Running',
@@ -16,7 +16,7 @@ pub fn get_task(conn: &Connection, worker: &str) -> Option<(DateTime<Utc>, Strin
                     SELECT
                         rowid
                     FROM
-                        tasks
+                        task
                     WHERE
                         status = 'Pending'
                     LIMIT
@@ -49,7 +49,7 @@ pub fn get_task(conn: &Connection, worker: &str) -> Option<(DateTime<Utc>, Strin
 pub fn finish_task(conn: &Connection, time: &DateTime<Utc>, satellite: &str, detector: &str) {
     conn.execute(
         "
-            UPDATE tasks
+            UPDATE task
             SET
                 status = 'Finished',
                 updated_at = DATETIME ('now'),
@@ -77,7 +77,7 @@ pub fn fail_task(
 ) {
     conn.execute(
         "
-            UPDATE tasks
+            UPDATE task
             SET
                 status = 'Failed',
                 updated_at = DATETIME ('now'),
@@ -100,7 +100,7 @@ pub fn fail_task(
 pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detector: &str) {
     conn.execute(
         "
-            INSERT INTO signals (
+            INSERT INTO signal (
                 start,
                 stop,
                 best_start,
