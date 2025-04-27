@@ -122,14 +122,17 @@ impl Iterator for Iter<'_> {
                 energy,
                 detector: HxmtDetectorType {
                     id: self.event_file.det_id[self.index],
-                    veto: self.event_file.acd[self.index].iter().any(|&x| x),
+                    veto: self.event_file.acd[self.index]
+                        .iter()
+                        .map(|&x| x as u8)
+                        .sum::<u8>(),
                     scintillator: if self.event_file.pulse_width[self.index] < 75 {
                         HxmtScintillator::NaI
                     } else {
                         HxmtScintillator::CsI
                     },
+                    am241: self.event_file.event_type[self.index] == 1,
                 },
-                event_type: self.event_file.event_type[self.index],
             };
             self.index += 1;
             Some(event)

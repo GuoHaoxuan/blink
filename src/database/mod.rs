@@ -103,28 +103,53 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, 
             INSERT INTO signals (
                 start,
                 stop,
+                best_start,
+                best_stop,
+                count,
+                best_count,
                 fp_year,
                 background,
+                events,
+                light_curve,
+                light_curve_filtered,
                 longitude,
                 latitude,
                 altitude,
-                events,
+                orbit,
                 lightnings,
+                associated_lightning_count,
                 coincidence_probability,
                 satellite,
                 detector
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12);
+            ) VALUES (
+                 ?1,  ?2,  ?3,  ?4,  ?5,  ?6,  ?7,  ?8,  ?9, ?10,
+                ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20
+            );
         ",
         params![
             signal.start.format("%Y-%m-%dT%H:%M:%S%.9f%:z").to_string(),
             signal.stop.format("%Y-%m-%dT%H:%M:%S%.9f%:z").to_string(),
+            signal
+                .best_start
+                .format("%Y-%m-%dT%H:%M:%S%.9f%:z")
+                .to_string(),
+            signal
+                .best_stop
+                .format("%Y-%m-%dT%H:%M:%S%.9f%:z")
+                .to_string(),
+            signal.count,
+            signal.best_count,
             signal.fp_year,
             signal.background,
+            serde_json::to_string(&signal.events).unwrap(),
+            serde_json::to_string(&signal.light_curve).unwrap(),
+            serde_json::to_string(&signal.light_curve_filtered).unwrap(),
             signal.longitude,
             signal.latitude,
             signal.altitude,
-            serde_json::to_string(&signal.events).unwrap(),
+            serde_json::to_string(&signal.orbit).unwrap(),
             serde_json::to_string(&signal.lightnings).unwrap(),
+            signal.associated_lightning_count,
             signal.coincidence_probability,
             satellite,
             detector,

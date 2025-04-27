@@ -1,4 +1,4 @@
-UPDATE tasks
+UPDATE task
 SET
     status = 'Pending',
     updated_at = DATETIME ('now'),

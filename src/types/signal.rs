@@ -1,20 +1,35 @@
 use chrono::prelude::*;
 use serde::Serialize;
 
-use crate::lightning::Lightning;
+use crate::lightning::LightningAssociation;
 
 use super::GenericEvent;
+
+#[derive(Debug, Serialize)]
+pub(crate) struct Location {
+    pub(crate) longitude: f64,
+    pub(crate) latitude: f64,
+    pub(crate) altitude: f64,
+}
 
 #[derive(Debug, Serialize)]
 pub(crate) struct Signal {
     pub(crate) start: DateTime<Utc>,
     pub(crate) stop: DateTime<Utc>,
+    pub(crate) best_start: DateTime<Utc>,
+    pub(crate) best_stop: DateTime<Utc>,
     pub(crate) fp_year: f64,
+    pub(crate) count: u32,
+    pub(crate) best_count: u32,
     pub(crate) background: f64, // counts per second
     pub(crate) events: Vec<GenericEvent>,
+    pub(crate) light_curve: Vec<u32>,
+    pub(crate) light_curve_filtered: Vec<u32>,
     pub(crate) longitude: f64,
     pub(crate) latitude: f64,
     pub(crate) altitude: f64,
-    pub(crate) lightnings: Vec<Lightning>,
+    pub(crate) orbit: Vec<Location>,
+    pub(crate) lightnings: Vec<LightningAssociation>,
+    pub(crate) associated_lightning_count: u32,
     pub(crate) coincidence_probability: f64,
 }

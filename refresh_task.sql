@@ -1,5 +1,5 @@
 INSERT
-OR IGNORE INTO tasks (
+OR IGNORE INTO task (
     created_at,
     updated_at,
     retry_times,

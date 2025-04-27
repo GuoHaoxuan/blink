@@ -1,3 +1,4 @@
+use crate::types::Location;
 use anyhow::{anyhow, Context, Result};
 
 pub(crate) struct OrbitFile {
@@ -71,5 +72,26 @@ impl OrbitFile {
         let alt = alt0 + (alt1 - alt0) * (time - t0) / (t1 - t0);
 
         Ok((lon, lat, alt))
+    }
+
+    pub fn window(&self, time: f64, window: f64) -> Vec<Location> {
+        let start_time = time - window / 2.0;
+        let end_time = time + window / 2.0;
+
+        self.time
+            .iter()
+            .enumerate()
+            .filter(|(_, &t)| t >= start_time && t <= end_time)
+            .map(|(i, _)| {
+                let longitude = self.lon[i];
+                let latitude = self.lat[i];
+                let altitude = self.alt[i];
+                Location {
+                    longitude,
+                    latitude,
+                    altitude,
+                }
+            })
+            .collect()
     }
 }
