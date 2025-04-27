@@ -27,13 +27,14 @@ class Signal:
     altitude: float
     events: List[Event]
     lightnings: str
+    background: float
 
 
 def main():
     conn = sqlite3.connect("blink.db")
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings FROM signals WHERE start < '2025-01-01' AND fp_year > 10 AND lightnings != '[]'"
+        "SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings, background FROM signals WHERE start < '2025-01-01' AND fp_year > 10 AND lightnings != '[]'"
     )
     data = cursor.fetchall()
     conn.close()
@@ -47,6 +48,11 @@ def main():
             "altitude": float(row[5]),
             "events": json.loads(row[6]),
             "lightnings": row[7],
+            "background": float(row[8])
+            * (
+                ((parser.parse(row[1]) - parser.parse(row[0])).total_seconds() + 1e-3)
+                / 50
+            ),
         }
         for row in data
     ]
@@ -63,14 +69,16 @@ def main():
         plt.figure(dpi=600)
         for time, event in zip(event_times, data["events"]):
             # print(event)
-            plt.plot(
-                [time, time],
-                [event["energy"][0], event["energy"][1]],
+            plt.scatter(
+                [time],
+                [event["energy"][0]],
                 color="C1" if "true" in event["detector"] else "C0",
+                marker="^" if "NaI" in event["detector"] else "o",
             )
 
         plt.axvline(x=0, color="red", linestyle="--")
         plt.axvline(x=(stop - start).total_seconds() * 1e3, color="red", linestyle="--")
+        plt.axhline(y=38, color="red", linestyle="--")
         # plt.yscale("log")
         plt.ylabel("Energy (keV)")
         plt.xlabel("Time (ms)")
@@ -83,12 +91,27 @@ def main():
             histtype="step",
             alpha=0.3,
         )
+        plt.axhline(y=data["background"], color="blue", linestyle="--")
         plt.xlim(-1, (stop - start).total_seconds() * 1e3 + 1)
         plt.ylabel("Event Count")
         handles = [
             plt.Line2D([0], [0], color="C0", label="Photon"),
             plt.Line2D([0], [0], color="C1", label="Electron"),
+            plt.Line2D(
+                [0], [0], marker="^", color="black", label="NaI", linestyle="None"
+            ),
+            plt.Line2D(
+                [0], [0], marker="o", color="black", label="CsI", linestyle="None"
+            ),
             mpatches.Patch(edgecolor="C2", label="Light Curve", fill=False),
+            plt.Line2D(
+                [0],
+                [0],
+                color="blue",
+                linestyle="--",
+                label="Background ({:.2f})".format(data["background"]),
+            ),
+            plt.Line2D([0], [0], color="red", linestyle="--", label="drop below"),
         ]
 
         labels = [handle.get_label() for handle in handles]

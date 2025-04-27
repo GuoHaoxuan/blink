@@ -141,7 +141,7 @@ filtered_fp_year = np.array(
 )
 plot_distribution(ax_fp_year, bins, all_fp_year, filtered_fp_year)
 ax_fp_year.set_title("-log10(FP year)")
-fp_year_threshold = 3
+fp_year_threshold = 4
 ax_fp_year.axvspan(-1.5, fp_year_threshold, alpha=0.2, color="red")
 ax_fp_year.axvspan(fp_year_threshold, 15, alpha=0.2, color="green")
 
