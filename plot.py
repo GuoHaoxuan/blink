@@ -34,7 +34,7 @@ def main():
     conn = sqlite3.connect("blink.db")
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings, background FROM signals WHERE start < '2025-01-01' AND fp_year > 10 AND lightnings != '[]'"
+        "SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings, background FROM signals WHERE length(events) > 100000"
     )
     data = cursor.fetchall()
     conn.close()
@@ -48,11 +48,7 @@ def main():
             "altitude": float(row[5]),
             "events": json.loads(row[6]),
             "lightnings": row[7],
-            "background": float(row[8])
-            * (
-                ((parser.parse(row[1]) - parser.parse(row[0])).total_seconds() + 1e-3)
-                / 50
-            ),
+            "background": float(row[8]),
         }
         for row in data
     ]
@@ -66,7 +62,7 @@ def main():
             for event in data["events"]
         ]
 
-        plt.figure(dpi=600)
+        plt.figure(dpi=300)
         for time, event in zip(event_times, data["events"]):
             # print(event)
             plt.scatter(
@@ -91,7 +87,11 @@ def main():
             histtype="step",
             alpha=0.3,
         )
-        plt.axhline(y=data["background"], color="blue", linestyle="--")
+        plt.axhline(
+            y=data["background"] * (((stop - start).total_seconds() + 2e-3) / 50),
+            color="blue",
+            linestyle="--",
+        )
         plt.xlim(-1, (stop - start).total_seconds() * 1e3 + 1)
         plt.ylabel("Event Count")
         handles = [
@@ -104,14 +104,52 @@ def main():
                 [0], [0], marker="o", color="black", label="CsI", linestyle="None"
             ),
             mpatches.Patch(edgecolor="C2", label="Light Curve", fill=False),
+            plt.Line2D([0], [0], color="red", linestyle="--", label="drop below"),
             plt.Line2D(
                 [0],
                 [0],
                 color="blue",
                 linestyle="--",
-                label="Background ({:.2f})".format(data["background"]),
+                label="bkg per bin ({:.2f})".format(
+                    data["background"] * (((stop - start).total_seconds() + 2e-3) / 50)
+                ),
             ),
-            plt.Line2D([0], [0], color="red", linestyle="--", label="drop below"),
+            plt.Line2D(
+                [0],
+                [0],
+                linestyle="None",
+                label="bkg duration ({:.2f})".format(
+                    data["background"] * ((stop - start).total_seconds())
+                ),
+            ),
+            plt.Line2D(
+                [0],
+                [0],
+                linestyle="None",
+                label="total count ({:.2f})".format(
+                    len(
+                        [
+                            1
+                            for event in data["events"]
+                            if event["energy"][0] >= 38
+                            and parser.parse(event["time"]) > start
+                            and parser.parse(event["time"]) < stop
+                        ]
+                    )
+                ),
+            ),
+            plt.Line2D(
+                [0],
+                [0],
+                linestyle="None",
+                label="fp_year ({:.2e})".format(data["fp_year"]),
+            ),
+            plt.Line2D(
+                [0],
+                [0],
+                linestyle="None",
+                label="lightnings {}".format(data["lightnings"] != "[]"),
+            ),
         ]
 
         labels = [handle.get_label() for handle in handles]
@@ -120,7 +158,7 @@ def main():
 
         plt.tight_layout()
         plt.savefig(
-            "lightcurve/" + data["start"].strftime("%Y-%m-%d_%H-%M-%S") + ".png"
+            "lightcurve/" + data["start"].strftime("%Y-%m-%d_%H-%M-%S.%f") + ".png"
         )
 
         plt.close()
