@@ -173,8 +173,13 @@ impl InstanceTrait for Instance {
                         })
                     })
                     .collect::<Vec<_>>();
-                if events.len() >= 1000 {
-                    eprintln!("Too many events({}) in signal: {}", events.len(), start);
+                if events.len() >= 100000 {
+                    eprintln!(
+                        "Too many events({}) in signal: {} - {}",
+                        events.len(),
+                        start,
+                        stop
+                    );
                     return None;
                 }
                 let (longitude, latitude, altitude) = self
