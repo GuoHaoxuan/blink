@@ -192,8 +192,10 @@ impl InstanceTrait for Instance {
                     best_count: 0,   // TODO
                     background: 0.0, // TODO
                     events,
-                    light_curve: vec![],          // TODO
-                    light_curve_filtered: vec![], // TODO
+                    light_curve_1s: vec![],             // TODO
+                    light_curve_1s_filtered: vec![],    // TODO
+                    light_curve_100ms: vec![],          // TODO
+                    light_curve_100ms_filtered: vec![], // TODO
                     longitude: position.sc_lon as f64,
                     latitude: position.sc_lat as f64,
                     altitude: altitude(&position.pos) as f64,

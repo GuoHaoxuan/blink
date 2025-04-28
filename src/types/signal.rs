@@ -23,8 +23,10 @@ pub(crate) struct Signal {
     pub(crate) best_count: u32,
     pub(crate) background: f64, // counts per second
     pub(crate) events: Vec<GenericEvent>,
-    pub(crate) light_curve: Vec<u32>,
-    pub(crate) light_curve_filtered: Vec<u32>,
+    pub(crate) light_curve_1s: Vec<u32>,
+    pub(crate) light_curve_1s_filtered: Vec<u32>,
+    pub(crate) light_curve_100ms: Vec<u32>,
+    pub(crate) light_curve_100ms_filtered: Vec<u32>,
     pub(crate) longitude: f64,
     pub(crate) latitude: f64,
     pub(crate) altitude: f64,

@@ -118,10 +118,10 @@ pub(crate) fn associated_lightning(
             let time_delta = lightning.time - fixed_time;
             (lightning, dist, time_delta)
         })
-        .filter(|(_, dist, _)| *dist <= distance_tolerance)
-        .map(|(lightning, _, time_delta)| LightningAssociation {
+        .filter(|(_, dist, _)| *dist <= 3.0 * distance_tolerance)
+        .map(|(lightning, dist, time_delta)| LightningAssociation {
             lightning,
-            is_associated: time_delta.abs() <= time_tolerance,
+            is_associated: time_delta.abs() <= time_tolerance && dist <= distance_tolerance,
         })
         .collect()
 }
