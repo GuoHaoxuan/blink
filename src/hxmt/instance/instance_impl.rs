@@ -224,28 +224,42 @@ impl InstanceTrait for Instance {
                         best_count: trigger.count,
                         background: trigger.average / trigger.bin_size_best.to_seconds(),
                         events: events_record,
-                        light_curve: light_curve(
+                        light_curve_1s: light_curve(
                             &self
                                 .into_iter()
                                 .map(|event| event.time())
                                 .collect::<Vec<_>>(),
-                            trigger.start - Span::seconds(0.5),
-                            trigger.start + Span::seconds(0.5),
-                            Span::seconds(1e-3),
+                            trigger.start - Span::milliseconds(500.0),
+                            trigger.start + Span::milliseconds(500.0),
+                            Span::milliseconds(10.0),
                         ),
-                        light_curve_filtered: light_curve(
+                        light_curve_1s_filtered: light_curve(
                             &events,
-                            trigger.start - Span::seconds(0.5),
-                            trigger.start + Span::seconds(0.5),
-                            Span::seconds(1e-3),
+                            trigger.start - Span::milliseconds(500.0),
+                            trigger.start + Span::milliseconds(500.0),
+                            Span::milliseconds(10.0),
+                        ),
+                        light_curve_100ms: light_curve(
+                            &self
+                                .into_iter()
+                                .map(|event| event.time())
+                                .collect::<Vec<_>>(),
+                            trigger.start - Span::milliseconds(50.0),
+                            trigger.start + Span::milliseconds(50.0),
+                            Span::milliseconds(1.0),
+                        ),
+                        light_curve_100ms_filtered: light_curve(
+                            &events,
+                            trigger.start - Span::milliseconds(50.0),
+                            trigger.start + Span::milliseconds(50.0),
+                            Span::milliseconds(1.0),
                         ),
                         longitude,
                         latitude,
                         altitude,
-                        orbit: self.orbit_file.window(
-                            trigger.start.time.into_inner(),
-                            lightning_window.num_nanoseconds().unwrap() as f64 / 1e9,
-                        ),
+                        orbit: self
+                            .orbit_file
+                            .window(trigger.start.time.into_inner(), 1000.0),
                         lightnings: associated_lightning(
                             middle,
                             latitude,

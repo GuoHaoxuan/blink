@@ -23,8 +23,10 @@ CREATE TABLE
         best_count INTEGER NOT NULL, -- 最佳事件个数
         background REAL NOT NULL, -- 每秒本底
         events TEXT NOT NULL, -- 事件
-        light_curve TEXT NOT NULL, -- 光变曲线
-        light_curve_filtered TEXT NOT NULL, -- 有效事件光变曲线
+        light_curve_1s TEXT NOT NULL, -- 光变曲线
+        light_curve_1s_filtered TEXT NOT NULL, -- 有效事件光变曲线
+        light_curve_100ms TEXT NOT NULL, -- 100ms 光变曲线
+        light_curve_100ms_filtered TEXT NOT NULL, -- 有效事件 100ms 光变曲线
         longitude REAL NOT NULL, -- 经度
         latitude REAL NOT NULL, -- 纬度
         altitude REAL NOT NULL, -- 高度
