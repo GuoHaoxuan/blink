@@ -247,13 +247,19 @@ impl InstanceTrait for Instance {
                             trigger.start - Span::milliseconds(50.0),
                             trigger.start + Span::milliseconds(50.0),
                             Span::milliseconds(1.0),
-                        ),
+                        )
+                        .into_iter()
+                        .take(100)
+                        .collect::<Vec<_>>(),
                         light_curve_100ms_filtered: light_curve(
                             &events,
                             trigger.start - Span::milliseconds(50.0),
                             trigger.start + Span::milliseconds(50.0),
                             Span::milliseconds(1.0),
-                        ),
+                        )
+                        .into_iter()
+                        .take(100)
+                        .collect::<Vec<_>>(),
                         longitude,
                         latitude,
                         altitude,
