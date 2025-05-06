@@ -17,6 +17,7 @@ use crate::{
 };
 
 use super::{
+    att_file::AttFile,
     ec::HxmtEc,
     eng_file::EngFile,
     event_file::{EventFile, Iter},
@@ -29,6 +30,7 @@ pub(crate) struct Instance {
     eng_files: [EngFile; 3],
     sci_files: [SciFile; 3],
     pub(crate) orbit_file: OrbitFile,
+    pub(crate) att_file: AttFile,
     pub(crate) hxmt_ec: HxmtEc,
     span: [Time<Hxmt>; 2],
 }
@@ -75,6 +77,17 @@ impl InstanceTrait for Instance {
         let orbit_file = OrbitFile::new(&orbit_file_path).with_context(|| {
             format!("Failed to create OrbitFile from file: {}", orbit_file_path)
         })?;
+        let att_prefix = format!(
+            "HXMT_{:04}{:02}{:02}T{:02}_Att_FFFFFF_V",
+            epoch.year(),
+            epoch.month(),
+            epoch.day(),
+            epoch.hour()
+        );
+        let att_file_path = get_file(&folder, &att_prefix)
+            .with_context(|| format!("Failed to get attitude file: {}", att_prefix))?;
+        let att_file = AttFile::new(&att_file_path)
+            .with_context(|| format!("Failed to create AttFile from file: {}", att_file_path))?;
         let [eng_files, sci_files] = get_all_filenames(*epoch)?;
         let eng_files = [
             EngFile::new(&eng_files[0])?,
@@ -93,6 +106,7 @@ impl InstanceTrait for Instance {
             eng_files,
             sci_files,
             orbit_file,
+            att_file,
             hxmt_ec,
             span: [
                 Time::<Hxmt>::from(*epoch),
@@ -187,6 +201,10 @@ impl InstanceTrait for Instance {
                     .orbit_file
                     .interpolate(trigger.start.time.into_inner())
                     .unwrap_or((0.0, 0.0, 0.0));
+                let (q1, q2, q3) = self
+                    .att_file
+                    .interpolate(trigger.start.time.into_inner())
+                    .unwrap_or((0.0, 0.0, 0.0));
                 let time_tolerance = Duration::milliseconds(5);
                 let distance_tolerance = 800_000.0;
                 let lightning_window = TimeDelta::minutes(2);
@@ -263,6 +281,9 @@ impl InstanceTrait for Instance {
                         longitude,
                         latitude,
                         altitude,
+                        q1,
+                        q2,
+                        q3,
                         orbit: self
                             .orbit_file
                             .window(trigger.start.time.into_inner(), 1000.0),

@@ -117,6 +117,9 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, 
                 longitude,
                 latitude,
                 altitude,
+                q1,
+                q2,
+                q3,
                 orbit,
                 lightnings,
                 associated_lightning_count,
@@ -126,7 +129,7 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, 
             ) VALUES (
                  ?1,  ?2,  ?3,  ?4,  ?5,  ?6,  ?7,  ?8,  ?9, ?10,
                 ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
-                ?21, ?22
+                ?21, ?22, ?23, ?24, ?25
             );
         ",
         params![
@@ -152,6 +155,9 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, 
             signal.longitude,
             signal.latitude,
             signal.altitude,
+            signal.q1,
+            signal.q2,
+            signal.q3,
             serde_json::to_string(&signal.orbit).unwrap(),
             serde_json::to_string(&signal.lightnings).unwrap(),
             signal.associated_lightning_count,
