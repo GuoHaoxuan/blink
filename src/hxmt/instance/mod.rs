@@ -1,3 +1,4 @@
+mod att_file;
 mod ec;
 mod eng_file;
 mod event_file;

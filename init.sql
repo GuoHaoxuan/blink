@@ -30,6 +30,9 @@ CREATE TABLE
         longitude REAL NOT NULL, -- 经度
         latitude REAL NOT NULL, -- 纬度
         altitude REAL NOT NULL, -- 高度
+        q1 REAL NOT NULL, -- Q1
+        q2 REAL NOT NULL, -- Q2
+        q3 REAL NOT NULL, -- Q3
         orbit TEXT NOT NULL, -- 轨道
         lightnings TEXT NOT NULL, -- 闪电
         associated_lightning_count INTEGER NOT NULL, -- 关联闪电个数

@@ -199,6 +199,9 @@ impl InstanceTrait for Instance {
                     longitude: position.sc_lon as f64,
                     latitude: position.sc_lat as f64,
                     altitude: altitude(&position.pos) as f64,
+                    q1: 0.0, // TODO
+                    q2: 0.0, // TODO
+                    q3: 0.0, // TODO
                     lightnings,
                     associated_lightning_count: 0, // TODO
                     orbit: vec![],                 // TODO
