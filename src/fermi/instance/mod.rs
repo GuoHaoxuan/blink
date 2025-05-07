@@ -190,6 +190,7 @@ impl InstanceTrait for Instance {
                     fp_year,
                     count: 0,        // TODO
                     best_count: 0,   // TODO
+                    count_all: 0,    // TODO
                     background: 0.0, // TODO
                     events,
                     light_curve_1s: vec![],             // TODO

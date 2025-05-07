@@ -21,6 +21,7 @@ pub(crate) struct Signal {
     pub(crate) fp_year: f64,
     pub(crate) count: u32,
     pub(crate) best_count: u32,
+    pub(crate) count_all: u32,
     pub(crate) background: f64, // counts per second
     pub(crate) events: Vec<GenericEvent>,
     pub(crate) light_curve_1s: Vec<u32>,
