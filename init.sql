@@ -21,6 +21,7 @@ CREATE TABLE
         fp_year REAL NOT NULL, -- 年误触发个数
         count INTEGER NOT NULL, -- 事件个数
         best_count INTEGER NOT NULL, -- 最佳事件个数
+        count_all INTEGER NOT NULL, -- 所有事件个数
         background REAL NOT NULL, -- 每秒本底
         events TEXT NOT NULL, -- 事件
         light_curve_1s TEXT NOT NULL, -- 光变曲线

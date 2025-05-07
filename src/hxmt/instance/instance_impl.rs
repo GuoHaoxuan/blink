@@ -240,6 +240,12 @@ impl InstanceTrait for Instance {
                             .filter(|event| **event >= trigger.start && **event <= trigger.stop)
                             .count() as u32,
                         best_count: trigger.count,
+                        count_all: self
+                            .into_iter()
+                            .filter(|event| {
+                                event.time() >= trigger.start && event.time() <= trigger.stop
+                            })
+                            .count() as u32,
                         background: trigger.average / trigger.bin_size_best.to_seconds(),
                         events: events_record,
                         light_curve_1s: light_curve(

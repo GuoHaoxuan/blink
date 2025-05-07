@@ -107,6 +107,7 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, 
                 best_stop,
                 count,
                 best_count,
+                count_all,
                 fp_year,
                 background,
                 events,
@@ -129,7 +130,7 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, 
             ) VALUES (
                  ?1,  ?2,  ?3,  ?4,  ?5,  ?6,  ?7,  ?8,  ?9, ?10,
                 ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
-                ?21, ?22, ?23, ?24, ?25
+                ?21, ?22, ?23, ?24, ?25, ?26
             );
         ",
         params![
@@ -145,6 +146,7 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, 
                 .to_string(),
             signal.count,
             signal.best_count,
+            signal.count_all,
             signal.fp_year,
             signal.background,
             serde_json::to_string(&signal.events).unwrap(),
