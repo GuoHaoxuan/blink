@@ -151,17 +151,11 @@ pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, 
             );
         ",
         params![
-            signal.start.format("%Y-%m-%dT%H:%M:%S%.9f%:z").to_string(),
-            signal.stop.format("%Y-%m-%dT%H:%M:%S%.9f%:z").to_string(),
+            serde_json::to_string(&signal.start).unwrap(),
+            serde_json::to_string(&signal.stop).unwrap(),
             signal.duration,
-            signal
-                .start_best
-                .format("%Y-%m-%dT%H:%M:%S%.9f%:z")
-                .to_string(),
-            signal
-                .stop_best
-                .format("%Y-%m-%dT%H:%M:%S%.9f%:z")
-                .to_string(),
+            serde_json::to_string(&signal.start_best).unwrap(),
+            serde_json::to_string(&signal.stop_best).unwrap(),
             signal.duration_best,
             signal.fp_year,
             signal.count,
