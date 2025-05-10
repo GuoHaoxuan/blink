@@ -122,7 +122,7 @@ impl Iterator for Iter<'_> {
                 energy,
                 detector: HxmtDetectorType {
                     id: self.event_file.det_id[self.index],
-                    veto: self.event_file.acd[self.index]
+                    acd: self.event_file.acd[self.index]
                         .iter()
                         .map(|&x| x as u8)
                         .sum::<u8>(),

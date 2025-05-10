@@ -1,9 +1,9 @@
-use core::time;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
-use chrono::{prelude::*, Duration, TimeDelta};
+use chrono::{prelude::*, TimeDelta};
 use itertools::Itertools;
+use statrs::statistics::Statistics;
 
 use crate::{
     env::HXMT_1K_DIR,
@@ -117,13 +117,14 @@ impl InstanceTrait for Instance {
     }
 
     fn search(&self) -> Result<Vec<Signal>> {
+        const CHANNEL_THRESHOLD: u16 = 38;
         let events = self
             .into_iter()
             .filter(|event| !event.detector.am241)
             // .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
             // .filter(|(count, _)| *count == 1)
             // .map(|(_, event)| event)
-            .filter(|event| event.energy() >= 38)
+            .filter(|event| event.energy() >= CHANNEL_THRESHOLD)
             // .filter(|event| !event.detector().acd.iter().any(|acd| *acd))
             .map(|event| event.time())
             .collect::<Vec<_>>();
@@ -176,7 +177,7 @@ impl InstanceTrait for Instance {
                     .collect::<Vec<_>>();
                 let filtered_events = original_events
                     .iter()
-                    .filter(|event| event.energy() >= 38)
+                    .filter(|event| event.energy() >= CHANNEL_THRESHOLD)
                     .collect::<Vec<_>>();
                 if filtered_events.len() >= 100000 {
                     eprintln!(
@@ -211,25 +212,43 @@ impl InstanceTrait for Instance {
                     .iter()
                     .filter(|lightning| lightning.is_associated)
                     .count() as u32;
+                fn to_general(event: &HxmtEvent) -> [f64; 2] {
+                    [event.energy() as f64, event.energy() as f64]
+                }
+                let duration = (trigger.stop - trigger.start).to_seconds();
+                let best_duration = (trigger.bin_size_best).to_seconds();
+                let count = filtered_events.len() as u32;
+                let best_count = trigger.count;
+                let count_all = original_events.len() as u32;
                 if true {
                     Some(Signal {
                         start: trigger.start.to_chrono(),
                         stop: trigger.stop.to_chrono(),
+                        duration: duration * 1e6, // microseconds
                         best_start: (trigger.start + trigger.delay).to_chrono(),
                         best_stop: (trigger.start + trigger.delay + trigger.bin_size_best)
                             .to_chrono(),
+                        best_duration: best_duration * 1e6, // microseconds
                         fp_year: trigger.fp_year(),
-                        count: filtered_events.len() as u32,
-                        best_count: trigger.count,
-                        count_all: original_events.len() as u32,
+                        count,
+                        best_count,
+                        count_all,
                         background: trigger.mean / trigger.bin_size_best.to_seconds(),
+                        flux: count as f64 / duration,
+                        flux_best: best_count as f64 / best_duration,
+                        flux_all: count_all as f64 / duration,
+                        mean_energy: filtered_events
+                            .iter()
+                            .map(|event| event.to_general(to_general).energy[0])
+                            .mean(),
+                        veto_ratio: filtered_events
+                            .iter()
+                            .filter(|event| event.detector().acd != 0)
+                            .count() as f64
+                            / filtered_events.len() as f64,
                         events: original_events
                             .iter()
-                            .map(|event| {
-                                event.to_general(|event| {
-                                    [event.energy() as f64, event.energy() as f64]
-                                })
-                            })
+                            .map(|event| event.to_general(to_general))
                             .collect(),
                         light_curve_1s: light_curve(
                             &self

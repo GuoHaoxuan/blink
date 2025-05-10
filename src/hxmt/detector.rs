@@ -25,7 +25,7 @@ impl Serialize for HxmtScintillator {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize)]
 pub(crate) struct HxmtDetectorType {
     pub id: u8,
-    pub veto: u8,
+    pub acd: u8,
     pub scintillator: HxmtScintillator,
     pub am241: bool,
 }
