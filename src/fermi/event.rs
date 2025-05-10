@@ -38,7 +38,7 @@ impl crate::types::Event for FermiEvent {
         GenericEvent {
             time: self.time.to_chrono(),
             energy: ec_function(self),
-            detector: self.detector.to_string(),
+            detector: serde_json::Value::String(self.detector.to_string()),
         }
     }
 }
