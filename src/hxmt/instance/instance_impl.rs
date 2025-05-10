@@ -168,21 +168,21 @@ impl InstanceTrait for Instance {
             .into_iter()
             .filter_map(|trigger| {
                 let extend = Span::milliseconds(1.0);
-                let original_events = self
+                let original_events_extended = self
                     .into_iter()
                     .filter(|event| {
                         event.time() >= trigger.start - extend
                             && event.time() >= trigger.stop + extend
                     })
                     .collect::<Vec<_>>();
-                let filtered_events = original_events
+                let filtered_events_extended = original_events_extended
                     .iter()
                     .filter(|event| event.energy() >= CHANNEL_THRESHOLD)
                     .collect::<Vec<_>>();
-                if filtered_events.len() >= 100000 {
+                if filtered_events_extended.len() >= 100000 {
                     eprintln!(
                         "Too many events({}) in signal: {} - {}",
-                        filtered_events.len(),
+                        filtered_events_extended.len(),
                         trigger.start.to_chrono(),
                         trigger.stop.to_chrono()
                     );
@@ -217,36 +217,88 @@ impl InstanceTrait for Instance {
                 }
                 let duration = (trigger.stop - trigger.start).to_seconds();
                 let best_duration = (trigger.bin_size_best).to_seconds();
-                let count = filtered_events.len() as u32;
-                let best_count = trigger.count;
-                let count_all = original_events.len() as u32;
+                let original_events = original_events_extended
+                    .iter()
+                    .filter(|event| event.time() >= trigger.start && event.time() <= trigger.stop)
+                    .collect::<Vec<_>>();
+                let original_events_best = original_events
+                    .iter()
+                    .filter(|event| {
+                        event.time() >= trigger.start + trigger.delay
+                            && event.time() <= trigger.start + trigger.delay + trigger.bin_size_best
+                    })
+                    .collect::<Vec<_>>();
+                let filtered_events = filtered_events_extended
+                    .iter()
+                    .filter(|event| event.time() >= trigger.start && event.time() <= trigger.stop)
+                    .collect::<Vec<_>>();
+                let filtered_events_best = filtered_events
+                    .iter()
+                    .filter(|event| {
+                        event.time() >= trigger.start + trigger.delay
+                            && event.time() <= trigger.start + trigger.delay + trigger.bin_size_best
+                    })
+                    .collect::<Vec<_>>();
+                let count = original_events.len() as u32;
+                let count_best = original_events_best.len() as u32;
+                let count_filtered = filtered_events.len() as u32;
+                let count_filtered_best = filtered_events_best.len() as u32;
                 if true {
                     Some(Signal {
                         start: trigger.start.to_chrono(),
                         stop: trigger.stop.to_chrono(),
                         duration: duration * 1e6, // microseconds
-                        best_start: (trigger.start + trigger.delay).to_chrono(),
-                        best_stop: (trigger.start + trigger.delay + trigger.bin_size_best)
+                        start_best: (trigger.start + trigger.delay).to_chrono(),
+                        stop_best: (trigger.start + trigger.delay + trigger.bin_size_best)
                             .to_chrono(),
-                        best_duration: best_duration * 1e6, // microseconds
+                        duration_best: best_duration * 1e6, // microseconds
                         fp_year: trigger.fp_year(),
                         count,
-                        best_count,
-                        count_all,
+                        count_best,
+                        count_filtered,
+                        count_filtered_best,
                         background: trigger.mean / trigger.bin_size_best.to_seconds(),
                         flux: count as f64 / duration,
-                        flux_best: best_count as f64 / best_duration,
-                        flux_all: count_all as f64 / duration,
-                        mean_energy: filtered_events
+                        flux_best: count_best as f64 / best_duration,
+                        flux_filtered: count_filtered as f64 / duration,
+                        flux_filtered_best: count_filtered_best as f64 / best_duration,
+                        mean_energy: original_events
                             .iter()
                             .map(|event| event.to_general(to_general).energy[0])
                             .mean(),
-                        veto_ratio: filtered_events
+                        mean_energy_best: original_events_best
+                            .iter()
+                            .map(|event| event.to_general(to_general).energy[0])
+                            .mean(),
+                        mean_energy_filtered: filtered_events
+                            .iter()
+                            .map(|event| event.to_general(to_general).energy[0])
+                            .mean(),
+                        mean_energy_filtered_best: filtered_events_best
+                            .iter()
+                            .map(|event| event.to_general(to_general).energy[0])
+                            .mean(),
+                        veto_ratio: original_events
+                            .iter()
+                            .filter(|event| event.detector().acd != 0)
+                            .count() as f64
+                            / original_events.len() as f64,
+                        veto_ratio_best: original_events_best
+                            .iter()
+                            .filter(|event| event.detector().acd != 0)
+                            .count() as f64
+                            / original_events_best.len() as f64,
+                        veto_ratio_filtered: filtered_events
                             .iter()
                             .filter(|event| event.detector().acd != 0)
                             .count() as f64
                             / filtered_events.len() as f64,
-                        events: original_events
+                        veto_ratio_filtered_best: filtered_events_best
+                            .iter()
+                            .filter(|event| event.detector().acd != 0)
+                            .count() as f64
+                            / filtered_events_best.len() as f64,
+                        events: original_events_extended
                             .iter()
                             .map(|event| event.to_general(to_general))
                             .collect(),

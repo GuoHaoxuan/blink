@@ -186,19 +186,27 @@ impl InstanceTrait for Instance {
                     start: start.to_chrono(),
                     stop: stop.to_chrono(),
                     duration: (stop - start).to_seconds() * 1e6,
-                    best_start: start.to_chrono(), // TODO
-                    best_stop: stop.to_chrono(),   // TODO
-                    best_duration: (stop - start).to_seconds() * 1e6, // TODO
+                    start_best: start.to_chrono(), // TODO
+                    stop_best: stop.to_chrono(),   // TODO
+                    duration_best: (stop - start).to_seconds() * 1e6, // TODO
                     fp_year,
-                    count: 0,         // TODO
-                    best_count: 0,    // TODO
-                    count_all: 0,     // TODO
-                    background: 0.0,  // TODO
-                    flux: 0.0,        // TODO
-                    flux_best: 0.0,   // TODO
-                    flux_all: 0.0,    // TODO
-                    mean_energy: 0.0, // TODO
-                    veto_ratio: 0.0,  // TODO
+                    count: 0,                       // TODO
+                    count_best: 0,                  // TODO
+                    count_filtered: 0,              // TODO
+                    count_filtered_best: 0,         // TODO
+                    background: 0.0,                // TODO
+                    flux: 0.0,                      // TODO
+                    flux_best: 0.0,                 // TODO
+                    flux_filtered: 0.0,             // TODO
+                    flux_filtered_best: 0.0,        // TODO
+                    mean_energy: 0.0,               // TODO
+                    mean_energy_best: 0.0,          // TODO
+                    mean_energy_filtered: 0.0,      // TODO
+                    mean_energy_filtered_best: 0.0, // TODO
+                    veto_ratio: 0.0,                // TODO
+                    veto_ratio_best: 0.0,           // TODO
+                    veto_ratio_filtered: 0.0,       // TODO
+                    veto_ratio_filtered_best: 0.0,  // TODO
                     events,
                     light_curve_1s: vec![],             // TODO
                     light_curve_1s_filtered: vec![],    // TODO

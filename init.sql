@@ -16,13 +16,28 @@ CREATE TABLE
     IF NOT EXISTS signal (
         start TEXT NOT NULL, -- 开始时间
         stop TEXT NOT NULL, -- 结束时间
-        best_start TEXT NOT NULL, -- 最佳开始时间
-        best_stop TEXT NOT NULL, -- 最佳结束时间
+        duration REAL NOT NULL, -- 持续时间
+        start_best TEXT NOT NULL, -- 最佳开始时间
+        stop_best TEXT NOT NULL, -- 最佳结束时间
+        duration_best REAL NOT NULL, -- 最佳持续时间
         fp_year REAL NOT NULL, -- 年误触发个数
         count INTEGER NOT NULL, -- 事件个数
-        best_count INTEGER NOT NULL, -- 最佳事件个数
-        count_all INTEGER NOT NULL, -- 所有事件个数
+        count_best INTEGER NOT NULL, -- 最佳事件个数
+        count_filtered INTEGER NOT NULL, -- 有效事件个数
+        count_filtered_best INTEGER NOT NULL, -- 最佳有效事件个数
         background REAL NOT NULL, -- 每秒本底
+        flux REAL NOT NULL, -- 每秒通量
+        flux_best REAL NOT NULL, -- 最佳每秒通量
+        flux_filtered REAL NOT NULL, -- 有效事件每秒通量
+        flux_filtered_best REAL NOT NULL, -- 最佳有效事件每秒通量
+        mean_energy REAL NOT NULL, -- 平均能量
+        mean_energy_best REAL NOT NULL, -- 最佳平均能量
+        mean_energy_filtered REAL NOT NULL, -- 有效事件平均能量
+        mean_energy_filtered_best REAL NOT NULL, -- 最佳有效事件平均能量
+        veto_ratio REAL NOT NULL, -- Veto 比率
+        veto_ratio_best REAL NOT NULL, -- 最佳 Veto 比率
+        veto_ratio_filtered REAL NOT NULL, -- 有效事件 Veto 比率
+        veto_ratio_filtered_best REAL NOT NULL, -- 最佳有效事件 Veto 比率
         events TEXT NOT NULL, -- 事件
         light_curve_1s TEXT NOT NULL, -- 光变曲线
         light_curve_1s_filtered TEXT NOT NULL, -- 有效事件光变曲线

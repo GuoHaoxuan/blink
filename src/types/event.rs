@@ -18,5 +18,5 @@ pub(crate) trait Event: Serialize + Eq + Ord + Copy + Group {
 pub(crate) struct GenericEvent {
     pub(crate) time: DateTime<Utc>,
     pub(crate) energy: [f64; 2],
-    pub(crate) detector: String,
+    pub(crate) detector: serde_json::Value,
 }
