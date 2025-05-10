@@ -1,3 +1,4 @@
+use core::time;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
@@ -165,35 +166,24 @@ impl InstanceTrait for Instance {
         let signals = results
             .into_iter()
             .filter_map(|trigger| {
-                let start = trigger.start.to_chrono();
-                let stop = trigger.stop.to_chrono();
-                let middle =
-                    start + trigger.delay.to_chrono() + trigger.bin_size_best.to_chrono() / 2;
                 let extend = Span::milliseconds(1.0);
-                let start_extended = trigger.start - extend;
-                let stop_extended = trigger.stop + extend;
-                let events_record = self
+                let original_events = self
                     .into_iter()
-                    .filter(|event| event.time() >= start_extended && event.time() <= stop_extended)
-                    .map(|event| {
-                        event.to_general(|event| {
-                            // let k = self.hxmt_ec.rows[event.detector().id as usize].k;
-                            // let b = self.hxmt_ec.rows[event.detector().id as usize].b;
-                            // let k_err = self.hxmt_ec.rows[event.detector().id as usize].k_err;
-                            // let b_err = self.hxmt_ec.rows[event.detector().id as usize].b_err;
-                            // let energy_lower = (k - k_err) * event.energy() as f64 + (b - b_err);
-                            // let energy_upper = (k + k_err) * event.energy() as f64 + (b + b_err);
-                            // [energy_lower, energy_upper]
-                            [event.energy() as f64, event.energy() as f64]
-                        })
+                    .filter(|event| {
+                        event.time() >= trigger.start - extend
+                            && event.time() >= trigger.stop + extend
                     })
                     .collect::<Vec<_>>();
-                if events_record.len() >= 100000 {
+                let filtered_events = original_events
+                    .iter()
+                    .filter(|event| event.energy() >= 38)
+                    .collect::<Vec<_>>();
+                if filtered_events.len() >= 100000 {
                     eprintln!(
                         "Too many events({}) in signal: {} - {}",
-                        events_record.len(),
-                        start,
-                        stop
+                        filtered_events.len(),
+                        trigger.start.to_chrono(),
+                        trigger.stop.to_chrono()
                     );
                     return None;
                 }
@@ -205,13 +195,11 @@ impl InstanceTrait for Instance {
                     .att_file
                     .interpolate(trigger.start.time.into_inner())
                     .unwrap_or((0.0, 0.0, 0.0));
-                let time_tolerance = Duration::milliseconds(5);
+                let time_tolerance = TimeDelta::milliseconds(5);
                 let distance_tolerance = 800_000.0;
                 let lightning_window = TimeDelta::minutes(2);
-
-                let fp_year = trigger.fp_year();
                 let lightnings = associated_lightning(
-                    middle,
+                    (trigger.start + trigger.delay + trigger.bin_size_best / 2.0).to_chrono(),
                     latitude,
                     longitude,
                     altitude,
@@ -225,29 +213,24 @@ impl InstanceTrait for Instance {
                     .count() as u32;
                 if true {
                     Some(Signal {
-                        start,
-                        stop,
-                        best_start: start
-                            + TimeDelta::nanoseconds(trigger.delay.to_nanoseconds() as i64),
-                        best_stop: start
-                            + TimeDelta::nanoseconds(
-                                trigger.delay.to_nanoseconds() as i64
-                                    + trigger.bin_size_best.to_nanoseconds() as i64,
-                            ),
-                        fp_year,
-                        count: events
-                            .iter()
-                            .filter(|event| **event >= trigger.start && **event <= trigger.stop)
-                            .count() as u32,
+                        start: trigger.start.to_chrono(),
+                        stop: trigger.stop.to_chrono(),
+                        best_start: (trigger.start + trigger.delay).to_chrono(),
+                        best_stop: (trigger.start + trigger.delay + trigger.bin_size_best)
+                            .to_chrono(),
+                        fp_year: trigger.fp_year(),
+                        count: filtered_events.len() as u32,
                         best_count: trigger.count,
-                        count_all: self
-                            .into_iter()
-                            .filter(|event| {
-                                event.time() >= trigger.start && event.time() <= trigger.stop
-                            })
-                            .count() as u32,
+                        count_all: original_events.len() as u32,
                         background: trigger.average / trigger.bin_size_best.to_seconds(),
-                        events: events_record,
+                        events: original_events
+                            .iter()
+                            .map(|event| {
+                                event.to_general(|event| {
+                                    [event.energy() as f64, event.energy() as f64]
+                                })
+                            })
+                            .collect(),
                         light_curve_1s: light_curve(
                             &self
                                 .into_iter()
@@ -256,13 +239,19 @@ impl InstanceTrait for Instance {
                             trigger.start - Span::milliseconds(500.0),
                             trigger.start + Span::milliseconds(500.0),
                             Span::milliseconds(10.0),
-                        ),
+                        )
+                        .into_iter()
+                        .take(100)
+                        .collect::<Vec<_>>(),
                         light_curve_1s_filtered: light_curve(
                             &events,
                             trigger.start - Span::milliseconds(500.0),
                             trigger.start + Span::milliseconds(500.0),
                             Span::milliseconds(10.0),
-                        ),
+                        )
+                        .into_iter()
+                        .take(100)
+                        .collect::<Vec<_>>(),
                         light_curve_100ms: light_curve(
                             &self
                                 .into_iter()
@@ -293,18 +282,11 @@ impl InstanceTrait for Instance {
                         orbit: self
                             .orbit_file
                             .window(trigger.start.time.into_inner(), 1000.0),
-                        lightnings: associated_lightning(
-                            middle,
-                            latitude,
-                            longitude,
-                            altitude,
-                            time_tolerance,
-                            distance_tolerance,
-                            lightning_window,
-                        ),
+                        lightnings,
                         associated_lightning_count,
                         coincidence_probability: coincidence_prob(
-                            middle,
+                            (trigger.start + trigger.delay + trigger.bin_size_best / 2.0)
+                                .to_chrono(),
                             latitude,
                             longitude,
                             altitude,
