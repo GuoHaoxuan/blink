@@ -37,27 +37,27 @@ fn coincidence_prob(probs: &[f64], n: usize) -> f64 {
     cache[n]
 }
 
-const CACHE_AVERAGE_MAX: f64 = 10.0;
+const CACHE_MEAN_MAX: f64 = 10.0;
 const CACHE_COUNT_MAX: u32 = 10;
-const CACHE_AVERAGE_HASH_FACTOR: f64 = 1000.0;
+const CACHE_MEAN_HASH_FACTOR: f64 = 1000.0;
 
-fn poisson_cdf(cache: &mut [Vec<Option<f64>>], average: f64, count: u32) -> f64 {
-    let do_calc = |average: f64, count: u32| -> f64 {
-        match Poisson::new(average) {
+fn poisson_cdf(cache: &mut [Vec<Option<f64>>], mean: f64, count: u32) -> f64 {
+    let do_calc = |mean: f64, count: u32| -> f64 {
+        match Poisson::new(mean) {
             Ok(poisson) => poisson.cdf(count as u64),
             Err(_) => 1.0,
         }
     };
     if count == 0 {
         0.0
-    } else if average >= CACHE_AVERAGE_MAX || count >= CACHE_COUNT_MAX {
-        do_calc(average, count)
+    } else if mean >= CACHE_MEAN_MAX || count >= CACHE_COUNT_MAX {
+        do_calc(mean, count)
     } else {
-        let average_hash = (average * CACHE_AVERAGE_HASH_FACTOR).floor() as usize;
-        match cache[average_hash][count as usize] {
+        let mean_hash = (mean * CACHE_MEAN_HASH_FACTOR).floor() as usize;
+        match cache[mean_hash][count as usize] {
             None => {
-                let prob = do_calc(average, count);
-                cache[average_hash][count as usize] = Some(prob);
+                let prob = do_calc(mean, count);
+                cache[mean_hash][count as usize] = Some(prob);
                 prob
             }
             Some(prob) => prob,
@@ -75,7 +75,7 @@ pub fn search<E: Event + Group>(
     let mut result: Vec<([Time<E::Satellite>; 2], f64)> = Vec::new();
     let mut cache = vec![
         vec![None; CACHE_COUNT_MAX as usize];
-        (CACHE_AVERAGE_MAX * CACHE_AVERAGE_HASH_FACTOR).ceil() as usize
+        (CACHE_MEAN_MAX * CACHE_MEAN_HASH_FACTOR).ceil() as usize
     ];
 
     let mut cursor = data
@@ -86,38 +86,38 @@ pub fn search<E: Event + Group>(
         return result;
     }
 
-    let mut average_start_base = cursor;
-    let mut average_stop_base = cursor;
-    let mut average_counts_base: Vec<u32> = vec![0; group_count];
-    average_counts_base[data[cursor].group() as usize] = 1;
-    while average_stop_base + 1 < data.len()
-        && data[average_stop_base + 1].time() - data[cursor].time() < config.neighbor / 2.0
+    let mut mean_start_base = cursor;
+    let mut mean_stop_base = cursor;
+    let mut mean_counts_base: Vec<u32> = vec![0; group_count];
+    mean_counts_base[data[cursor].group() as usize] = 1;
+    while mean_stop_base + 1 < data.len()
+        && data[mean_stop_base + 1].time() - data[cursor].time() < config.neighbor / 2.0
     {
-        average_stop_base += 1;
-        average_counts_base[data[average_stop_base].group() as usize] += 1;
+        mean_stop_base += 1;
+        mean_counts_base[data[mean_stop_base].group() as usize] += 1;
     }
 
     loop {
         let mut step = 0;
         let mut counts: Vec<u32> = vec![0; group_count];
         counts[data[cursor].group() as usize] = 1;
-        let mut average_stop = average_stop_base;
-        let mut average_counts = average_counts_base.clone();
+        let mut mean_stop = mean_stop_base;
+        let mut mean_counts = mean_counts_base.clone();
 
         loop {
             let duration = data[cursor + step].time() - data[cursor].time();
-            let average_start_time = (data[cursor].time() - config.neighbor / 2.0).max(start);
-            let average_stop_time = (data[cursor + step].time() + config.neighbor / 2.0).min(stop);
-            let average_duration = (average_stop_time - average_start_time) - duration;
-            let average_percent = duration.to_seconds() / average_duration.to_seconds();
+            let mean_start_time = (data[cursor].time() - config.neighbor / 2.0).max(start);
+            let mean_stop_time = (data[cursor + step].time() + config.neighbor / 2.0).min(stop);
+            let mean_duration = (mean_stop_time - mean_start_time) - duration;
+            let mean_percent = duration.to_seconds() / mean_duration.to_seconds();
             let threshold = 1.0 - config.fp_year / (3600.0 * 24.0 * 365.0 / duration.to_seconds());
             let probs = (0..group_count)
                 .map(|group| {
                     let count = counts[group];
-                    let average_count = average_counts[group] - count;
-                    let average = average_count as f64 * average_percent;
+                    let mean_count = mean_counts[group] - count;
+                    let mean = mean_count as f64 * mean_percent;
 
-                    poisson_cdf(&mut cache, average, count)
+                    poisson_cdf(&mut cache, mean, count)
                 })
                 .collect::<Vec<f64>>();
             let prob = coincidence_prob(&probs, 3);
@@ -146,12 +146,11 @@ pub fn search<E: Event + Group>(
             }
 
             counts[data[cursor + step].group() as usize] += 1;
-            while average_stop + 1 < data.len()
-                && data[average_stop + 1].time() - data[cursor + step].time()
-                    < config.neighbor / 2.0
+            while mean_stop + 1 < data.len()
+                && data[mean_stop + 1].time() - data[cursor + step].time() < config.neighbor / 2.0
             {
-                average_stop += 1;
-                average_counts[data[average_stop].group() as usize] += 1;
+                mean_stop += 1;
+                mean_counts[data[mean_stop].group() as usize] += 1;
             }
         }
 
@@ -161,17 +160,17 @@ pub fn search<E: Event + Group>(
             break;
         }
 
-        while average_start_base + 1 < data.len()
-            && data[cursor].time() - data[average_start_base + 1].time() > config.neighbor / 2.0
+        while mean_start_base + 1 < data.len()
+            && data[cursor].time() - data[mean_start_base + 1].time() > config.neighbor / 2.0
         {
-            average_counts_base[data[average_start_base].group() as usize] -= 1;
-            average_start_base += 1;
+            mean_counts_base[data[mean_start_base].group() as usize] -= 1;
+            mean_start_base += 1;
         }
-        while average_stop_base + 1 < data.len()
-            && data[average_stop_base + 1].time() - data[cursor].time() < config.neighbor / 2.0
+        while mean_stop_base + 1 < data.len()
+            && data[mean_stop_base + 1].time() - data[cursor].time() < config.neighbor / 2.0
         {
-            average_stop_base += 1;
-            average_counts_base[data[average_stop_base].group() as usize] += 1;
+            mean_stop_base += 1;
+            mean_counts_base[data[mean_stop_base].group() as usize] += 1;
         }
     }
 
