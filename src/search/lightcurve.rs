@@ -14,11 +14,11 @@ pub struct Trigger<S: Satellite> {
     pub bin_size_best: Span<S>,
     pub delay: Span<S>,
     pub count: u32,
-    pub average: f64,
+    pub mean: f64,
 }
 
 impl<S: Satellite> Trigger<S> {
-    pub fn new(start: Time<S>, stop: Time<S>, count: u32, average: f64) -> Trigger<S> {
+    pub fn new(start: Time<S>, stop: Time<S>, count: u32, mean: f64) -> Trigger<S> {
         let bin_size = stop - start;
         Trigger {
             start,
@@ -28,18 +28,18 @@ impl<S: Satellite> Trigger<S> {
             bin_size_best: bin_size,
             delay: Span::seconds(0.0),
             count,
-            average,
+            mean,
         }
     }
 
     pub fn sf(&self) -> f64 {
-        match (self.average, self.count) {
+        match (self.mean, self.count) {
             (0.0, 0) => 0.0,
             (0.0, _) => 1.0,
-            _ => Poisson::new(self.average)
+            _ => Poisson::new(self.mean)
                 .inspect_err(|e| {
                     eprintln!("Error in Poisson distribution: {}", e);
-                    eprintln!("Average: {}", self.average);
+                    eprintln!("Mean: {}", self.mean);
                 })
                 .unwrap()
                 .sf(self.count as u64),
@@ -64,7 +64,7 @@ impl<S: Satellite> Trigger<S> {
         if other.sf() < res.sf() {
             res = Trigger {
                 count: other.count,
-                average: other.average,
+                mean: other.mean,
                 bin_size_best: other.bin_size_best,
                 delay: other.start - res.start,
                 ..res
@@ -96,8 +96,8 @@ pub fn search_light_curve<S: Satellite>(
             }
             let index_start = (i as isize - num_neighbors as isize / 2).max(0) as usize;
             let index_stop = (i + num_neighbors / 2).min(light_curve_prefix_sum.len() - 1);
-            let average_length = (index_stop - index_start + 1) as f64;
-            let average_count =
+            let mean_length = (index_stop - index_start + 1) as f64;
+            let mean_count =
                 (light_curve_prefix_sum[index_stop] - light_curve_prefix_sum[index_start]) as f64;
 
             let hollow_start = (i as isize - num_neighbors_hollow as isize / 2).max(0) as usize;
@@ -106,11 +106,11 @@ pub fn search_light_curve<S: Satellite>(
             let hollow_count =
                 (light_curve_prefix_sum[hollow_stop] - light_curve_prefix_sum[hollow_start]) as f64;
 
-            let average = (average_count - hollow_count) / (average_length - hollow_length);
+            let mean = (mean_count - hollow_count) / (mean_length - hollow_length);
 
             let threshold = poisson_isf_cached(
                 fp_year / (Span::seconds(3600.0) * 24.0 * 365.0 / bin_size),
-                average,
+                mean,
                 &mut cache,
             );
             if count != 0 && count >= threshold {
@@ -118,7 +118,7 @@ pub fn search_light_curve<S: Satellite>(
                     start + bin_size * i as f64,
                     start + bin_size * (i + 1) as f64,
                     count,
-                    average,
+                    mean,
                 ))
             } else {
                 None

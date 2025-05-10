@@ -222,7 +222,7 @@ impl InstanceTrait for Instance {
                         count: filtered_events.len() as u32,
                         best_count: trigger.count,
                         count_all: original_events.len() as u32,
-                        background: trigger.average / trigger.bin_size_best.to_seconds(),
+                        background: trigger.mean / trigger.bin_size_best.to_seconds(),
                         events: original_events
                             .iter()
                             .map(|event| {
