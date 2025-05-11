@@ -172,7 +172,7 @@ impl InstanceTrait for Instance {
                     .into_iter()
                     .filter(|event| {
                         event.time() >= trigger.start - extend
-                            && event.time() >= trigger.stop + extend
+                            && event.time() <= trigger.stop + extend
                     })
                     .collect::<Vec<_>>();
                 let filtered_events_extended = original_events_extended
