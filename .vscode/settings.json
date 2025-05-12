@@ -11,5 +11,6 @@
         "rusqlite",
         "TSTART",
         "TSTOP"
-    ]
+    ],
+    "git.ignoreLimitWarning": true
 }
