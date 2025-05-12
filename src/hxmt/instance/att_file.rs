@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 
-pub(crate) struct AttFile {
+pub struct AttFile {
     // HDU 3: ATT_Quater
     time: Vec<f64>,
     q1: Vec<f64>,

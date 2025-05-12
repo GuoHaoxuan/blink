@@ -3,31 +3,31 @@ use std::collections::BinaryHeap;
 use std::ffi::OsStr;
 use std::path::Path;
 
-use chrono::{prelude::*, Duration};
+use chrono::{Duration, prelude::*};
 use file::File;
 use itertools::Itertools;
 use position::Position;
 
 use crate::env::GBM_DAILY_PATH;
 use crate::lightning::{associated_lightning, coincidence_prob};
-use crate::search::algorithms::{search, SearchConfig};
+use crate::search::algorithms::{SearchConfig, search};
 use crate::types::{Event as _, Instance as InstanceTrait, Signal, Span, Time};
 
+use super::Fermi;
 use super::detector::FermiDetectorType;
 use super::event::FermiEvent;
-use super::Fermi;
 
 mod file;
-pub(crate) mod position;
+pub mod position;
 
-pub(crate) struct Instance {
+pub struct Instance {
     files: Vec<File>,
     position: Position,
     span: [Time<Fermi>; 2],
 }
 
 impl Instance {
-    pub(crate) fn new(
+    pub fn new(
         data: &[&str],
         position: &str,
         span: [Time<Fermi>; 2],
@@ -54,7 +54,7 @@ impl Instance {
         })
     }
 
-    pub(crate) fn gti(&self) -> Vec<[Time<Fermi>; 2]> {
+    pub fn gti(&self) -> Vec<[Time<Fermi>; 2]> {
         self.files
             .iter()
             .map(|file| file.gti())
@@ -258,7 +258,7 @@ impl<'a> IntoIterator for &'a Instance {
     }
 }
 
-pub(crate) struct Iter<'a> {
+pub struct Iter<'a> {
     file_iters: Vec<file::Iter<'a>>,
     buffer: BinaryHeap<Reverse<(FermiEvent, usize)>>,
 }
@@ -313,7 +313,7 @@ fn altitude(coord: &[f32]) -> f32 {
     // Parameters of the World Geodetic System 1984
     // semi-major axis
     let wgs84_a = 6378137.0; // meters
-                             // reciprocal of flattening
+    // reciprocal of flattening
     let wgs84_1overf = 298.257_23;
 
     let rho = (coord[0].powi(2) + coord[1].powi(2)).sqrt();

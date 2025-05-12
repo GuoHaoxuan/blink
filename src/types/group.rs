@@ -1,3 +1,3 @@
-pub(crate) trait Group {
+pub trait Group {
     fn group(&self) -> u8;
 }

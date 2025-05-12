@@ -3,7 +3,7 @@ use crate::hxmt::event::HxmtEvent;
 use crate::types::Time;
 use anyhow::{Context, Result};
 
-pub(crate) struct EventFile {
+pub struct EventFile {
     // HDU 1: Events
     time: Vec<f64>,
     det_id: Vec<u8>,
@@ -103,7 +103,7 @@ impl<'a> IntoIterator for &'a EventFile {
     }
 }
 
-pub(crate) struct Iter<'a> {
+pub struct Iter<'a> {
     event_file: &'a EventFile,
     index: usize,
 }

@@ -9,35 +9,35 @@ use serde::Serialize;
 use crate::types::Satellite;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Serialize)]
-pub(crate) struct Span<T: Satellite> {
+pub struct Span<T: Satellite> {
     pub(super) time: NotNan<f64>,
     pub(super) _phantom: PhantomData<T>,
 }
 
 impl<T: Satellite> Span<T> {
-    pub(crate) fn seconds(seconds: f64) -> Self {
+    pub fn seconds(seconds: f64) -> Self {
         Self {
             time: NotNan::new(seconds).unwrap(),
             _phantom: PhantomData,
         }
     }
 
-    pub(crate) fn milliseconds(milliseconds: f64) -> Self {
+    pub fn milliseconds(milliseconds: f64) -> Self {
         Self {
             time: NotNan::new(milliseconds / 1000.0).unwrap(),
             _phantom: PhantomData,
         }
     }
 
-    pub(crate) fn to_seconds(self) -> f64 {
+    pub fn to_seconds(self) -> f64 {
         (self.time).into_inner()
     }
 
-    pub(crate) fn to_nanoseconds(self) -> f64 {
+    pub fn to_nanoseconds(self) -> f64 {
         (self.time).into_inner() * 1e9
     }
 
-    pub(crate) fn to_chrono(self) -> chrono::TimeDelta {
+    pub fn to_chrono(self) -> chrono::TimeDelta {
         chrono::Duration::nanoseconds((self.time).into_inner() as i64 * 1e9 as i64)
     }
 }

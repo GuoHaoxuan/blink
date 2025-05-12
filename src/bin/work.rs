@@ -1,15 +1,7 @@
-mod database;
-mod env;
-mod fermi;
-mod hxmt;
-mod lightning;
-mod search;
-mod types;
-
 use rusqlite::Connection;
-use types::Instance;
 
-use database::{fail_task, finish_task, get_task, write_signal};
+use blink::database::{fail_task, finish_task, get_task, write_signal};
+use blink::types::Instance as BlinkInstance;
 
 fn consume() {
     let hostname = hostname::get().unwrap().into_string().unwrap();
@@ -19,12 +11,12 @@ fn consume() {
     conn.busy_timeout(std::time::Duration::from_secs(3600))
         .unwrap();
     while let Some((time, satellite, detector)) = get_task(&conn, &worker) {
-        let hour: anyhow::Result<Box<dyn types::Instance>> =
+        let hour: anyhow::Result<Box<dyn BlinkInstance>> =
             match (satellite.as_str(), detector.as_str()) {
-                ("Fermi", "GBM") => fermi::Instance::from_epoch(&time)
-                    .map(|inst| Box::new(inst) as Box<dyn types::Instance>),
-                ("HXMT", "HE") => hxmt::Instance::from_epoch(&time)
-                    .map(|inst| Box::new(inst) as Box<dyn types::Instance>),
+                ("Fermi", "GBM") => blink::fermi::Instance::from_epoch(&time)
+                    .map(|inst| Box::new(inst) as Box<dyn BlinkInstance>),
+                ("HXMT", "HE") => blink::hxmt::Instance::from_epoch(&time)
+                    .map(|inst| Box::new(inst) as Box<dyn BlinkInstance>),
                 _ => panic!("Unknown satellite or detector"),
             };
         if let Err(e) = &hour {

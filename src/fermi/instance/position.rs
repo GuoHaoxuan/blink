@@ -4,8 +4,8 @@ use crate::types::Time;
 
 use super::Fermi;
 
-pub(crate) struct Position {
-    pub(crate) sclk_utc: Vec<f64>,
+pub struct Position {
+    pub sclk_utc: Vec<f64>,
     qsj_1: Vec<f64>,
     qsj_2: Vec<f64>,
     qsj_3: Vec<f64>,
@@ -27,20 +27,20 @@ pub(crate) struct Position {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct PositionRow {
-    pub(crate) sclk_utc: f64,
-    pub(crate) qsj: [f64; 4],
-    pub(crate) wsj: [f64; 3],
-    pub(crate) pos: [f32; 3],
-    pub(crate) vel: [f32; 3],
-    pub(crate) sc_lat: f32,
-    pub(crate) sc_lon: f32,
-    pub(crate) sada: [f32; 2],
-    pub(crate) flags: i16,
+pub struct PositionRow {
+    pub sclk_utc: f64,
+    pub qsj: [f64; 4],
+    pub wsj: [f64; 3],
+    pub pos: [f32; 3],
+    pub vel: [f32; 3],
+    pub sc_lat: f32,
+    pub sc_lon: f32,
+    pub sada: [f32; 2],
+    pub flags: i16,
 }
 
 impl Position {
-    pub(crate) fn new(filename: &str) -> Result<Self, fitsio::errors::Error> {
+    pub fn new(filename: &str) -> Result<Self, fitsio::errors::Error> {
         let mut fptr = fitsio::FitsFile::open(filename)?;
         let hdu = fptr.hdu("GLAST POS HIST")?;
         Ok(Self {
@@ -66,7 +66,7 @@ impl Position {
         })
     }
 
-    pub(crate) fn get_row(&self, epoch: Time<Fermi>) -> PositionRow {
+    pub fn get_row(&self, epoch: Time<Fermi>) -> PositionRow {
         let sclk_utc = epoch.time.into_inner();
         let pos = self
             .sclk_utc

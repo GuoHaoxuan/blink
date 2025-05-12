@@ -7,20 +7,20 @@ use std::path::Path;
 use crate::env::HXMT_EC_DIR;
 
 #[derive(Clone, Copy)]
-pub(crate) struct HxmtEcRow {
-    pub(crate) k: f64,
-    pub(crate) b: f64,
-    pub(crate) k_err: f64,
-    pub(crate) b_err: f64,
+pub struct HxmtEcRow {
+    pub k: f64,
+    pub b: f64,
+    pub k_err: f64,
+    pub b_err: f64,
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct HxmtEc {
-    pub(crate) rows: [HxmtEcRow; 18],
+pub struct HxmtEc {
+    pub rows: [HxmtEcRow; 18],
 }
 
 impl HxmtEc {
-    pub(crate) fn from_file(filename: &str) -> Result<Self> {
+    pub fn from_file(filename: &str) -> Result<Self> {
         let file =
             File::open(filename).with_context(|| format!("Failed to open file: {}", filename))?;
         let reader = io::BufReader::new(file);
@@ -61,7 +61,7 @@ impl HxmtEc {
         Ok(HxmtEc { rows })
     }
 
-    pub(crate) fn from_datetime(datetime: &DateTime<Utc>) -> Result<Self> {
+    pub fn from_datetime(datetime: &DateTime<Utc>) -> Result<Self> {
         let mut names = std::fs::read_dir(HXMT_EC_DIR.as_str())
             .with_context(|| format!("Failed to read directory: {}", HXMT_EC_DIR.as_str()))?
             .filter_map(|entry| entry.ok())

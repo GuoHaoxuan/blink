@@ -1,14 +1,14 @@
 use anyhow::{Context, Result};
 
-pub(crate) struct EngFile {
+pub struct EngFile {
     // HDU 1: HE_Eng
     // Only extract useful columns
-    pub(crate) time: Vec<i32>,
-    pub(crate) bus_time_bdc: Vec<[u8; 6]>,
+    pub time: Vec<i32>,
+    pub bus_time_bdc: Vec<[u8; 6]>,
 }
 
 impl EngFile {
-    pub(crate) fn new(filename: &str) -> Result<Self> {
+    pub fn new(filename: &str) -> Result<Self> {
         let mut fptr = fitsio::FitsFile::open(filename)
             .with_context(|| format!("Failed to open file: {}", filename))?;
 

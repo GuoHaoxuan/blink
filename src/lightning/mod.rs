@@ -1,7 +1,7 @@
-use chrono::{prelude::*, Duration};
+use chrono::{Duration, prelude::*};
 use itertools::Itertools;
 use rusqlite::params;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::env::LIGHTNING_CONNECTION;
 
@@ -32,22 +32,22 @@ fn time_of_arrival(distance: f64, h1: f64, h2: f64) -> Duration {
     Duration::nanoseconds((d2.sqrt() / SPEED_OF_LIGHT * 1_000_000_000.0).round() as i64)
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct LightningAssociation {
-    pub(crate) lightning: Lightning,
-    pub(crate) is_associated: bool,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LightningAssociation {
+    pub lightning: Lightning,
+    pub is_associated: bool,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct Lightning {
-    pub(crate) time: DateTime<Utc>,
-    pub(crate) lat: f64,
-    pub(crate) lon: f64,
-    pub(crate) resid: f64,
-    pub(crate) nstn: u32,
-    pub(crate) energy: Option<f64>,
-    pub(crate) energy_uncertainty: Option<f64>,
-    pub(crate) estn: Option<u32>,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Lightning {
+    pub time: DateTime<Utc>,
+    pub lat: f64,
+    pub lon: f64,
+    pub resid: f64,
+    pub nstn: u32,
+    pub energy: Option<f64>,
+    pub energy_uncertainty: Option<f64>,
+    pub estn: Option<u32>,
 }
 
 fn get_lightnings(time_start: DateTime<Utc>, time_end: DateTime<Utc>) -> Vec<Lightning> {
@@ -97,7 +97,7 @@ fn get_lightnings(time_start: DateTime<Utc>, time_end: DateTime<Utc>) -> Vec<Lig
         .collect::<Vec<_>>()
 }
 
-pub(crate) fn associated_lightning(
+pub fn associated_lightning(
     time: DateTime<Utc>,
     lat: f64,
     lon: f64,
@@ -156,7 +156,7 @@ fn trim(window: &[DateTime<Utc>; 2], min: DateTime<Utc>, max: DateTime<Utc>) -> 
     [start, end]
 }
 
-pub(crate) fn coincidence_prob(
+pub fn coincidence_prob(
     time: DateTime<Utc>,
     lat: f64,
     lon: f64,

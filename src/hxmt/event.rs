@@ -5,14 +5,14 @@ use crate::types::{GenericEvent, Group, Time};
 use super::{detector::HxmtDetectorType, Hxmt};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Serialize)]
-pub(crate) struct HxmtEvent {
+pub struct HxmtEvent {
     pub(super) time: Time<Hxmt>,
     pub(super) energy: u16,
     pub(super) detector: HxmtDetectorType,
 }
 
 impl HxmtEvent {
-    pub(crate) fn detector(&self) -> HxmtDetectorType {
+    pub fn detector(&self) -> HxmtDetectorType {
         self.detector
     }
 }

@@ -1,5 +1,5 @@
 use chrono::prelude::*;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 use crate::types::Signal;
 
@@ -97,7 +97,7 @@ pub fn fail_task(
     .unwrap();
 }
 
-pub(crate) fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detector: &str) {
+pub fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detector: &str) {
     conn.execute(
         "
             INSERT INTO signal (

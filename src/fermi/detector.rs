@@ -2,7 +2,7 @@ use serde::Serialize;
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub(crate) enum FermiDetectorType {
+pub enum FermiDetectorType {
     Nai(u8),
     Bgo(u8),
 }
