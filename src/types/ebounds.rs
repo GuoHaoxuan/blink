@@ -1,1 +1,1 @@
-pub(crate) type Ebounds = Vec<[f64; 2]>;
+pub type Ebounds = Vec<[f64; 2]>;

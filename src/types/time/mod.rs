@@ -1,5 +1,5 @@
 mod span;
 mod time_impl;
 
-pub(crate) use span::Span;
-pub(crate) use time_impl::Time;
+pub use span::Span;
+pub use time_impl::Time;

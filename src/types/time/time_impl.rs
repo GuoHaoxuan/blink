@@ -127,13 +127,13 @@ static LEAP_SECONDS: LazyLock<[DateTime<Utc>; 27]> = LazyLock::new(|| {
 });
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub(crate) struct Time<T: Satellite> {
-    pub(crate) time: NotNan<f64>,
+pub struct Time<T: Satellite> {
+    pub time: NotNan<f64>,
     _phantom: PhantomData<T>,
 }
 
 impl<T: Satellite> Time<T> {
-    pub(crate) fn to_chrono(self) -> DateTime<Utc> {
+    pub fn to_chrono(self) -> DateTime<Utc> {
         let seconds = self.time.into_inner();
         let whole_seconds = seconds.trunc() as i64;
         let nanoseconds = ((seconds.fract() * 1_000_000_000.0) as i64).clamp(0, 999_999_999);
@@ -148,7 +148,7 @@ impl<T: Satellite> Time<T> {
         time
     }
 
-    pub(crate) fn seconds(seconds: f64) -> Self {
+    pub fn seconds(seconds: f64) -> Self {
         Self {
             time: NotNan::new(seconds).unwrap(),
             _phantom: PhantomData,

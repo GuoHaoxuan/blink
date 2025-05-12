@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 
-pub(crate) struct SciFile {
-    pub(crate) ccsds: Vec<[u8; 882]>,
+pub struct SciFile {
+    pub ccsds: Vec<[u8; 882]>,
 }
 
 impl SciFile {
-    pub(crate) fn new(filename: &str) -> Result<Self> {
+    pub fn new(filename: &str) -> Result<Self> {
         let mut fptr = fitsio::FitsFile::open(filename)
             .with_context(|| format!("Failed to open file: {}", filename))?;
 

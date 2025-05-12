@@ -26,18 +26,18 @@ use super::{
     sci_file::SciFile,
 };
 
-pub(crate) struct Instance {
+pub struct Instance {
     event_file: EventFile,
     eng_files: [EngFile; 3],
     sci_files: [SciFile; 3],
-    pub(crate) orbit_file: OrbitFile,
-    pub(crate) att_file: AttFile,
-    pub(crate) hxmt_ec: HxmtEc,
+    pub orbit_file: OrbitFile,
+    pub att_file: AttFile,
+    pub hxmt_ec: HxmtEc,
     span: [Time<Hxmt>; 2],
 }
 
 impl Instance {
-    pub(crate) fn check_saturation(&self, time: Time<Hxmt>) -> bool {
+    pub fn check_saturation(&self, time: Time<Hxmt>) -> bool {
         rec_sci_data(time, &self.eng_files[0], &self.sci_files[0])
             || rec_sci_data(time, &self.eng_files[1], &self.sci_files[1])
             || rec_sci_data(time, &self.eng_files[2], &self.sci_files[2])
@@ -411,7 +411,7 @@ impl<'a> IntoIterator for &'a Instance {
     }
 }
 
-pub(crate) fn continuous(
+pub fn continuous(
     triggers: Vec<Trigger<Hxmt>>,
     interval: Span<Hxmt>,
     duration: Span<Hxmt>,

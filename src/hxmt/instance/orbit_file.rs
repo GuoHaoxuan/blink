@@ -1,7 +1,7 @@
 use crate::types::Location;
 use anyhow::{Context, Result, anyhow};
 
-pub(crate) struct OrbitFile {
+pub struct OrbitFile {
     // HDU 1: Orbit
     time: Vec<f64>,
     lon: Vec<f64>,

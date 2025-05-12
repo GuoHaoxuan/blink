@@ -2,17 +2,17 @@ use serde::Serialize;
 
 use crate::types::{GenericEvent, Group, Time};
 
-use super::{detector::FermiDetectorType, Fermi};
+use super::{Fermi, detector::FermiDetectorType};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Serialize)]
-pub(crate) struct FermiEvent {
+pub struct FermiEvent {
     pub(super) time: Time<Fermi>,
     pub(super) energy: i16,
     pub(super) detector: FermiDetectorType,
 }
 
 impl FermiEvent {
-    pub(crate) fn detector(&self) -> FermiDetectorType {
+    pub fn detector(&self) -> FermiDetectorType {
         self.detector
     }
 }

@@ -2,7 +2,7 @@ use serde::Serialize;
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub(crate) enum HxmtScintillator {
+pub enum HxmtScintillator {
     NaI,
     CsI,
 }
@@ -23,7 +23,7 @@ impl Serialize for HxmtScintillator {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize)]
-pub(crate) struct HxmtDetectorType {
+pub struct HxmtDetectorType {
     pub id: u8,
     pub acd: u8,
     pub scintillator: HxmtScintillator,
