@@ -1,5 +1,5 @@
 use crate::types::Location;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
 pub(crate) struct OrbitFile {
     // HDU 1: Orbit
@@ -81,7 +81,7 @@ impl OrbitFile {
         self.time
             .iter()
             .enumerate()
-            .filter(|(_, &t)| t >= start_time && t <= end_time)
+            .filter(|(_, t)| **t >= start_time && **t <= end_time)
             .map(|(i, _)| {
                 let longitude = self.lon[i];
                 let latitude = self.lat[i];
