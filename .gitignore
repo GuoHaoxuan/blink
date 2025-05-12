@@ -9,3 +9,5 @@ venv
 *.db
 lightcurve
 output
+detail
+catalog.csv
