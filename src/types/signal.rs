@@ -15,10 +15,11 @@ pub struct Location {
 #[derive(Debug, Serialize)]
 pub struct Signal {
     pub start: DateTime<Utc>,
-    pub stop: DateTime<Utc>,
-    pub duration: f64,
     pub start_best: DateTime<Utc>,
+    pub stop: DateTime<Utc>,
     pub stop_best: DateTime<Utc>,
+    pub peak: DateTime<Utc>,
+    pub duration: f64,
     pub duration_best: f64,
     pub fp_year: f64,
     pub count: u32,
@@ -53,4 +54,9 @@ pub struct Signal {
     pub lightnings: Vec<LightningAssociation>,
     pub associated_lightning_count: u32,
     pub coincidence_probability: f64,
+    pub mean_solar_time: NaiveTime,
+    pub apparent_solar_time: NaiveTime,
+    pub day_of_year: u32,
+    pub solar_zenith_angle: f64,
+    pub solar_zenith_angle_at_noon: f64,
 }

@@ -5,3 +5,4 @@ pub mod hxmt;
 pub mod lightning;
 pub mod search;
 pub mod types;
+pub mod utils;
