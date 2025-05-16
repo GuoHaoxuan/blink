@@ -1,19 +1,19 @@
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Result};
-use chrono::{prelude::*, TimeDelta};
+use anyhow::{Context, Result, anyhow};
+use chrono::{TimeDelta, prelude::*};
 use itertools::Itertools;
 use statrs::statistics::Statistics;
 
 use crate::{
     env::HXMT_1K_DIR,
     hxmt::{
+        Hxmt,
         event::HxmtEvent,
         saturation::{get_all_filenames, rec_sci_data},
-        Hxmt,
     },
     lightning::{associated_lightning, coincidence_prob},
-    search::lightcurve::{light_curve, prefix_sum, search_light_curve, Trigger},
+    search::lightcurve::{Trigger, light_curve, prefix_sum, search_light_curve},
     types::{Event, Instance as InstanceTrait, Signal, Span, Time},
 };
 
@@ -208,15 +208,9 @@ impl InstanceTrait for Instance {
                     distance_tolerance,
                     lightning_window,
                 );
-                let associated_lightning_count = lightnings
-                    .iter()
-                    .filter(|lightning| lightning.is_associated)
-                    .count() as u32;
                 fn to_general(event: &HxmtEvent) -> [f64; 2] {
                     [event.energy() as f64, event.energy() as f64]
                 }
-                let duration = (trigger.stop - trigger.start).to_seconds();
-                let best_duration = (trigger.bin_size_best).to_seconds();
                 let original_events = original_events_extended
                     .iter()
                     .filter(|event| event.time() >= trigger.start && event.time() <= trigger.stop)
@@ -244,65 +238,58 @@ impl InstanceTrait for Instance {
                 let count_filtered = filtered_events.len() as u32;
                 let count_filtered_best = filtered_events_best.len() as u32;
                 if true {
-                    Some(Signal {
-                        start: trigger.start.to_chrono(),
-                        stop: trigger.stop.to_chrono(),
-                        duration: duration * 1e6, // microseconds
-                        start_best: (trigger.start + trigger.delay).to_chrono(),
-                        stop_best: (trigger.start + trigger.delay + trigger.bin_size_best)
-                            .to_chrono(),
-                        duration_best: best_duration * 1e6, // microseconds
-                        fp_year: trigger.fp_year(),
+                    Some(Signal::new(
+                        trigger.start.to_chrono(),
+                        (trigger.start + trigger.delay).to_chrono(),
+                        trigger.stop.to_chrono(),
+                        (trigger.start + trigger.delay + trigger.bin_size_best).to_chrono(),
+                        trigger.fp_year(),
                         count,
                         count_best,
                         count_filtered,
                         count_filtered_best,
-                        background: trigger.mean / trigger.bin_size_best.to_seconds(),
-                        flux: count as f64 / duration,
-                        flux_best: count_best as f64 / best_duration,
-                        flux_filtered: count_filtered as f64 / duration,
-                        flux_filtered_best: count_filtered_best as f64 / best_duration,
-                        mean_energy: original_events
+                        trigger.mean / trigger.bin_size_best.to_seconds(),
+                        original_events
                             .iter()
                             .map(|event| event.to_general(to_general).energy[0])
                             .mean(),
-                        mean_energy_best: original_events_best
+                        original_events_best
                             .iter()
                             .map(|event| event.to_general(to_general).energy[0])
                             .mean(),
-                        mean_energy_filtered: filtered_events
+                        filtered_events
                             .iter()
                             .map(|event| event.to_general(to_general).energy[0])
                             .mean(),
-                        mean_energy_filtered_best: filtered_events_best
+                        filtered_events_best
                             .iter()
                             .map(|event| event.to_general(to_general).energy[0])
                             .mean(),
-                        veto_ratio: original_events
+                        original_events
                             .iter()
                             .filter(|event| event.detector().acd != 0)
                             .count() as f64
                             / original_events.len() as f64,
-                        veto_ratio_best: original_events_best
+                        original_events_best
                             .iter()
                             .filter(|event| event.detector().acd != 0)
                             .count() as f64
                             / original_events_best.len() as f64,
-                        veto_ratio_filtered: filtered_events
+                        filtered_events
                             .iter()
                             .filter(|event| event.detector().acd != 0)
                             .count() as f64
                             / filtered_events.len() as f64,
-                        veto_ratio_filtered_best: filtered_events_best
+                        filtered_events_best
                             .iter()
                             .filter(|event| event.detector().acd != 0)
                             .count() as f64
                             / filtered_events_best.len() as f64,
-                        events: original_events_extended
+                        original_events_extended
                             .iter()
                             .map(|event| event.to_general(to_general))
                             .collect(),
-                        light_curve_1s: light_curve(
+                        light_curve(
                             &self
                                 .into_iter()
                                 .map(|event| event.time())
@@ -314,7 +301,7 @@ impl InstanceTrait for Instance {
                         .into_iter()
                         .take(100)
                         .collect::<Vec<_>>(),
-                        light_curve_1s_filtered: light_curve(
+                        light_curve(
                             &events,
                             trigger.start - Span::milliseconds(500.0),
                             trigger.start + Span::milliseconds(500.0),
@@ -323,7 +310,7 @@ impl InstanceTrait for Instance {
                         .into_iter()
                         .take(100)
                         .collect::<Vec<_>>(),
-                        light_curve_100ms: light_curve(
+                        light_curve(
                             &self
                                 .into_iter()
                                 .map(|event| event.time())
@@ -335,7 +322,7 @@ impl InstanceTrait for Instance {
                         .into_iter()
                         .take(100)
                         .collect::<Vec<_>>(),
-                        light_curve_100ms_filtered: light_curve(
+                        light_curve(
                             &events,
                             trigger.start - Span::milliseconds(50.0),
                             trigger.start + Span::milliseconds(50.0),
@@ -350,12 +337,10 @@ impl InstanceTrait for Instance {
                         q1,
                         q2,
                         q3,
-                        orbit: self
-                            .orbit_file
+                        self.orbit_file
                             .window(trigger.start.time.into_inner(), 1000.0),
                         lightnings,
-                        associated_lightning_count,
-                        coincidence_probability: coincidence_prob(
+                        coincidence_prob(
                             (trigger.start + trigger.delay + trigger.bin_size_best / 2.0)
                                 .to_chrono(),
                             latitude,
@@ -365,7 +350,7 @@ impl InstanceTrait for Instance {
                             distance_tolerance,
                             lightning_window,
                         ),
-                    })
+                    ))
                 } else {
                     None
                 }

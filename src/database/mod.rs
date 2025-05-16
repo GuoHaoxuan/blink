@@ -102,10 +102,11 @@ pub fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detecto
         "
             INSERT INTO signal (
                 start,
-                stop,
-                duration,
                 start_best,
+                stop,
                 stop_best,
+                peak,
+                duration,
                 duration_best,
                 fp_year,
                 count,
@@ -140,6 +141,13 @@ pub fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detecto
                 lightnings,
                 associated_lightning_count,
                 coincidence_probability,
+                mean_solar_time,
+                apparent_solar_time,
+                day_of_year,
+                month,
+                solar_zenith_angle,
+                solar_zenith_angle_at_noon,
+                solar_azimuth_angle,
                 satellite,
                 detector
             ) VALUES (
@@ -147,15 +155,16 @@ pub fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detecto
                 ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
                 ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
                 ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40,
-                ?41
+                ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49
             );
         ",
         params![
             serde_json::to_string(&signal.start).unwrap(),
-            serde_json::to_string(&signal.stop).unwrap(),
-            signal.duration,
             serde_json::to_string(&signal.start_best).unwrap(),
+            serde_json::to_string(&signal.stop).unwrap(),
             serde_json::to_string(&signal.stop_best).unwrap(),
+            serde_json::to_string(&signal.peak).unwrap(),
+            signal.duration,
             signal.duration_best,
             signal.fp_year,
             signal.count,
@@ -190,6 +199,13 @@ pub fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detecto
             serde_json::to_string(&signal.lightnings).unwrap(),
             signal.associated_lightning_count,
             signal.coincidence_probability,
+            serde_json::to_string(&signal.mean_solar_time).unwrap(),
+            serde_json::to_string(&signal.apparent_solar_time).unwrap(),
+            signal.day_of_year,
+            signal.month,
+            signal.solar_zenith_angle,
+            signal.solar_zenith_angle_at_noon,
+            signal.solar_azimuth_angle,
             satellite,
             detector,
         ],

@@ -2,6 +2,10 @@ use chrono::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::lightning::LightningAssociation;
+use crate::solar::{
+    apparent_solar_time, day_of_year, mean_solar_time, solar_azimuth_angle, solar_zenith_angle,
+    solar_zenith_angle_at_noon,
+};
 
 use super::GenericEvent;
 
@@ -57,6 +61,100 @@ pub struct Signal {
     pub mean_solar_time: NaiveTime,
     pub apparent_solar_time: NaiveTime,
     pub day_of_year: u32,
+    pub month: u32,
     pub solar_zenith_angle: f64,
     pub solar_zenith_angle_at_noon: f64,
+    pub solar_azimuth_angle: f64,
+}
+
+impl Signal {
+    pub fn new(
+        start: DateTime<Utc>,
+        start_best: DateTime<Utc>,
+        stop: DateTime<Utc>,
+        stop_best: DateTime<Utc>,
+        fp_year: f64,
+        count: u32,
+        count_best: u32,
+        count_filtered: u32,
+        count_filtered_best: u32,
+        background: f64,
+        mean_energy: f64,
+        mean_energy_best: f64,
+        mean_energy_filtered: f64,
+        mean_energy_filtered_best: f64,
+        veto_ratio: f64,
+        veto_ratio_best: f64,
+        veto_ratio_filtered: f64,
+        veto_ratio_filtered_best: f64,
+        events: Vec<GenericEvent>,
+        light_curve_1s: Vec<u32>,
+        light_curve_1s_filtered: Vec<u32>,
+        light_curve_100ms: Vec<u32>,
+        light_curve_100ms_filtered: Vec<u32>,
+        longitude: f64,
+        latitude: f64,
+        altitude: f64,
+        q1: f64,
+        q2: f64,
+        q3: f64,
+        orbit: Vec<Location>,
+        lightnings: Vec<LightningAssociation>,
+        coincidence_probability: f64,
+    ) -> Self {
+        let peak = start_best + (stop_best - start_best) / 2;
+        let duration = (stop - start).num_nanoseconds().unwrap() as f64 / 1e9;
+        let duration_best = (stop_best - start_best).num_nanoseconds().unwrap() as f64 / 1e9;
+        let associated_lightning_count =
+            lightnings.iter().filter(|l| l.is_associated).count() as u32;
+        Self {
+            start,
+            start_best,
+            stop,
+            stop_best,
+            peak,
+            duration,
+            duration_best,
+            fp_year,
+            count,
+            count_best,
+            count_filtered,
+            count_filtered_best,
+            background,
+            flux: count as f64 / duration,
+            flux_best: count_best as f64 / duration_best,
+            flux_filtered: count_filtered as f64 / duration,
+            flux_filtered_best: count_filtered_best as f64 / duration_best,
+            mean_energy,
+            mean_energy_best,
+            mean_energy_filtered,
+            mean_energy_filtered_best,
+            veto_ratio,
+            veto_ratio_best,
+            veto_ratio_filtered,
+            veto_ratio_filtered_best,
+            events,
+            light_curve_1s,
+            light_curve_1s_filtered,
+            light_curve_100ms,
+            light_curve_100ms_filtered,
+            longitude,
+            latitude,
+            altitude,
+            q1,
+            q2,
+            q3,
+            orbit,
+            lightnings,
+            associated_lightning_count,
+            coincidence_probability,
+            mean_solar_time: mean_solar_time(peak, longitude),
+            apparent_solar_time: apparent_solar_time(peak, longitude),
+            day_of_year: day_of_year(peak),
+            month: peak.month(),
+            solar_zenith_angle: solar_zenith_angle(peak, latitude, longitude),
+            solar_zenith_angle_at_noon: solar_zenith_angle_at_noon(peak, latitude),
+            solar_azimuth_angle: solar_azimuth_angle(peak, latitude, longitude),
+        }
+    }
 }

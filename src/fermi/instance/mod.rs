@@ -182,55 +182,40 @@ impl InstanceTrait for Instance {
                     Duration::minutes(2),
                 );
 
-                Signal {
-                    start: start.to_chrono(),
-                    stop: stop.to_chrono(),
-                    duration: (stop - start).to_seconds() * 1e6,
-                    start_best: start.to_chrono(), // TODO
-                    stop_best: stop.to_chrono(),   // TODO
-                    duration_best: (stop - start).to_seconds() * 1e6, // TODO
+                Signal::new(
+                    start.to_chrono(),
+                    start.to_chrono(),
+                    stop.to_chrono(),
+                    stop.to_chrono(),
                     fp_year,
-                    count: 0,                       // TODO
-                    count_best: 0,                  // TODO
-                    count_filtered: 0,              // TODO
-                    count_filtered_best: 0,         // TODO
-                    background: 0.0,                // TODO
-                    flux: 0.0,                      // TODO
-                    flux_best: 0.0,                 // TODO
-                    flux_filtered: 0.0,             // TODO
-                    flux_filtered_best: 0.0,        // TODO
-                    mean_energy: 0.0,               // TODO
-                    mean_energy_best: 0.0,          // TODO
-                    mean_energy_filtered: 0.0,      // TODO
-                    mean_energy_filtered_best: 0.0, // TODO
-                    veto_ratio: 0.0,                // TODO
-                    veto_ratio_best: 0.0,           // TODO
-                    veto_ratio_filtered: 0.0,       // TODO
-                    veto_ratio_filtered_best: 0.0,  // TODO
+                    0,
+                    0,
+                    0,
+                    0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
                     events,
-                    light_curve_1s: vec![],             // TODO
-                    light_curve_1s_filtered: vec![],    // TODO
-                    light_curve_100ms: vec![],          // TODO
-                    light_curve_100ms_filtered: vec![], // TODO
-                    longitude: position.sc_lon as f64,
-                    latitude: position.sc_lat as f64,
-                    altitude: altitude(&position.pos) as f64,
-                    q1: 0.0, // TODO
-                    q2: 0.0, // TODO
-                    q3: 0.0, // TODO
-                    lightnings,
-                    associated_lightning_count: 0, // TODO
-                    orbit: vec![],                 // TODO
-                    coincidence_probability: coincidence_prob(
-                        (start + (stop - start) / 2.0).to_chrono(),
-                        position.sc_lat as f64,
-                        position.sc_lon as f64,
-                        altitude(&position.pos) as f64,
-                        time_tolerance,
-                        distance_tolerance,
-                        Duration::seconds(10),
-                    ),
-                }
+                    vec![],
+                    vec![],
+                    vec![],
+                    vec![],
+                    position.sc_lon as f64,
+                    position.sc_lat as f64,
+                    altitude(&position.pos) as f64,
+                    0.0,
+                    0.0,
+                    0.0,
+                    vec![],
+                    vec![],
+                    0.0,
+                )
             })
             .collect();
 
