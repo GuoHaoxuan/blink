@@ -15,10 +15,11 @@ CREATE TABLE
 CREATE TABLE
     IF NOT EXISTS signal (
         start TEXT NOT NULL, -- 开始时间
-        stop TEXT NOT NULL, -- 结束时间
-        duration REAL NOT NULL, -- 持续时间
         start_best TEXT NOT NULL, -- 最佳开始时间
+        stop TEXT NOT NULL, -- 结束时间
         stop_best TEXT NOT NULL, -- 最佳结束时间
+        peak TEXT NOT NULL, -- 峰值
+        duration REAL NOT NULL, -- 持续时间
         duration_best REAL NOT NULL, -- 最佳持续时间
         fp_year REAL NOT NULL, -- 年误触发个数
         count INTEGER NOT NULL, -- 事件个数
@@ -53,6 +54,13 @@ CREATE TABLE
         lightnings TEXT NOT NULL, -- 闪电
         associated_lightning_count INTEGER NOT NULL, -- 关联闪电个数
         coincidence_probability REAL NOT NULL, -- 偶然符合概率
+        mean_solar_time TEXT NOT NULL, -- 平均太阳时
+        apparent_solar_time TEXT NOT NULL, -- 视太阳时
+        day_of_year INTEGER NOT NULL, -- 年中的第几天
+        month INTEGER NOT NULL, -- 月份
+        solar_zenith_angle REAL NOT NULL, -- 太阳天顶角
+        solar_zenith_angle_at_noon REAL NOT NULL, -- 中午太阳天顶角
+        solar_azimuth_angle REAL NOT NULL, -- 太阳方位角
         satellite TEXT NOT NULL, -- 要处理的卫星
         detector TEXT NOT NULL, -- 要处理的探测器
         UNIQUE (start, satellite, detector) ON CONFLICT IGNORE

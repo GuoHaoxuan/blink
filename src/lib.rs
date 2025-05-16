@@ -4,5 +4,5 @@ pub mod fermi;
 pub mod hxmt;
 pub mod lightning;
 pub mod search;
+pub mod solar;
 pub mod types;
-pub mod utils;

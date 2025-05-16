@@ -17,10 +17,11 @@ fn main() {
     let mut wtr = Writer::from_writer(catalog);
     wtr.write_record([
         "start",
-        "stop",
-        "duration",
         "start_best",
+        "stop",
         "stop_best",
+        "peak",
+        "duration",
         "duration_best",
         "fp_year",
         "count",
@@ -48,6 +49,13 @@ fn main() {
         "q3",
         "associated_lightning_count",
         "coincidence_probability",
+        "mean_solar_time",
+        "apparent_solar_time",
+        "day_of_year",
+        "month",
+        "solar_zenith_angle",
+        "solar_zenith_angle_at_noon",
+        "solar_azimuth_angle",
     ])
     .unwrap();
 
@@ -76,10 +84,11 @@ fn main() {
         "
             SELECT
                 start,
-                stop,
-                duration,
                 start_best,
+                stop,
                 stop_best,
+                peak,
+                duration,
                 duration_best,
                 fp_year,
                 count,
@@ -113,7 +122,14 @@ fn main() {
                 orbit,
                 lightnings,
                 associated_lightning_count,
-                coincidence_probability
+                coincidence_probability,
+                mean_solar_time,
+                apparent_solar_time,
+                day_of_year,
+                month,
+                solar_zenith_angle,
+                solar_zenith_angle_at_noon,
+                solar_azimuth_angle,
             FROM signal
             WHERE start < '2025-01-01'
             AND fp_year < 0.1
@@ -123,50 +139,59 @@ fn main() {
     .unwrap()
     .query_map(params![], |row| {
         let start = row.get::<_, String>(0)?;
-        let stop = row.get::<_, String>(1)?;
-        let duration = row.get::<_, f64>(2)?;
-        let start_best = row.get::<_, String>(3)?;
-        let stop_best = row.get::<_, String>(4)?;
-        let duration_best = row.get::<_, f64>(5)?;
-        let fp_year = row.get::<_, f64>(6)?;
-        let count = row.get::<_, u32>(7)?;
-        let count_best = row.get::<_, u32>(8)?;
-        let count_filtered = row.get::<_, u32>(9)?;
-        let count_filtered_best = row.get::<_, u32>(10)?;
-        let background = row.get::<_, f64>(11)?;
-        let flux = row.get::<_, f64>(12)?;
-        let flux_best = row.get::<_, f64>(13)?;
-        let flux_filtered = row.get::<_, f64>(14)?;
-        let flux_filtered_best = row.get::<_, f64>(15)?;
-        let mean_energy = row.get::<_, f64>(16)?;
-        let mean_energy_best = row.get::<_, f64>(17)?;
-        let mean_energy_filtered = row.get::<_, f64>(18)?;
-        let mean_energy_filtered_best = row.get::<_, f64>(19)?;
-        let veto_ratio = row.get::<_, f64>(20)?;
-        let veto_ratio_best = row.get::<_, f64>(21)?;
-        let veto_ratio_filtered = row.get::<_, f64>(22)?;
-        let veto_ratio_filtered_best = row.get::<_, f64>(23)?;
-        let events = row.get::<_, String>(24)?;
-        let light_curve_1s = row.get::<_, String>(25)?;
-        let light_curve_1s_filtered = row.get::<_, String>(26)?;
-        let light_curve_100ms = row.get::<_, String>(27)?;
-        let light_curve_100ms_filtered = row.get::<_, String>(28)?;
-        let longitude = row.get::<_, f64>(29)?;
-        let latitude = row.get::<_, f64>(30)?;
-        let altitude = row.get::<_, f64>(31)?;
-        let q1 = row.get::<_, f64>(32)?;
-        let q2 = row.get::<_, f64>(33)?;
-        let q3 = row.get::<_, f64>(34)?;
-        let orbit = row.get::<_, String>(35)?;
-        let lightnings = row.get::<_, String>(36)?;
-        let associated_lightning_count = row.get::<_, u32>(37)?;
-        let coincidence_probability = row.get::<_, f64>(38)?;
+        let start_best = row.get::<_, String>(1)?;
+        let stop = row.get::<_, String>(2)?;
+        let stop_best = row.get::<_, String>(3)?;
+        let peak = row.get::<_, String>(4)?;
+        let duration = row.get::<_, f64>(5)?;
+        let duration_best = row.get::<_, f64>(6)?;
+        let fp_year = row.get::<_, f64>(7)?;
+        let count = row.get::<_, u32>(8)?;
+        let count_best = row.get::<_, u32>(9)?;
+        let count_filtered = row.get::<_, u32>(10)?;
+        let count_filtered_best = row.get::<_, u32>(11)?;
+        let background = row.get::<_, f64>(12)?;
+        let flux = row.get::<_, f64>(13)?;
+        let flux_best = row.get::<_, f64>(14)?;
+        let flux_filtered = row.get::<_, f64>(15)?;
+        let flux_filtered_best = row.get::<_, f64>(16)?;
+        let mean_energy = row.get::<_, f64>(17)?;
+        let mean_energy_best = row.get::<_, f64>(18)?;
+        let mean_energy_filtered = row.get::<_, f64>(19)?;
+        let mean_energy_filtered_best = row.get::<_, f64>(20)?;
+        let veto_ratio = row.get::<_, f64>(21)?;
+        let veto_ratio_best = row.get::<_, f64>(22)?;
+        let veto_ratio_filtered = row.get::<_, f64>(23)?;
+        let veto_ratio_filtered_best = row.get::<_, f64>(24)?;
+        let events = row.get::<_, String>(25)?;
+        let light_curve_1s = row.get::<_, String>(26)?;
+        let light_curve_1s_filtered = row.get::<_, String>(27)?;
+        let light_curve_100ms = row.get::<_, String>(28)?;
+        let light_curve_100ms_filtered = row.get::<_, String>(29)?;
+        let longitude = row.get::<_, f64>(30)?;
+        let latitude = row.get::<_, f64>(31)?;
+        let altitude = row.get::<_, f64>(32)?;
+        let q1 = row.get::<_, f64>(33)?;
+        let q2 = row.get::<_, f64>(34)?;
+        let q3 = row.get::<_, f64>(35)?;
+        let orbit = row.get::<_, String>(36)?;
+        let lightnings = row.get::<_, String>(37)?;
+        let associated_lightning_count = row.get::<_, u32>(38)?;
+        let coincidence_probability = row.get::<_, f64>(39)?;
+        let mean_solar_time = row.get::<_, String>(40)?;
+        let apparent_solar_time = row.get::<_, String>(41)?;
+        let day_of_year = row.get::<_, u32>(42)?;
+        let month = row.get::<_, u32>(43)?;
+        let solar_zenith_angle = row.get::<_, f64>(44)?;
+        let solar_zenith_angle_at_noon = row.get::<_, f64>(45)?;
+        let solar_azimuth_angle = row.get::<_, f64>(46)?;
         Ok(Signal {
             start: serde_json::from_str(&start).unwrap(),
-            stop: serde_json::from_str(&stop).unwrap(),
-            duration,
             start_best: serde_json::from_str(&start_best).unwrap(),
+            stop: serde_json::from_str(&stop).unwrap(),
             stop_best: serde_json::from_str(&stop_best).unwrap(),
+            peak: serde_json::from_str(&peak).unwrap(),
+            duration,
             duration_best,
             fp_year,
             count,
@@ -201,6 +226,13 @@ fn main() {
             lightnings: serde_json::from_str(&lightnings).unwrap(),
             associated_lightning_count,
             coincidence_probability,
+            mean_solar_time: serde_json::from_str(&mean_solar_time).unwrap(),
+            apparent_solar_time: serde_json::from_str(&apparent_solar_time).unwrap(),
+            day_of_year,
+            month,
+            solar_zenith_angle,
+            solar_zenith_angle_at_noon,
+            solar_azimuth_angle,
         })
     })
     .unwrap()
@@ -208,10 +240,11 @@ fn main() {
         let signal = row.unwrap();
         wtr.write_record([
             serde_json::to_string(&signal.start).unwrap(),
-            serde_json::to_string(&signal.stop).unwrap(),
-            signal.duration.to_string(),
             serde_json::to_string(&signal.start_best).unwrap(),
+            serde_json::to_string(&signal.stop).unwrap(),
             serde_json::to_string(&signal.stop_best).unwrap(),
+            serde_json::to_string(&signal.peak).unwrap(),
+            signal.duration.to_string(),
             signal.duration_best.to_string(),
             signal.fp_year.to_string(),
             signal.count.to_string(),
@@ -239,6 +272,13 @@ fn main() {
             signal.q3.to_string(),
             signal.associated_lightning_count.to_string(),
             signal.coincidence_probability.to_string(),
+            serde_json::to_string(&signal.mean_solar_time).unwrap(),
+            serde_json::to_string(&signal.apparent_solar_time).unwrap(),
+            signal.day_of_year.to_string(),
+            signal.month.to_string(),
+            signal.solar_zenith_angle.to_string(),
+            signal.solar_zenith_angle_at_noon.to_string(),
+            signal.solar_azimuth_angle.to_string(),
         ])
         .unwrap();
         let json_file_path = format!(
