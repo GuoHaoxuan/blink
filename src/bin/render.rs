@@ -7,13 +7,13 @@ use std::fs::File;
 
 fn main() {
     // 删除旧的目录
-    if fs::metadata("detail").is_ok() {
-        fs::remove_dir_all("detail").unwrap();
+    if fs::metadata("output").is_ok() {
+        fs::remove_dir_all("output").unwrap();
     }
     // 确保目标目录存在
-    fs::create_dir_all("detail").unwrap();
+    fs::create_dir_all("output/detail").unwrap();
 
-    let catalog = File::create("catalog.csv").unwrap();
+    let catalog = File::create("output/catalog.csv").unwrap();
     let mut wtr = Writer::from_writer(catalog);
     wtr.write_record([
         "start",
@@ -129,7 +129,7 @@ fn main() {
                 month,
                 solar_zenith_angle,
                 solar_zenith_angle_at_noon,
-                solar_azimuth_angle,
+                solar_azimuth_angle
             FROM signal
             WHERE start < '2025-01-01'
             AND fp_year < 0.1
@@ -239,11 +239,26 @@ fn main() {
     .for_each(|row| {
         let signal = row.unwrap();
         wtr.write_record([
-            serde_json::to_string(&signal.start).unwrap(),
-            serde_json::to_string(&signal.start_best).unwrap(),
-            serde_json::to_string(&signal.stop).unwrap(),
-            serde_json::to_string(&signal.stop_best).unwrap(),
-            serde_json::to_string(&signal.peak).unwrap(),
+            serde_json::to_string(&signal.start)
+                .unwrap()
+                .trim_matches('"')
+                .to_string(),
+            serde_json::to_string(&signal.start_best)
+                .unwrap()
+                .trim_matches('"')
+                .to_string(),
+            serde_json::to_string(&signal.stop)
+                .unwrap()
+                .trim_matches('"')
+                .to_string(),
+            serde_json::to_string(&signal.stop_best)
+                .unwrap()
+                .trim_matches('"')
+                .to_string(),
+            serde_json::to_string(&signal.peak)
+                .unwrap()
+                .trim_matches('"')
+                .to_string(),
             signal.duration.to_string(),
             signal.duration_best.to_string(),
             signal.fp_year.to_string(),
@@ -272,8 +287,14 @@ fn main() {
             signal.q3.to_string(),
             signal.associated_lightning_count.to_string(),
             signal.coincidence_probability.to_string(),
-            serde_json::to_string(&signal.mean_solar_time).unwrap(),
-            serde_json::to_string(&signal.apparent_solar_time).unwrap(),
+            serde_json::to_string(&signal.mean_solar_time)
+                .unwrap()
+                .trim_matches('"')
+                .to_string(),
+            serde_json::to_string(&signal.apparent_solar_time)
+                .unwrap()
+                .trim_matches('"')
+                .to_string(),
             signal.day_of_year.to_string(),
             signal.month.to_string(),
             signal.solar_zenith_angle.to_string(),
@@ -282,8 +303,10 @@ fn main() {
         ])
         .unwrap();
         let json_file_path = format!(
-            "detail/{}.json",
-            serde_json::to_string(&signal.start).unwrap()
+            "output/detail/{}.json",
+            serde_json::to_string(&signal.start)
+                .unwrap()
+                .trim_matches('"')
         );
         let json_file = File::create(&json_file_path).unwrap();
         serde_json::to_writer(json_file, &signal).unwrap();
