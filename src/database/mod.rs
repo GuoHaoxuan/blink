@@ -159,11 +159,21 @@ pub fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detecto
             );
         ",
         params![
-            serde_json::to_string(&signal.start).unwrap(),
-            serde_json::to_string(&signal.start_best).unwrap(),
-            serde_json::to_string(&signal.stop).unwrap(),
-            serde_json::to_string(&signal.stop_best).unwrap(),
-            serde_json::to_string(&signal.peak).unwrap(),
+            serde_json::to_string(&signal.start)
+                .unwrap()
+                .trim_matches('"'),
+            serde_json::to_string(&signal.start_best)
+                .unwrap()
+                .trim_matches('"'),
+            serde_json::to_string(&signal.stop)
+                .unwrap()
+                .trim_matches('"'),
+            serde_json::to_string(&signal.stop_best)
+                .unwrap()
+                .trim_matches('"'),
+            serde_json::to_string(&signal.peak)
+                .unwrap()
+                .trim_matches('"'),
             signal.duration,
             signal.duration_best,
             signal.fp_year,
@@ -199,8 +209,12 @@ pub fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detecto
             serde_json::to_string(&signal.lightnings).unwrap(),
             signal.associated_lightning_count,
             signal.coincidence_probability,
-            serde_json::to_string(&signal.mean_solar_time).unwrap(),
-            serde_json::to_string(&signal.apparent_solar_time).unwrap(),
+            serde_json::to_string(&signal.mean_solar_time)
+                .unwrap()
+                .trim_matches('"'),
+            serde_json::to_string(&signal.apparent_solar_time)
+                .unwrap()
+                .trim_matches('"'),
             signal.day_of_year,
             signal.month,
             signal.solar_zenith_angle,
