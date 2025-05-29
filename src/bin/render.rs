@@ -64,7 +64,7 @@ fn main() {
     // 先获取总记录数以初始化进度条
     let total_count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM signal WHERE start < '2025-01-01' AND fp_year < 0.1",
+            "SELECT COUNT(*) FROM signal WHERE start < '2025-01-01' AND fp_year < 0.1 AND lightnings = '[]'",
             params![],
             |row| row.get(0),
         )
@@ -133,6 +133,7 @@ fn main() {
             FROM signal
             WHERE start < '2025-01-01'
             AND fp_year < 0.1
+            AND lightnings = '[]'
             ORDER BY start
         ",
     )
@@ -186,11 +187,11 @@ fn main() {
         let solar_zenith_angle_at_noon = row.get::<_, f64>(45)?;
         let solar_azimuth_angle = row.get::<_, f64>(46)?;
         Ok(Signal {
-            start: serde_json::from_str(&start).unwrap(),
-            start_best: serde_json::from_str(&start_best).unwrap(),
-            stop: serde_json::from_str(&stop).unwrap(),
-            stop_best: serde_json::from_str(&stop_best).unwrap(),
-            peak: serde_json::from_str(&peak).unwrap(),
+            start: serde_json::from_str(&format!("\"{}\"", start)).unwrap(),
+            start_best: serde_json::from_str(&format!("\"{}\"", start_best)).unwrap(),
+            stop: serde_json::from_str(&format!("\"{}\"", stop)).unwrap(),
+            stop_best: serde_json::from_str(&format!("\"{}\"", stop_best)).unwrap(),
+            peak: serde_json::from_str(&format!("\"{}\"", peak)).unwrap(),
             duration,
             duration_best,
             fp_year,
@@ -226,8 +227,9 @@ fn main() {
             lightnings: serde_json::from_str(&lightnings).unwrap(),
             associated_lightning_count,
             coincidence_probability,
-            mean_solar_time: serde_json::from_str(&mean_solar_time).unwrap(),
-            apparent_solar_time: serde_json::from_str(&apparent_solar_time).unwrap(),
+            mean_solar_time: serde_json::from_str(&format!("\"{}\"", mean_solar_time)).unwrap(),
+            apparent_solar_time: serde_json::from_str(&format!("\"{}\"", apparent_solar_time))
+                .unwrap(),
             day_of_year,
             month,
             solar_zenith_angle,
