@@ -27,7 +27,7 @@ use super::{
 };
 
 pub struct Instance {
-    event_file: EventFile,
+    pub event_file: EventFile,
     eng_files: [EngFile; 3],
     sci_files: [SciFile; 3],
     pub orbit_file: OrbitFile,

@@ -7,7 +7,7 @@ pub struct EventFile {
     // HDU 1: Events
     time: Vec<f64>,
     det_id: Vec<u8>,
-    channel: Vec<u8>,
+    pub channel: Vec<u8>,
     pulse_width: Vec<u8>,
     acd: Vec<[bool; 18]>,
     event_type: Vec<u8>,
