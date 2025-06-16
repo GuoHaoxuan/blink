@@ -18,6 +18,8 @@ class Signal:
     lightnings: bool
     satellite: str
     detector: str
+    count_best: int
+    duration: float
 
     def __init__(self, row):
         self.start = parse(row[0])
@@ -36,6 +38,7 @@ class Signal:
         self.satellite = row[8]
         self.detector = row[9]
         self.count_best = row[10]
+        self.duration = row[11]
 
 
 def get_data():
@@ -43,7 +46,7 @@ def get_data():
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings, satellite, detector, count_best
+        SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings, satellite, detector, count_best, duration
         FROM signal
         WHERE start < "2025-01-01"
         AND fp_year < 1e-3
