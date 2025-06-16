@@ -1,14 +1,14 @@
 INSERT
 OR IGNORE INTO task (
-    satellite,
-    detector,
+    what,
     time,
     created_at,
     updated_at,
     retry_times,
     worker,
     status,
-    error
+    error,
+    value
 )
 WITH RECURSIVE
     hours AS (
@@ -23,14 +23,14 @@ WITH RECURSIVE
             hour < DATETIME ('now')
     )
 SELECT
-    'HXMT' AS satellite,
-    'HE' AS detector,
+    'HXMT-HE: Energy Spectrum' AS what,
     hour AS time,
     DATETIME ('now') AS created_at,
     DATETIME ('now') AS updated_at,
     0 AS retry_times,
     '' AS worker,
     'Pending' AS status,
-    '' AS error
+    '' AS error,
+    '' AS value
 FROM
     hours;

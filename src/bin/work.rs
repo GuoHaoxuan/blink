@@ -10,6 +10,8 @@ fn consume() {
     let conn = Connection::open("blink.db").unwrap();
     conn.busy_timeout(std::time::Duration::from_secs(3600))
         .unwrap();
+
+    // consume tasks
     while let Some((time, satellite, detector)) = get_task(&conn, &worker) {
         let hour: anyhow::Result<Box<dyn BlinkInstance>> =
             match (satellite.as_str(), detector.as_str()) {
@@ -45,6 +47,34 @@ fn consume() {
                     &detector,
                     anyhow::anyhow!(e.to_string()),
                 );
+            }
+        }
+    }
+
+    // consume statistics
+    while let Some((time, what)) = blink::database::get_statistics(&conn, &worker) {
+        let result = match what.as_str() {
+            "HXMT-HE: Energy Spectrum" => {
+                let mut result = vec![0u64; 256];
+                let instance = blink::hxmt::Instance::from_epoch(&time);
+                match instance {
+                    Ok(instance) => {
+                        for channel in instance.event_file.channel {
+                            result[channel as usize] += 1;
+                        }
+                        Ok(serde_json::to_value(result).unwrap().to_string())
+                    }
+                    Err(e) => Err(anyhow::anyhow!(e.to_string())),
+                }
+            }
+            _ => panic!("Unknown statistics type"),
+        };
+        match result {
+            Ok(value) => {
+                blink::database::finish_statistics(&conn, &time, &what, &value);
+            }
+            Err(e) => {
+                blink::database::fail_statistics(&conn, &time, &what, e);
             }
         }
     }

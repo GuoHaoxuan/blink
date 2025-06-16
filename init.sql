@@ -1,19 +1,21 @@
 CREATE TABLE
-    task (
+    IF NOT EXISTS task (
+        satellite TEXT NOT NULL, -- 要处理的卫星
+        detector TEXT NOT NULL, -- 要处理的探测器
+        time TEXT NOT NULL, -- 要处理的时间
         created_at TEXT NOT NULL, -- 创建时间
         updated_at TEXT NOT NULL, -- 修改时间
         retry_times INTEGER NOT NULL, -- 重试次数
         worker TEXT NOT NULL, -- 处理者
         status TEXT NOT NULL, -- 状态 Pending, Running, Finished, Failed
         error TEXT NOT NULL, -- 错误信息
-        time TEXT NOT NULL, -- 要处理的时间
-        satellite TEXT NOT NULL, -- 要处理的卫星
-        detector TEXT NOT NULL, -- 要处理的探测器
-        UNIQUE (time, satellite, detector) ON CONFLICT IGNORE
+        UNIQUE (satellite, detector, time) ON CONFLICT IGNORE
     );
 
 CREATE TABLE
     IF NOT EXISTS signal (
+        satellite TEXT NOT NULL, -- 要处理的卫星
+        detector TEXT NOT NULL, -- 要处理的探测器
         start TEXT NOT NULL, -- 开始时间
         start_best TEXT NOT NULL, -- 最佳开始时间
         stop TEXT NOT NULL, -- 结束时间
@@ -61,7 +63,19 @@ CREATE TABLE
         solar_zenith_angle REAL NOT NULL, -- 太阳天顶角
         solar_zenith_angle_at_noon REAL NOT NULL, -- 中午太阳天顶角
         solar_azimuth_angle REAL NOT NULL, -- 太阳方位角
-        satellite TEXT NOT NULL, -- 要处理的卫星
-        detector TEXT NOT NULL, -- 要处理的探测器
-        UNIQUE (start, satellite, detector) ON CONFLICT IGNORE
+        UNIQUE (satellite, detector, start) ON CONFLICT IGNORE
+    );
+
+CREATE TABLE
+    IF NOT EXISTS statistics (
+        time TEXT NOT NULL, -- 要处理的时间
+        what TEXT NOT NULL, -- 要处理的内容
+        created_at TEXT NOT NULL, -- 创建时间
+        updated_at TEXT NOT NULL, -- 修改时间
+        retry_times INTEGER NOT NULL, -- 重试次数
+        worker TEXT NOT NULL, -- 处理者
+        status TEXT NOT NULL, -- 状态 Pending, Running, Finished, Failed
+        error TEXT NOT NULL, -- 错误信息
+        value TEXT NOT NULL, -- 统计值
+        UNIQUE (time, what) ON CONFLICT IGNORE
     );

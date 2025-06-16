@@ -30,7 +30,3 @@ path = "src/bin/work.rs"
 [[bin]]
 name = "render"
 path = "src/bin/render.rs"
-
-[[bin]]
-name = "hxmt-energy-spectrum"
-path = "src/bin/hxmt-energy-spectrum.rs"
