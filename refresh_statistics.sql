@@ -1,5 +1,5 @@
 INSERT
-OR IGNORE INTO task (
+OR IGNORE INTO statistics (
     what,
     time,
     created_at,
