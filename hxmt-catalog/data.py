@@ -1,12 +1,8 @@
 import json
-import math
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 
-import cartopy.crs as ccrs
-import matplotlib.pyplot as plt
-import numpy as np
 from dateutil.parser import parse
 
 
@@ -19,14 +15,14 @@ class Signal:
     latitude: float
     altitude: float
     events: str
-    lightnings: str
+    lightnings: bool
     satellite: str
     detector: str
 
     def __init__(self, row):
         self.start = parse(row[0])
         self.stop = parse(row[1])
-        self.fp_year = min(-math.log10(row[2]) if row[2] > 0 else 100, 14.5)
+        self.fp_year = row[2]
         self.longitude = float(row[3])
         self.latitude = float(row[4])
         self.altitude = float(row[5])
@@ -39,6 +35,7 @@ class Signal:
                 break
         self.satellite = row[8]
         self.detector = row[9]
+        self.count_best = row[10]
 
 
 def get_data():
@@ -46,7 +43,7 @@ def get_data():
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings, satellite, detector
+        SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings, satellite, detector, count_best
         FROM signal
         WHERE start < "2025-01-01"
         AND fp_year < 1e-3
