@@ -71,11 +71,9 @@ fn consume() {
         };
         match result {
             Ok(value) => {
-                println!("[DEBUG] Statistics finished: {} {}", what, value);
                 blink::database::finish_statistics(&conn, &time, &what, &value);
             }
             Err(e) => {
-                println!("[ERROR] Statistics failed: {} {}", what, e);
                 blink::database::fail_statistics(&conn, &time, &what, e);
             }
         }

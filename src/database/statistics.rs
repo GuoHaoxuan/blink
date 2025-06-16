@@ -55,7 +55,11 @@ pub fn finish_statistics(conn: &Connection, time: &DateTime<Utc>, what: &str, va
                 what = ?2
                 AND time = ?3;
         ",
-        params![value, what, time.to_rfc3339()],
+        params![
+            value,
+            what,
+            format!("{}", time.format("%Y-%m-%d %H:%M:%S").to_string())
+        ],
     )
     .unwrap();
 }
@@ -72,7 +76,11 @@ pub fn fail_statistics(conn: &Connection, time: &DateTime<Utc>, what: &str, erro
                 what = ?2
                 AND time = ?3;
         ",
-        params![error.to_string(), what, time.to_rfc3339()],
+        params![
+            error.to_string(),
+            what,
+            format!("{}", time.format("%Y-%m-%d %H:%M:%S").to_string())
+        ],
     )
     .unwrap();
 }
