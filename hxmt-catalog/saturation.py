@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy.io import fits
 from astropy.time import Time, TimeDelta
+from common import one_column_width
 
 
 def satellite_time_to_isot_helper(
@@ -62,8 +63,9 @@ plt.rcParams.update(
         "text.latex.preamble": "\\usepackage{amsmath}\n\\usepackage{wasysym}\\usepackage{CJKutf8}",  # 如果需要数学公式支持
     }
 )
-cm = 1 / 2.54  # 将厘米转换为英寸
-plt.figure(figsize=(8 * cm, 6 * cm), dpi=1200, facecolor="none")
+plt.figure(
+    figsize=(one_column_width, (3 / 4) * one_column_width), dpi=1200, facecolor="none"
+)
 
 n, bins, patches = plt.hist(
     time,
@@ -86,7 +88,7 @@ twinx.set_ylabel("Channel")
 legend = plt.legend(
     handles=[patches[0], sca],
     labels=["Light Curve", "Events"],
-    loc="lower left",
+    loc="lower right",
     frameon=True,
     edgecolor="black",
     fancybox=False,
@@ -98,5 +100,6 @@ legend.get_frame().set_linewidth(0.5)
 plt.tight_layout()
 plt.savefig(
     "hxmt-catalog/output/saturation.pdf",
+    bbox_inches="tight",
     transparent=True,
 )

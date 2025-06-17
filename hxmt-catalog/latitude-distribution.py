@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from common import one_column_width
 from data import get_data
 
 # 启用 LaTeX 渲染
@@ -11,9 +12,10 @@ plt.rcParams.update(
     }
 )
 
-cm = 1 / 2.54  # 将厘米转换为英寸
 data = get_data()
-plt.figure(figsize=(8 * cm, 6 * cm), dpi=1200, facecolor="none")
+plt.figure(
+    figsize=(one_column_width, (3 / 4) * one_column_width), dpi=1200, facecolor="none"
+)
 plt.hist(
     [signal.latitude for signal in data],
     bins=43,
@@ -32,4 +34,8 @@ plt.xticks(
 )
 plt.xlim(-43, 43)
 plt.tight_layout()
-plt.savefig("hxmt-catalog/output/latitude-distribution.pdf", transparent=True)
+plt.savefig(
+    "hxmt-catalog/output/latitude-distribution.pdf",
+    bbox_inches="tight",
+    transparent=True,
+)

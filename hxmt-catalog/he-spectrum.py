@@ -3,6 +3,7 @@ import sqlite3
 
 import matplotlib.pyplot as plt
 import numpy as np
+from common import one_column_width
 
 conn = sqlite3.connect("statistics.db")
 cursor = conn.cursor()
@@ -33,7 +34,9 @@ plt.rcParams.update(
     }
 )
 cm = 1 / 2.54  # 将厘米转换为英寸
-plt.figure(figsize=(8 * cm, 6 * cm), dpi=1200, facecolor="none")
+plt.figure(
+    figsize=(one_column_width, (3 / 4) * one_column_width), dpi=1200, facecolor="none"
+)
 plt.stairs(
     data_new,
     np.arange(len(data_new) + 1),
@@ -52,4 +55,6 @@ plt.ylabel("Frequency")
 
 plt.tight_layout()
 
-plt.savefig("hxmt-catalog/output/he-spectrum.pdf", transparent=True)
+plt.savefig(
+    "hxmt-catalog/output/he-spectrum.pdf", bbox_inches="tight", transparent=True
+)

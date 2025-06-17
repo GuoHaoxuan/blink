@@ -1,12 +1,13 @@
 import cartopy.crs as ccrs
 import matplotlib.pyplot as plt
 import numpy as np
+from common import two_column_width
 from data import get_data
 
 
 def plot_map(ax_drop, signals):
     ax_drop.set_extent([-180, 180, -43, 43], crs=ccrs.PlateCarree())
-    ax_drop.coastlines(linewidth=1.5)
+    ax_drop.coastlines()
 
     # 添加经纬度边缘标注（不绘制网格线）
     gl = ax_drop.gridlines(
@@ -20,16 +21,16 @@ def plot_map(ax_drop, signals):
     gl.right_labels = False  # 不在右侧显示纬度标签
     gl.xlines = False  # 不显示经线网格
     gl.ylines = False  # 不显示纬线网格
-    gl.xlocator = plt.MultipleLocator(30)  # 每30度放置一个经度标注
-    gl.ylocator = plt.MultipleLocator(15)  # 每15度放置一个纬度标注
+    gl.xlocator = plt.MultipleLocator(45)  # 每45度放置一个经度标注
+    gl.ylocator = plt.MultipleLocator(20)  # 每20度放置一个纬度标注
     gl.xformatter = plt.FuncFormatter(
         lambda v, pos: f"{int(v)}°E" if v > 0 else f"{-int(v)}°W" if v < 0 else "0°"
     )
     gl.yformatter = plt.FuncFormatter(
         lambda v, pos: f"{int(v)}°N" if v > 0 else f"{-int(v)}°S" if v < 0 else "0°"
     )
-    gl.xlabel_style = {"size": 10}
-    gl.ylabel_style = {"size": 10}
+    # gl.xlabel_style = {"size": 10}
+    # gl.ylabel_style = {"size": 10}
 
     # 绘制无闪电信号点
     signals_no_lightning = [signal for signal in signals if not signal.lightnings]
@@ -70,17 +71,33 @@ def plot_map(ax_drop, signals):
         transform=ccrs.PlateCarree(),
     )
     ax_drop.legend(
-        loc="lower right",
+        bbox_to_anchor=(0.5, 1.00),
+        loc="lower center",
         markerscale=5,
+        ncol=3,
+        frameon=False,
     )
 
 
-fig = plt.figure(figsize=(16, 9), dpi=1200, facecolor="none")  # 设置图形的背景为透明
+# 启用 LaTeX 渲染
+plt.rcParams.update(
+    {
+        "text.usetex": True,  # 使用 LaTeX 渲染文字
+        "font.family": "serif",  # 使用衬线字体（如 Times New Roman）
+        "font.serif": ["Computer Modern"],  # 如果你用的是 LaTeX 默认字体
+        "text.latex.preamble": "\\usepackage{amsmath}\n\\usepackage{wasysym}\\usepackage{CJKutf8}",  # 如果需要数学公式支持
+    }
+)
+
+fig = plt.figure(
+    figsize=(two_column_width, (3 / 4) * two_column_width), dpi=1200, facecolor="none"
+)
 fig.patch.set_alpha(0.0)  # 设置图形背景的透明度
 ax_drop = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree(central_longitude=150))
 ax_drop.set_facecolor("none")  # 设置坐标区域的背景为透明
 signals = get_data()
 plot_map(ax_drop, signals)
+plt.tight_layout()
 plt.savefig(
     "hxmt-catalog/output/geo-distribution.pdf", bbox_inches="tight", transparent=True
-)  # 保存为透明背景
+)

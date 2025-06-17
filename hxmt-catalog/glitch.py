@@ -3,23 +3,8 @@ from typing import Callable
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.io import fits
-from astropy.time import Time, TimeDelta
-
-
-def satellite_time_to_isot_helper(
-    date_ref: str,
-) -> Callable[[float], str]:
-    def satellite_time_to_isot(satellite_time: float) -> str:
-        return (
-            (
-                Time(date_ref, format="isot", scale="utc")
-                + TimeDelta(satellite_time, format="sec", scale="tai")
-            )
-            .to_datetime()
-            .strftime("%Y-%m-%dT%H:%M:%S.%f")
-        )
-
-    return satellite_time_to_isot
+from astropy.time import Time
+from common import one_column_width
 
 
 def isot_to_satellite_time_helper(
@@ -34,13 +19,7 @@ def isot_to_satellite_time_helper(
     return isot_to_satellite_time
 
 
-satellite_time_to_isot = satellite_time_to_isot_helper("2012-01-01T00:00:00.000")
 isot_to_satellite_time = isot_to_satellite_time_helper("2012-01-01T00:00:00.000")
-
-
-def satellite_time_to_iso8601(satellite_time: float) -> str:
-    return satellite_time_to_isot(satellite_time) + "Z"
-
 
 data = fits.open("HXMT_20170627T14_HE-Evt_FFFFFF_V1_1K.FITS")
 time = data["Events"].data["Time"]
@@ -62,8 +41,9 @@ plt.rcParams.update(
         "text.latex.preamble": "\\usepackage{amsmath}\n\\usepackage{wasysym}\\usepackage{CJKutf8}",  # 如果需要数学公式支持
     }
 )
-cm = 1 / 2.54  # 将厘米转换为英寸
-plt.figure(figsize=(8 * cm, 6 * cm), dpi=1200, facecolor="none")
+plt.figure(
+    figsize=(one_column_width, (3 / 4) * one_column_width), dpi=1200, facecolor="none"
+)
 
 n, bins, patches = plt.hist(
     time,
@@ -106,5 +86,6 @@ legend.get_frame().set_linewidth(0.5)
 plt.tight_layout()
 plt.savefig(
     "hxmt-catalog/output/glitch.pdf",
+    bbox_inches="tight",
     transparent=True,
 )

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
 import numpy as np
+from common import one_column_width
 
 
 @dataclass
@@ -68,7 +69,9 @@ plt.rcParams.update(
 cm = 1 / 2.54  # 将厘米转换为英寸
 data = get_data_all()
 data_ranged = get_data_ranged()
-plt.figure(figsize=(8 * cm, 6 * cm), dpi=1200, facecolor="none")
+plt.figure(
+    figsize=(one_column_width, (3 / 4) * one_column_width), dpi=1200, facecolor="none"
+)
 
 # 计算数据的对数值
 # 创建对数均匀的bin边界
@@ -180,4 +183,6 @@ legend.get_frame().set_linewidth(0.5)
 plt.axvline(1e-3, color="black", linestyle="--", linewidth=0.5)
 
 plt.tight_layout()
-plt.savefig("hxmt-catalog/output/fp-distribution.pdf", transparent=True)
+plt.savefig(
+    "hxmt-catalog/output/fp-distribution.pdf", bbox_inches="tight", transparent=True
+)
