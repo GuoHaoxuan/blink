@@ -1,8 +1,24 @@
+import json
 import sqlite3
+from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
 import numpy as np
-from data import Signal
+
+
+@dataclass
+class Signal:
+    fp_year: float
+    lightnings: bool
+
+    def __init__(self, row):
+        self.fp_year = row[0]
+        self.lightnings = False
+        lightnings_json = json.loads(row[1])
+        for lightning in lightnings_json:
+            if lightning["is_associated"]:
+                self.lightnings = True
+                break
 
 
 def get_data_all():
@@ -10,7 +26,7 @@ def get_data_all():
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings, satellite, detector, count_best
+        SELECT fp_year, lightnings
         FROM signal
         WHERE start < "2025-01-01"
         """
@@ -26,7 +42,7 @@ def get_data_ranged():
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT start, stop, fp_year, longitude, latitude, altitude, events, lightnings, satellite, detector, count_best
+        SELECT fp_year, lightnings
         FROM signal
         WHERE start < "2025-01-01"
         AND duration > 200e-6
@@ -52,7 +68,7 @@ plt.rcParams.update(
 cm = 1 / 2.54  # 将厘米转换为英寸
 data = get_data_all()
 data_ranged = get_data_ranged()
-plt.figure(figsize=(8 * cm, 8 * cm), dpi=1200, facecolor="none")
+plt.figure(figsize=(8 * cm, 6 * cm), dpi=1200, facecolor="none")
 
 # 计算数据的对数值
 # 创建对数均匀的bin边界
@@ -155,6 +171,8 @@ legend = plt.legend(
     fancybox=False,
     framealpha=1.0,
     loc="upper right",
+    ncols=2,
+    columnspacing=0.5,
 )
 # 单独设置边框线宽
 legend.get_frame().set_linewidth(0.5)
