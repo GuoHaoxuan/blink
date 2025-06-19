@@ -3,7 +3,6 @@ import sqlite3
 
 import matplotlib.pyplot as plt
 import numpy as np
-from common import one_column_width
 
 conn = sqlite3.connect("statistics.db")
 cursor = conn.cursor()
@@ -30,24 +29,20 @@ plt.rcParams.update(
         "text.usetex": True,  # 使用 LaTeX 渲染文字
         "font.family": "serif",  # 使用衬线字体（如 Times New Roman）
         "font.serif": ["Computer Modern"],  # 如果你用的是 LaTeX 默认字体
-        "text.latex.preamble": "\\usepackage{amsmath}\n\\usepackage{wasysym}\\usepackage{CJKutf8}",  # 如果需要数学公式支持
+        "text.latex.preamble": "\\usepackage{amsmath}",  # 如果需要数学公式支持
+        "lines.linewidth": 1,
     }
 )
-cm = 1 / 2.54  # 将厘米转换为英寸
-plt.figure(
-    figsize=(one_column_width, (3 / 4) * one_column_width), dpi=1200, facecolor="none"
-)
+plt.figure(dpi=1200)
 plt.stairs(
     data_new,
     np.arange(len(data_new) + 1),
-    edgecolor="black",
+    edgecolor="C0",
     facecolor="None",
-    hatch="/",
 )
 plt.axvline(
     38,
-    color="black",
-    linestyle="--",
+    color="C3",
     lw=0.5,
 )
 plt.xlabel("Channel")
