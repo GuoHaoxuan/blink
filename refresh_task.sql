@@ -18,7 +18,7 @@ WITH RECURSIVE
         FROM
             hours
         WHERE
-            hour < DATETIME ('now')
+            hour < DATETIME ('2018-01-01 00:00:00')
     )
 SELECT
     'HXMT' AS satellite,
