@@ -3,6 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result, anyhow};
 use chrono::{TimeDelta, prelude::*};
 use itertools::Itertools;
+use serde::de;
 use statrs::statistics::Statistics;
 
 use crate::{
@@ -13,7 +14,11 @@ use crate::{
         saturation::{get_all_filenames, rec_sci_data},
     },
     lightning::{associated_lightning, coincidence_prob},
-    search::lightcurve::{Trigger, light_curve, prefix_sum, search_light_curve},
+    search::{
+        algorithms::{SearchConfig, search_new},
+        lightcurve::{light_curve, prefix_sum, search_light_curve},
+        trigger::Trigger,
+    },
     types::{Event, Instance as InstanceTrait, Signal, Span, Time},
 };
 
@@ -126,39 +131,26 @@ impl InstanceTrait for Instance {
             // .map(|(_, event)| event)
             .filter(|event| event.energy() >= CHANNEL_THRESHOLD)
             // .filter(|event| !event.detector().acd.iter().any(|acd| *acd))
-            .map(|event| event.time())
+            // .map(|event| event.time())
             .collect::<Vec<_>>();
+        let events_time = events.iter().map(|event| event.time()).collect::<Vec<_>>();
         let fp_year = 20.0;
         let min_count = 8;
-        let mut bin_size = Span::seconds(10e-6);
-        let mut results = Vec::new();
 
-        while bin_size < Span::seconds(1e-3) {
-            results.extend((0..4).flat_map(|shift| {
-                let shift = bin_size * shift as f64 / 4.0;
-                let lc = light_curve(&events, self.span[0] + shift, self.span[1], bin_size);
-                let prefix_sum = prefix_sum(&lc);
-                search_light_curve(
-                    &prefix_sum,
-                    self.span[0] + shift,
-                    bin_size,
-                    fp_year,
-                    min_count,
-                )
-            }));
-            bin_size *= 2.0;
-        }
-        results.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap());
-        let results = results
-            .into_iter()
-            .coalesce(|prev, next| {
-                if prev.mergeable(&next, 0.0) {
-                    Ok(prev.merge(&next))
-                } else {
-                    Err((prev, next))
-                }
-            })
-            .collect::<Vec<_>>();
+        let results = search_new(
+            &events,
+            1,
+            self.span[0],
+            self.span[1],
+            SearchConfig {
+                max_duration: Span::milliseconds(1.0),
+                neighbor: Span::seconds(1.0),
+                hollow: Span::milliseconds(10.0),
+                fp_year: 20.0,
+                min_number: 8,
+            },
+        );
+
         let results = continuous(results, Span::seconds(10.0), Span::seconds(1.0), 10);
         let results = results
             .into_iter()
@@ -302,7 +294,7 @@ impl InstanceTrait for Instance {
                         .take(100)
                         .collect::<Vec<_>>(),
                         light_curve(
-                            &events,
+                            &events_time,
                             trigger.start - Span::milliseconds(500.0),
                             trigger.start + Span::milliseconds(500.0),
                             Span::milliseconds(10.0),
@@ -323,7 +315,7 @@ impl InstanceTrait for Instance {
                         .take(100)
                         .collect::<Vec<_>>(),
                         light_curve(
-                            &events,
+                            &events_time,
                             trigger.start - Span::milliseconds(50.0),
                             trigger.start + Span::milliseconds(50.0),
                             Span::milliseconds(1.0),

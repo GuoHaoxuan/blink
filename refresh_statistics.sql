@@ -5,10 +5,7 @@ OR IGNORE INTO statistics (
     created_at,
     updated_at,
     retry_times,
-    worker,
-    status,
-    error,
-    value
+    status
 )
 WITH RECURSIVE
     hours AS (
@@ -28,9 +25,6 @@ SELECT
     DATETIME ('now') AS created_at,
     DATETIME ('now') AS updated_at,
     0 AS retry_times,
-    '' AS worker,
-    'Pending' AS status,
-    '' AS error,
-    '' AS value
+    'Pending' AS status
 FROM
     hours;

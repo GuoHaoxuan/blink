@@ -6,9 +6,9 @@ CREATE TABLE
         created_at TEXT NOT NULL, -- 创建时间
         updated_at TEXT NOT NULL, -- 修改时间
         retry_times INTEGER NOT NULL, -- 重试次数
-        worker TEXT NOT NULL, -- 处理者
+        worker TEXT, -- 处理者
         status TEXT NOT NULL, -- 状态 Pending, Running, Finished, Failed
-        error TEXT NOT NULL, -- 错误信息
+        error TEXT, -- 错误信息
         UNIQUE (satellite, detector, time) ON CONFLICT IGNORE
     );
 
@@ -73,9 +73,9 @@ CREATE TABLE
         created_at TEXT NOT NULL, -- 创建时间
         updated_at TEXT NOT NULL, -- 修改时间
         retry_times INTEGER NOT NULL, -- 重试次数
-        worker TEXT NOT NULL, -- 处理者
+        worker TEXT, -- 处理者
         status TEXT NOT NULL, -- 状态 Pending, Running, Finished, Failed
-        error TEXT NOT NULL, -- 错误信息
-        value TEXT NOT NULL, -- 统计值
+        error TEXT, -- 错误信息
+        value TEXT, -- 统计值
         UNIQUE (time, what) ON CONFLICT IGNORE
     );

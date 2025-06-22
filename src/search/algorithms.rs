@@ -1,11 +1,14 @@
 use statrs::distribution::{DiscreteCDF, Poisson};
 
+use super::trigger::Trigger;
 use crate::types::{Event, Group, Satellite, Span, Time};
 
 pub struct SearchConfig<T: Satellite> {
     pub max_duration: Span<T>,
     pub neighbor: Span<T>,
+    pub hollow: Span<T>,
     pub fp_year: f64,
+    pub min_number: u32,
 }
 
 impl<T: Satellite> Default for SearchConfig<T> {
@@ -13,7 +16,9 @@ impl<T: Satellite> Default for SearchConfig<T> {
         Self {
             max_duration: Span::milliseconds(1.0),
             neighbor: Span::seconds(1.0),
+            hollow: Span::milliseconds(10.0),
             fp_year: 20.0,
+            min_number: 8,
         }
     }
 }
@@ -171,6 +176,159 @@ pub fn search<E: Event + Group>(
         {
             mean_stop_base += 1;
             mean_counts_base[data[mean_stop_base].group() as usize] += 1;
+        }
+    }
+
+    result
+}
+
+pub fn search_new<E: Event + Group>(
+    data: &[E],
+    group_number: usize,
+    start: Time<E::Satellite>,
+    stop: Time<E::Satellite>,
+    config: SearchConfig<E::Satellite>,
+) -> Vec<Trigger<E::Satellite>> {
+    let mut result: Vec<Trigger<E::Satellite>> = Vec::new();
+    let mut cache = vec![
+        vec![None; CACHE_COUNT_MAX as usize];
+        (CACHE_MEAN_MAX * CACHE_MEAN_HASH_FACTOR).ceil() as usize
+    ];
+
+    let mut cursor = data
+        .binary_search_by(|event| event.time().cmp(&start))
+        .unwrap_or_else(|index| index);
+    if cursor == data.len() {
+        return result;
+    }
+
+    let mut mean_start_snapshot = cursor;
+    let mut mean_stop_snapshot = cursor;
+    let mut mean_number_snapshot: Vec<u32> = vec![0; group_number];
+    mean_number_snapshot[data[cursor].group() as usize] = 1;
+    while mean_stop_snapshot < data.len()
+        && data[mean_stop_snapshot].time() - data[cursor].time() < config.neighbor / 2.0
+    {
+        mean_stop_snapshot += 1;
+        mean_number_snapshot[data[mean_stop_snapshot].group() as usize] += 1;
+    }
+
+    let mut hollow_start_snapshot = cursor;
+    let mut hollow_stop_snapshot = cursor;
+    let mut hollow_number_snapshot: Vec<u32> = vec![0; group_number];
+    hollow_number_snapshot[data[cursor].group() as usize] = 1;
+    while hollow_stop_snapshot < data.len()
+        && data[hollow_stop_snapshot].time() - data[cursor].time() < config.hollow / 2.0
+    {
+        hollow_stop_snapshot += 1;
+        hollow_number_snapshot[data[hollow_stop_snapshot].group() as usize] += 1;
+    }
+
+    loop {
+        let mut step = 0;
+        let mut numbers: Vec<u32> = vec![0; group_number];
+        numbers[data[cursor].group() as usize] = 1;
+        let mut mean_stop = mean_stop_snapshot;
+        let mut mean_numbers = mean_number_snapshot.clone();
+        let mut hollow_stop = hollow_stop_snapshot;
+        let mut hollow_numbers = hollow_number_snapshot.clone();
+
+        loop {
+            let total_number = numbers.iter().sum(); // [TODO] Use real total number calculation
+            if total_number >= config.min_number {
+                let duration = data[cursor + step].time() - data[cursor].time();
+                let mean_start_time = (data[cursor].time() - config.neighbor / 2.0).max(start);
+                let mean_stop_time = (data[cursor + step].time() + config.neighbor / 2.0).min(stop);
+                let hollow_start_time = (data[cursor].time() - config.hollow / 2.0).max(start);
+                let hollow_stop_time = (data[cursor + step].time() + config.hollow / 2.0).min(stop);
+                let pure_mean_duration =
+                    (mean_stop_time - mean_start_time) - (hollow_stop_time - hollow_start_time);
+                let pure_mean_percent = duration.to_seconds() / pure_mean_duration.to_seconds();
+                let threshold =
+                    1.0 - config.fp_year / (3600.0 * 24.0 * 365.0 / duration.to_seconds());
+                let probs = (0..group_number)
+                    .map(|group| {
+                        let number = numbers[group];
+                        let pure_mean_number = mean_numbers[group] - hollow_numbers[group];
+                        let equivalent_background_number =
+                            pure_mean_number as f64 * pure_mean_percent;
+                        poisson_cdf(&mut cache, equivalent_background_number, number)
+                    })
+                    .collect::<Vec<f64>>();
+                let prob = probs[0]; // [TODO] Use real probability calculation
+                if prob > threshold {
+                    let total_equivalent_background_number = (0..group_number)
+                        .map(|group| mean_numbers[group] - hollow_numbers[group])
+                        .sum::<u32>()
+                        as f64
+                        * pure_mean_percent;
+                    let current = Trigger::new(
+                        data[cursor].time(),
+                        data[cursor + step].time(),
+                        total_number,
+                        total_equivalent_background_number,
+                    );
+                    if let Some(last) = result.last_mut() {
+                        if last.mergeable(&current, 0.0) {
+                            *last = last.merge(&current);
+                        } else {
+                            result.push(current);
+                        }
+                    } else {
+                        result.push(current);
+                    }
+                }
+            }
+
+            step += 1;
+            if cursor + step >= data.len()
+                || data[cursor + step].time() - data[cursor].time() >= config.max_duration
+                || data[cursor + step].time() >= stop
+            {
+                break;
+            }
+            numbers[data[cursor + step].group() as usize] += 1;
+            while mean_stop < data.len()
+                && data[mean_stop].time() - data[cursor + step].time() < config.neighbor / 2.0
+            {
+                mean_stop += 1;
+                mean_numbers[data[mean_stop].group() as usize] += 1;
+            }
+            while hollow_stop < data.len()
+                && data[hollow_stop].time() - data[cursor + step].time() < config.hollow / 2.0
+            {
+                hollow_stop += 1;
+                hollow_numbers[data[hollow_stop].group() as usize] += 1;
+            }
+        }
+
+        cursor += 1;
+        if cursor >= data.len() || data[cursor].time() >= stop {
+            break;
+        }
+        while mean_start_snapshot + 1 < data.len()
+            && data[cursor].time() - data[mean_start_snapshot + 1].time() > config.neighbor / 2.0
+        {
+            mean_numbers[data[mean_start_snapshot].group() as usize] -= 1;
+            mean_start_snapshot += 1;
+        }
+        while mean_stop_snapshot + 1 < data.len()
+            && data[mean_stop_snapshot + 1].time() - data[cursor].time() < config.neighbor / 2.0
+        {
+            mean_stop_snapshot += 1;
+            mean_numbers[data[mean_stop_snapshot].group() as usize] += 1;
+        }
+        while hollow_start_snapshot + 1 < data.len()
+            && data[cursor].time() - data[hollow_start_snapshot + 1].time() > config.hollow / 2.0
+        {
+            hollow_numbers[data[hollow_start_snapshot].group() as usize] -= 1;
+            hollow_start_snapshot += 1;
+        }
+        while hollow_stop_snapshot + 1 < data.len()
+            && data[hollow_stop_snapshot + 1].time() - data[cursor].time() < config.hollow / 2.0
+        {
+            hollow_stop_snapshot += 1;
+            hollow_numbers[data[hollow_stop_snapshot].group() as usize] += 1;
         }
     }
 
