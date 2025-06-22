@@ -288,14 +288,14 @@ pub fn search_new<E: Event + Group>(
                 break;
             }
             numbers[data[cursor + step].group() as usize] += 1;
-            while mean_stop < data.len()
-                && data[mean_stop].time() - data[cursor + step].time() < config.neighbor / 2.0
+            while mean_stop + 1 < data.len()
+                && data[mean_stop + 1].time() - data[cursor + step].time() < config.neighbor / 2.0
             {
                 mean_stop += 1;
                 mean_numbers[data[mean_stop].group() as usize] += 1;
             }
-            while hollow_stop < data.len()
-                && data[hollow_stop].time() - data[cursor + step].time() < config.hollow / 2.0
+            while hollow_stop + 1 < data.len()
+                && data[hollow_stop + 1].time() - data[cursor + step].time() < config.hollow / 2.0
             {
                 hollow_stop += 1;
                 hollow_numbers[data[hollow_stop].group() as usize] += 1;
