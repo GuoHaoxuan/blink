@@ -223,24 +223,24 @@ pub fn search_new<E: Event + Group>(
 
     let mut mean_start_snapshot = cursor;
     let mut mean_stop_snapshot = cursor;
-    let mut mean_number_snapshot: Vec<u32> = vec![0; group_number];
-    mean_number_snapshot[data[cursor].group() as usize] = 1;
+    let mut mean_numbers_snapshot: Vec<u32> = vec![0; group_number];
+    mean_numbers_snapshot[data[cursor].group() as usize] = 1;
     while mean_stop_snapshot < data.len()
         && data[mean_stop_snapshot].time() - data[cursor].time() < config.neighbor / 2.0
     {
         mean_stop_snapshot += 1;
-        mean_number_snapshot[data[mean_stop_snapshot].group() as usize] += 1;
+        mean_numbers_snapshot[data[mean_stop_snapshot].group() as usize] += 1;
     }
 
     let mut hollow_start_snapshot = cursor;
     let mut hollow_stop_snapshot = cursor;
-    let mut hollow_number_snapshot: Vec<u32> = vec![0; group_number];
-    hollow_number_snapshot[data[cursor].group() as usize] = 1;
+    let mut hollow_numbers_snapshot: Vec<u32> = vec![0; group_number];
+    hollow_numbers_snapshot[data[cursor].group() as usize] = 1;
     while hollow_stop_snapshot < data.len()
         && data[hollow_stop_snapshot].time() - data[cursor].time() < config.hollow / 2.0
     {
         hollow_stop_snapshot += 1;
-        hollow_number_snapshot[data[hollow_stop_snapshot].group() as usize] += 1;
+        hollow_numbers_snapshot[data[hollow_stop_snapshot].group() as usize] += 1;
     }
 
     loop {
@@ -248,9 +248,9 @@ pub fn search_new<E: Event + Group>(
         let mut numbers: Vec<u32> = vec![0; group_number];
         numbers[data[cursor].group() as usize] = 1;
         let mut mean_stop = mean_stop_snapshot;
-        let mut mean_numbers = mean_number_snapshot.clone();
+        let mut mean_numbers = mean_numbers_snapshot.clone();
         let mut hollow_stop = hollow_stop_snapshot;
-        let mut hollow_numbers = hollow_number_snapshot.clone();
+        let mut hollow_numbers = hollow_numbers_snapshot.clone();
 
         loop {
             let total_number = numbers.iter().sum(); // [TODO] Use real total number calculation
@@ -336,26 +336,26 @@ pub fn search_new<E: Event + Group>(
         while mean_start_snapshot + 1 < data.len()
             && data[cursor].time() - data[mean_start_snapshot + 1].time() > config.neighbor / 2.0
         {
-            mean_numbers[data[mean_start_snapshot].group() as usize] -= 1;
+            mean_numbers_snapshot[data[mean_start_snapshot].group() as usize] -= 1;
             mean_start_snapshot += 1;
         }
         while mean_stop_snapshot + 1 < data.len()
             && data[mean_stop_snapshot + 1].time() - data[cursor].time() < config.neighbor / 2.0
         {
             mean_stop_snapshot += 1;
-            mean_numbers[data[mean_stop_snapshot].group() as usize] += 1;
+            mean_numbers_snapshot[data[mean_stop_snapshot].group() as usize] += 1;
         }
         while hollow_start_snapshot + 1 < data.len()
             && data[cursor].time() - data[hollow_start_snapshot + 1].time() > config.hollow / 2.0
         {
-            hollow_numbers[data[hollow_start_snapshot].group() as usize] -= 1;
+            hollow_numbers_snapshot[data[hollow_start_snapshot].group() as usize] -= 1;
             hollow_start_snapshot += 1;
         }
         while hollow_stop_snapshot + 1 < data.len()
             && data[hollow_stop_snapshot + 1].time() - data[cursor].time() < config.hollow / 2.0
         {
             hollow_stop_snapshot += 1;
-            hollow_numbers[data[hollow_stop_snapshot].group() as usize] += 1;
+            hollow_numbers_snapshot[data[hollow_stop_snapshot].group() as usize] += 1;
         }
     }
 
