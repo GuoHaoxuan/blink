@@ -1,9 +1,12 @@
+use core::num;
+
 use statrs::distribution::{DiscreteCDF, Poisson};
 
 use super::trigger::Trigger;
 use crate::types::{Event, Group, Satellite, Span, Time};
 
 pub struct SearchConfig<T: Satellite> {
+    pub min_duration: Span<T>,
     pub max_duration: Span<T>,
     pub neighbor: Span<T>,
     pub hollow: Span<T>,
@@ -14,6 +17,7 @@ pub struct SearchConfig<T: Satellite> {
 impl<T: Satellite> Default for SearchConfig<T> {
     fn default() -> Self {
         Self {
+            min_duration: Span::microseconds(10.0),
             max_duration: Span::milliseconds(1.0),
             neighbor: Span::seconds(1.0),
             hollow: Span::milliseconds(10.0),
@@ -182,6 +186,20 @@ pub fn search<E: Event + Group>(
     result
 }
 
+pub fn poisson_isf(p: f64, lambda: f64) -> u32 {
+    let mut k = 0;
+    let mut cumulative_prob = (-lambda).exp();
+    let mut part = 0.0;
+
+    while cumulative_prob < 1.0 - p {
+        k += 1;
+        part += (lambda / k as f64).ln();
+        cumulative_prob += (-lambda + part).exp();
+    }
+
+    k
+}
+
 pub fn search_new<E: Event + Group>(
     data: &[E],
     group_number: usize,
@@ -194,7 +212,7 @@ pub fn search_new<E: Event + Group>(
     //     vec![None; CACHE_COUNT_MAX as usize];
     //     (CACHE_MEAN_MAX * CACHE_MEAN_HASH_FACTOR).ceil() as usize
     // ];
-    let mut cache = vec![0; 100_000];
+    // let mut cache = vec![0; 100_000];
 
     let mut cursor = data
         .binary_search_by(|event| event.time().cmp(&start))
@@ -236,8 +254,8 @@ pub fn search_new<E: Event + Group>(
 
         loop {
             let total_number = numbers.iter().sum(); // [TODO] Use real total number calculation
-            if total_number >= config.min_number {
-                let duration = data[cursor + step].time() - data[cursor].time();
+            let duration = data[cursor + step].time() - data[cursor].time();
+            if total_number >= config.min_number && duration >= config.min_duration {
                 let mean_start_time = (data[cursor].time() - config.neighbor / 2.0).max(start);
                 let mean_stop_time = (data[cursor + step].time() + config.neighbor / 2.0).min(stop);
                 let hollow_start_time = (data[cursor].time() - config.hollow / 2.0).max(start);
@@ -250,9 +268,9 @@ pub fn search_new<E: Event + Group>(
                         let pure_mean_number = mean_numbers[group] - hollow_numbers[group];
                         let equivalent_background_number =
                             pure_mean_number as f64 * pure_mean_percent;
-                        1.0 - Poisson::new(equivalent_background_number)
+                        Poisson::new(equivalent_background_number)
                             .unwrap()
-                            .cdf(numbers[0] as u64)
+                            .sf(numbers[group] as u64)
                     })
                     .collect::<Vec<f64>>();
                 let fp = fps[0];
@@ -263,6 +281,14 @@ pub fn search_new<E: Event + Group>(
                         .sum::<u32>()
                         as f64
                         * pure_mean_percent;
+                    // println!(
+                    //     "Found trigger: total_number: {}, equivalent_background_number: {}, fp: {}, threshold: {}, duration: {}",
+                    //     total_number,
+                    //     total_equivalent_background_number,
+                    //     fp,
+                    //     threshold,
+                    //     duration.to_seconds() * 1e6
+                    // );
                     let current = Trigger::new(
                         data[cursor].time(),
                         data[cursor + step].time(),

@@ -147,10 +147,11 @@ impl InstanceTrait for Instance {
             self.span[0],
             self.span[1],
             SearchConfig {
-                max_duration: Span::milliseconds(1.0),
+                min_duration: Span::microseconds(10.0),
+                max_duration: Span::microseconds(640.0),
                 neighbor: Span::seconds(1.0),
                 hollow: Span::milliseconds(10.0),
-                fp_year: 20.0,
+                fp_year: 1e-15,
                 min_number: 8,
             },
         );

@@ -25,18 +25,26 @@ fn test() {
         Time::<Hxmt>::from(test_start),
         Time::<Hxmt>::from(test_stop),
         SearchConfig {
-            max_duration: Span::milliseconds(1.0),
+            min_duration: Span::microseconds(10.0),
+            max_duration: Span::microseconds(640.0),
             neighbor: Span::seconds(1.0),
             hollow: Span::milliseconds(10.0),
-            fp_year: 20.0,
+            fp_year: 1e-15,
             min_number: 8,
         },
-    )
-    .into_iter()
-    .filter(|trigger| trigger.stop - trigger.start > Span::seconds(200e-6))
-    .collect::<Vec<_>>();
-    print!("{:#?}", results);
-    println!("Number of triggers: {}", results.len());
+    );
+    // print!("{:#?}", results);
+    results.iter().for_each(|trigger| {
+        println!("{}", trigger.fp_year());
+    });
+    // println!(
+    //     "{:?}",
+    //     results
+    //         .iter()
+    //         .map(|trigger| { (trigger.stop - trigger.start).to_seconds() })
+    //         .collect::<Vec<_>>()
+    // );
+    // println!("Number of triggers: {}", results.len());
 }
 
 fn main() {

@@ -29,6 +29,13 @@ impl<T: Satellite> Span<T> {
         }
     }
 
+    pub fn microseconds(microseconds: f64) -> Self {
+        Self {
+            time: NotNan::new(microseconds / 1_000_000.0).unwrap(),
+            _phantom: PhantomData,
+        }
+    }
+
     pub fn to_seconds(self) -> f64 {
         (self.time).into_inner()
     }
