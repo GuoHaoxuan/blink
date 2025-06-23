@@ -7,5 +7,6 @@ mod orbit_file;
 mod sci_file;
 
 pub use eng_file::EngFile;
+pub use event_file::EventFile;
 pub use instance_impl::Instance;
 pub use sci_file::SciFile;

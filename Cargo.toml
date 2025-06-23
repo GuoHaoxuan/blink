@@ -30,3 +30,7 @@ path = "src/bin/work.rs"
 [[bin]]
 name = "render"
 path = "src/bin/render.rs"
+
+[[bin]]
+name = "test"
+path = "src/bin/test.rs"

@@ -2,13 +2,13 @@ use serde::Serialize;
 
 use crate::types::{GenericEvent, Group, Time};
 
-use super::{detector::HxmtDetectorType, Hxmt};
+use super::{Hxmt, detector::HxmtDetectorType};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Serialize)]
 pub struct HxmtEvent {
-    pub(super) time: Time<Hxmt>,
-    pub(super) energy: u16,
-    pub(super) detector: HxmtDetectorType,
+    pub time: Time<Hxmt>,
+    pub energy: u16,
+    pub detector: HxmtDetectorType,
 }
 
 impl HxmtEvent {

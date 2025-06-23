@@ -6,7 +6,7 @@ mod time;
 
 use serde::Serialize;
 
-pub use instance::Instance;
+pub use instance::*;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Serialize)]
 pub struct Hxmt;

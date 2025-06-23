@@ -15,7 +15,7 @@ pub struct EventFile {
 }
 
 impl EventFile {
-    pub(super) fn new(filename: &str) -> Result<Self> {
+    pub fn new(filename: &str) -> Result<Self> {
         let mut fptr = fitsio::FitsFile::open(filename)
             .with_context(|| format!("Failed to open file: {}", filename))?;
 

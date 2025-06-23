@@ -1,10 +1,7 @@
 use statrs::distribution::{DiscreteCDF, Poisson};
 
 use super::trigger::Trigger;
-use crate::{
-    search::lightcurve::poisson_isf_cached,
-    types::{Event, Group, Satellite, Span, Time},
-};
+use crate::types::{Event, Group, Satellite, Span, Time};
 
 pub struct SearchConfig<T: Satellite> {
     pub max_duration: Span<T>,
@@ -248,28 +245,19 @@ pub fn search_new<E: Event + Group>(
                 let pure_mean_duration =
                     (mean_stop_time - mean_start_time) - (hollow_stop_time - hollow_start_time);
                 let pure_mean_percent = duration.to_seconds() / pure_mean_duration.to_seconds();
-
-                // DEBUG BELOW
-                // ASSUME HXMT HAS ONLY ONE GROUP
-                let pure_mean_number = mean_numbers[0] - hollow_numbers[0];
-                let mean = pure_mean_number as f64 / pure_mean_duration.to_seconds();
-                let threshold = poisson_isf_cached(
-                    config.fp_year / (Span::seconds(3600.0) * 24.0 * 365.0 / duration),
-                    mean,
-                    &mut cache,
-                );
-                if numbers[0] > threshold {
-                    println!(
-                        "Found trigger: start: {}, stop: {}, total_number: {}, pure_mean_number: {}, mean: {}, threshold: {}",
-                        data[cursor].time().to_chrono(),
-                        data[cursor + step].time().to_chrono(),
-                        total_number,
-                        pure_mean_number,
-                        mean,
-                        threshold
-                    );
-                    // DEBUG ABOVE
-
+                let fps = (0..group_number)
+                    .map(|group| {
+                        let pure_mean_number = mean_numbers[group] - hollow_numbers[group];
+                        let equivalent_background_number =
+                            pure_mean_number as f64 * pure_mean_percent;
+                        1.0 - Poisson::new(equivalent_background_number)
+                            .unwrap()
+                            .cdf(numbers[0] as u64)
+                    })
+                    .collect::<Vec<f64>>();
+                let fp = fps[0];
+                let threshold = config.fp_year / (Span::seconds(3600.0) * 24.0 * 365.0 / duration);
+                if fp < threshold {
                     let total_equivalent_background_number = (0..group_number)
                         .map(|group| mean_numbers[group] - hollow_numbers[group])
                         .sum::<u32>()
