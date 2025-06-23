@@ -10,6 +10,7 @@ use crate::{
     env::HXMT_1K_DIR,
     hxmt::{
         Hxmt,
+        detector::HxmtScintillator,
         event::HxmtEvent,
         saturation::{get_all_filenames, rec_sci_data},
     },
@@ -126,6 +127,7 @@ impl InstanceTrait for Instance {
         let events = self
             .into_iter()
             .filter(|event| !event.detector.am241)
+            .filter(|event| event.detector().scintillator == HxmtScintillator::CsI)
             // .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
             // .filter(|(count, _)| *count == 1)
             // .map(|(_, event)| event)
@@ -135,12 +137,6 @@ impl InstanceTrait for Instance {
             .collect::<Vec<_>>();
         let events_time = events.iter().map(|event| event.time()).collect::<Vec<_>>();
 
-        println!("Number of events: {}", events.len());
-        println!(
-            "Time range: {} - {}",
-            self.span[0].to_chrono(),
-            self.span[1].to_chrono()
-        );
         let results = search_new(
             &events,
             1,
@@ -155,9 +151,8 @@ impl InstanceTrait for Instance {
                 min_number: 8,
             },
         );
-        println!("Number of triggers: {}", results.len());
 
-        // let results = continuous(results, Span::seconds(10.0), Span::seconds(1.0), 10);
+        let results = continuous(results, Span::seconds(10.0), Span::seconds(1.0), 10);
         let results = results
             .into_iter()
             .filter(|trigger| !self.check_saturation(trigger.start))
