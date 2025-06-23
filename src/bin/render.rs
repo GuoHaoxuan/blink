@@ -64,7 +64,7 @@ fn main() {
     // 先获取总记录数以初始化进度条
     let total_count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM signal WHERE start < '2025-01-01' AND fp_year < 0.1 AND lightnings = '[]'",
+            "SELECT COUNT(*) FROM signal WHERE start < '2025-01-01' AND fp_year < 0.1",
             params![],
             |row| row.get(0),
         )
@@ -133,7 +133,6 @@ fn main() {
             FROM signal
             WHERE start < '2025-01-01'
             AND fp_year < 0.1
-            AND lightnings = '[]'
             ORDER BY start
         ",
     )

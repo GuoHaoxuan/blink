@@ -134,8 +134,6 @@ impl InstanceTrait for Instance {
             // .map(|event| event.time())
             .collect::<Vec<_>>();
         let events_time = events.iter().map(|event| event.time()).collect::<Vec<_>>();
-        let fp_year = 20.0;
-        let min_count = 8;
 
         let results = search_new(
             &events,
