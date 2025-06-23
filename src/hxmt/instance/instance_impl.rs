@@ -135,6 +135,12 @@ impl InstanceTrait for Instance {
             .collect::<Vec<_>>();
         let events_time = events.iter().map(|event| event.time()).collect::<Vec<_>>();
 
+        println!("Number of events: {}", events.len());
+        println!(
+            "Time range: {} - {}",
+            self.span[0].to_chrono(),
+            self.span[1].to_chrono()
+        );
         let results = search_new(
             &events,
             1,
@@ -148,6 +154,7 @@ impl InstanceTrait for Instance {
                 min_number: 8,
             },
         );
+        println!("Number of triggers: {}", results.len());
 
         let results = continuous(results, Span::seconds(10.0), Span::seconds(1.0), 10);
         let results = results
