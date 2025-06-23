@@ -1,7 +1,10 @@
 use statrs::distribution::{DiscreteCDF, Poisson};
 
 use super::trigger::Trigger;
-use crate::types::{Event, Group, Satellite, Span, Time};
+use crate::{
+    search::lightcurve::poisson_isf_cached,
+    types::{Event, Group, Satellite, Span, Time},
+};
 
 pub struct SearchConfig<T: Satellite> {
     pub max_duration: Span<T>,
@@ -190,10 +193,11 @@ pub fn search_new<E: Event + Group>(
     config: SearchConfig<E::Satellite>,
 ) -> Vec<Trigger<E::Satellite>> {
     let mut result: Vec<Trigger<E::Satellite>> = Vec::new();
-    let mut cache = vec![
-        vec![None; CACHE_COUNT_MAX as usize];
-        (CACHE_MEAN_MAX * CACHE_MEAN_HASH_FACTOR).ceil() as usize
-    ];
+    // let mut cache = vec![
+    //     vec![None; CACHE_COUNT_MAX as usize];
+    //     (CACHE_MEAN_MAX * CACHE_MEAN_HASH_FACTOR).ceil() as usize
+    // ];
+    let mut cache = vec![0; 100_000];
 
     let mut cursor = data
         .binary_search_by(|event| event.time().cmp(&start))
@@ -236,12 +240,6 @@ pub fn search_new<E: Event + Group>(
         loop {
             let total_number = numbers.iter().sum(); // [TODO] Use real total number calculation
             if total_number >= config.min_number {
-                println!(
-                    "Found {} events in group {} at {}",
-                    total_number,
-                    data[cursor].group(),
-                    data[cursor].time().to_chrono()
-                );
                 let duration = data[cursor + step].time() - data[cursor].time();
                 let mean_start_time = (data[cursor].time() - config.neighbor / 2.0).max(start);
                 let mean_stop_time = (data[cursor + step].time() + config.neighbor / 2.0).min(stop);
@@ -250,19 +248,28 @@ pub fn search_new<E: Event + Group>(
                 let pure_mean_duration =
                     (mean_stop_time - mean_start_time) - (hollow_stop_time - hollow_start_time);
                 let pure_mean_percent = duration.to_seconds() / pure_mean_duration.to_seconds();
-                let threshold =
-                    1.0 - config.fp_year / (3600.0 * 24.0 * 365.0 / duration.to_seconds());
-                let probs = (0..group_number)
-                    .map(|group| {
-                        let number = numbers[group];
-                        let pure_mean_number = mean_numbers[group] - hollow_numbers[group];
-                        let equivalent_background_number =
-                            pure_mean_number as f64 * pure_mean_percent;
-                        poisson_cdf(&mut cache, equivalent_background_number, number)
-                    })
-                    .collect::<Vec<f64>>();
-                let prob = probs[0]; // [TODO] Use real probability calculation
-                if prob > threshold {
+
+                // DEBUG BELOW
+                // ASSUME HXMT HAS ONLY ONE GROUP
+                let pure_mean_number = mean_numbers[0] - hollow_numbers[0];
+                let mean = pure_mean_number as f64 / pure_mean_duration.to_seconds();
+                let threshold = poisson_isf_cached(
+                    config.fp_year / (Span::seconds(3600.0) * 24.0 * 365.0 / duration),
+                    mean,
+                    &mut cache,
+                );
+                if numbers[0] > threshold {
+                    println!(
+                        "Found trigger: start: {}, stop: {}, total_number: {}, pure_mean_number: {}, mean: {}, threshold: {}",
+                        data[cursor].time().to_chrono(),
+                        data[cursor + step].time().to_chrono(),
+                        total_number,
+                        pure_mean_number,
+                        mean,
+                        threshold
+                    );
+                    // DEBUG ABOVE
+
                     let total_equivalent_background_number = (0..group_number)
                         .map(|group| mean_numbers[group] - hollow_numbers[group])
                         .sum::<u32>()
