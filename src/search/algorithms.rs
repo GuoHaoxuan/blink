@@ -236,6 +236,12 @@ pub fn search_new<E: Event + Group>(
         loop {
             let total_number = numbers.iter().sum(); // [TODO] Use real total number calculation
             if total_number >= config.min_number {
+                println!(
+                    "Found {} events in group {} at {}",
+                    total_number,
+                    data[cursor].group(),
+                    data[cursor].time().to_chrono()
+                );
                 let duration = data[cursor + step].time() - data[cursor].time();
                 let mean_start_time = (data[cursor].time() - config.neighbor / 2.0).max(start);
                 let mean_stop_time = (data[cursor + step].time() + config.neighbor / 2.0).min(stop);
