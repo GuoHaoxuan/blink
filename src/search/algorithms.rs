@@ -1,5 +1,3 @@
-use core::num;
-
 use statrs::distribution::{DiscreteCDF, Poisson};
 
 use super::trigger::Trigger;

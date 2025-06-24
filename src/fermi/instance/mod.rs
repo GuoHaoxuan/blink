@@ -9,7 +9,6 @@ use itertools::Itertools;
 use position::Position;
 
 use crate::env::GBM_DAILY_PATH;
-use crate::lightning::{associated_lightning, coincidence_prob};
 use crate::search::algorithms::{SearchConfig, search};
 use crate::types::{Event as _, Instance as InstanceTrait, Signal, Span, Time};
 
@@ -170,17 +169,6 @@ impl InstanceTrait for Instance {
                     })
                     .collect::<Vec<_>>();
                 let position = self.position.get_row(start);
-                let time_tolerance = Duration::milliseconds(5);
-                let distance_tolerance = 800_000.0;
-                let lightnings = associated_lightning(
-                    (start + (stop - start) / 2.0).to_chrono(),
-                    position.sc_lat as f64,
-                    position.sc_lon as f64,
-                    altitude(&position.pos) as f64,
-                    time_tolerance,
-                    distance_tolerance,
-                    Duration::minutes(2),
-                );
 
                 Signal::new(
                     start.to_chrono(),

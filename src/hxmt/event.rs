@@ -33,7 +33,7 @@ impl crate::types::Event for HxmtEvent {
         GenericEvent {
             time: self.time.to_chrono(),
             energy: ec_function(self),
-            detector: serde_json::to_value(&self.detector).unwrap(),
+            detector: serde_json::to_value(self.detector).unwrap(),
         }
     }
 }

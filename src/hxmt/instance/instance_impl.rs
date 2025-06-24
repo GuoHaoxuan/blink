@@ -2,8 +2,6 @@ use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
 use chrono::{TimeDelta, prelude::*};
-use itertools::Itertools;
-use serde::de;
 use statrs::statistics::Statistics;
 
 use crate::{
@@ -17,7 +15,7 @@ use crate::{
     lightning::{associated_lightning, coincidence_prob},
     search::{
         algorithms::{SearchConfig, search_new},
-        lightcurve::{light_curve, prefix_sum, search_light_curve},
+        lightcurve::light_curve,
         trigger::Trigger,
     },
     types::{Event, Instance as InstanceTrait, Signal, Span, Time},
