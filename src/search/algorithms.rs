@@ -266,9 +266,13 @@ pub fn search_new<E: Event + Group>(
                         let pure_mean_number = mean_numbers[group] - hollow_numbers[group];
                         let equivalent_background_number =
                             pure_mean_number as f64 * pure_mean_percent;
-                        Poisson::new(equivalent_background_number)
-                            .unwrap()
-                            .sf(numbers[group] as u64)
+                        match (equivalent_background_number, numbers[group]) {
+                            (0.0, 0) => 1.0,
+                            (0.0, _) => 1.0,
+                            _ => Poisson::new(equivalent_background_number)
+                                .unwrap()
+                                .sf(numbers[group] as u64),
+                        }
                     })
                     .collect::<Vec<f64>>();
                 let fp = fps[0];
