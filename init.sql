@@ -37,10 +37,10 @@ CREATE TABLE
         mean_energy_best REAL NOT NULL, -- 最佳平均能量
         mean_energy_filtered REAL NOT NULL, -- 有效事件平均能量
         mean_energy_filtered_best REAL NOT NULL, -- 最佳有效事件平均能量
-        veto_ratio REAL NOT NULL, -- Veto 比率
-        veto_ratio_best REAL NOT NULL, -- 最佳 Veto 比率
-        veto_ratio_filtered REAL NOT NULL, -- 有效事件 Veto 比率
-        veto_ratio_filtered_best REAL NOT NULL, -- 最佳有效事件 Veto 比率
+        veto_proportion REAL NOT NULL, -- Veto 比率
+        veto_proportion_best REAL NOT NULL, -- 最佳 Veto 比率
+        veto_proportion_filtered REAL NOT NULL, -- 有效事件 Veto 比率
+        veto_proportion_filtered_best REAL NOT NULL, -- 最佳有效事件 Veto 比率
         events TEXT NOT NULL, -- 事件
         light_curve_1s TEXT NOT NULL, -- 光变曲线
         light_curve_1s_filtered TEXT NOT NULL, -- 有效事件光变曲线

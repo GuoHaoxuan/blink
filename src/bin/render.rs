@@ -37,10 +37,10 @@ fn main() {
         "mean_energy_best",
         "mean_energy_filtered",
         "mean_energy_filtered_best",
-        "veto_ratio",
-        "veto_ratio_best",
-        "veto_ratio_filtered",
-        "veto_ratio_filtered_best",
+        "veto_proportion",
+        "veto_proportion_best",
+        "veto_proportion_filtered",
+        "veto_proportion_filtered_best",
         "longitude",
         "latitude",
         "altitude",
@@ -104,10 +104,10 @@ fn main() {
                 mean_energy_best,
                 mean_energy_filtered,
                 mean_energy_filtered_best,
-                veto_ratio,
-                veto_ratio_best,
-                veto_ratio_filtered,
-                veto_ratio_filtered_best,
+                veto_proportion,
+                veto_proportion_best,
+                veto_proportion_filtered,
+                veto_proportion_filtered_best,
                 events,
                 light_curve_1s,
                 light_curve_1s_filtered,
@@ -159,10 +159,10 @@ fn main() {
         let mean_energy_best = row.get::<_, f64>(18)?;
         let mean_energy_filtered = row.get::<_, f64>(19)?;
         let mean_energy_filtered_best = row.get::<_, f64>(20)?;
-        let veto_ratio = row.get::<_, f64>(21)?;
-        let veto_ratio_best = row.get::<_, f64>(22)?;
-        let veto_ratio_filtered = row.get::<_, f64>(23)?;
-        let veto_ratio_filtered_best = row.get::<_, f64>(24)?;
+        let veto_proportion = row.get::<_, f64>(21)?;
+        let veto_proportion_best = row.get::<_, f64>(22)?;
+        let veto_proportion_filtered = row.get::<_, f64>(23)?;
+        let veto_proportion_filtered_best = row.get::<_, f64>(24)?;
         let events = row.get::<_, String>(25)?;
         let light_curve_1s = row.get::<_, String>(26)?;
         let light_curve_1s_filtered = row.get::<_, String>(27)?;
@@ -207,10 +207,10 @@ fn main() {
             mean_energy_best,
             mean_energy_filtered,
             mean_energy_filtered_best,
-            veto_ratio,
-            veto_ratio_best,
-            veto_ratio_filtered,
-            veto_ratio_filtered_best,
+            veto_proportion,
+            veto_proportion_best,
+            veto_proportion_filtered,
+            veto_proportion_filtered_best,
             events: serde_json::from_str(&events).unwrap(),
             light_curve_1s: serde_json::from_str(&light_curve_1s).unwrap(),
             light_curve_1s_filtered: serde_json::from_str(&light_curve_1s_filtered).unwrap(),
@@ -276,10 +276,10 @@ fn main() {
             signal.mean_energy_best.to_string(),
             signal.mean_energy_filtered.to_string(),
             signal.mean_energy_filtered_best.to_string(),
-            signal.veto_ratio.to_string(),
-            signal.veto_ratio_best.to_string(),
-            signal.veto_ratio_filtered.to_string(),
-            signal.veto_ratio_filtered_best.to_string(),
+            signal.veto_proportion.to_string(),
+            signal.veto_proportion_best.to_string(),
+            signal.veto_proportion_filtered.to_string(),
+            signal.veto_proportion_filtered_best.to_string(),
             signal.longitude.to_string(),
             signal.latitude.to_string(),
             signal.altitude.to_string(),
