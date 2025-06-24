@@ -2,6 +2,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
 use chrono::{TimeDelta, prelude::*};
+use itertools::Itertools;
 use statrs::statistics::Statistics;
 
 use crate::{
@@ -274,6 +275,30 @@ impl InstanceTrait for Instance {
                         filtered_events_best
                             .iter()
                             .filter(|event| event.detector().acd != 0)
+                            .count() as f64
+                            / filtered_events_best.len() as f64,
+                        1.0 - original_events
+                            .iter()
+                            .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
+                            .filter(|(count, _)| *count == 1)
+                            .count() as f64
+                            / original_events.len() as f64,
+                        1.0 - original_events_best
+                            .iter()
+                            .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
+                            .filter(|(count, _)| *count == 1)
+                            .count() as f64
+                            / original_events_best.len() as f64,
+                        1.0 - filtered_events
+                            .iter()
+                            .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
+                            .filter(|(count, _)| *count == 1)
+                            .count() as f64
+                            / filtered_events.len() as f64,
+                        1.0 - filtered_events_best
+                            .iter()
+                            .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
+                            .filter(|(count, _)| *count == 1)
                             .count() as f64
                             / filtered_events_best.len() as f64,
                         original_events_extended
