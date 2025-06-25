@@ -128,7 +128,7 @@ legend_handles = [
     ),
     mpatches.Patch(facecolor="C3", edgecolor="None", alpha=0.1, label="Reject"),
 ]
-plt.legend(handles=legend_handles)
+plt.legend(handles=legend_handles, ncols=2, loc="upper right")
 plt.xlabel("Expected Annual False Positive Under Poisson Assumption")
 plt.ylabel("Number")
 
