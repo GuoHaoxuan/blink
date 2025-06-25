@@ -19,7 +19,8 @@ plt.rcParams.update(
         "lines.linewidth": 1,
     }
 )
-plt.figure(figsize=(8, 3), dpi=1200)
+cm = 1 / 2.54
+plt.figure(figsize=(20 * cm, 7 * cm), dpi=1200)
 
 conn = sqlite3.connect("blink.db")
 cursor = conn.cursor()
@@ -128,7 +129,7 @@ legend_handles = [
     mpatches.Patch(facecolor="C3", edgecolor="None", alpha=0.1, label="Reject"),
 ]
 plt.legend(handles=legend_handles)
-plt.xlabel("FP per year")
+plt.xlabel("Expected Annual False Positive Under Poisson Assumption")
 plt.ylabel("Number")
 
 conn.close()
