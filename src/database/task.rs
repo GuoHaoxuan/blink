@@ -128,6 +128,10 @@ pub fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detecto
                 veto_proportion_best,
                 veto_proportion_filtered,
                 veto_proportion_filtered_best,
+                simultaneous_proportion,
+                simultaneous_proportion_best,
+                simultaneous_proportion_filtered,
+                simultaneous_proportion_filtered_best,
                 events,
                 light_curve_1s,
                 light_curve_1s_filtered,
@@ -155,7 +159,8 @@ pub fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detecto
                 ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
                 ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
                 ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40,
-                ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49
+                ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50,
+                ?51, ?52, ?53
             );
         ",
         params![
@@ -196,6 +201,10 @@ pub fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detecto
             signal.veto_proportion_best,
             signal.veto_proportion_filtered,
             signal.veto_proportion_filtered_best,
+            signal.simultaneous_proportion,
+            signal.simultaneous_proportion_best,
+            signal.simultaneous_proportion_filtered,
+            signal.simultaneous_proportion_filtered_best,
             serde_json::to_string(&signal.events).unwrap(),
             serde_json::to_string(&signal.light_curve_1s).unwrap(),
             serde_json::to_string(&signal.light_curve_1s_filtered).unwrap(),
