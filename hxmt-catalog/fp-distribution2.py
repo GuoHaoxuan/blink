@@ -1,7 +1,14 @@
 import sqlite3
 
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.optimize import curve_fit
+
+
+def power_law(x, a, b):
+    return a * x**b
+
 
 plt.rcParams.update(
     {
@@ -12,48 +19,115 @@ plt.rcParams.update(
         "lines.linewidth": 1,
     }
 )
-plt.figure(dpi=1200)
+plt.figure(figsize=(8, 3), dpi=1200)
 
 conn = sqlite3.connect("blink.db")
 cursor = conn.cursor()
-cursor.execute("SELECT fp_year FROM signal WHERE start < '2025-01-01'")
+
+# 全部的
+cursor.execute(
+    "SELECT fp_year, coincidence_probability FROM signal WHERE start < '2025-01-01'"
+)
 data = cursor.fetchall()
 fp_years = [row[0] for row in data]
 fp_years = np.array(fp_years)
-min_fp = 1e-50
+min_fp = 1e-30
 max_fp = np.max(fp_years)
 bins = 100
 fp_bins = np.logspace(np.log10(min_fp), np.log10(max_fp), bins + 1)
-n, _, _ = plt.hist(
+n_all, _, _ = plt.hist(
     fp_years,
     bins=fp_bins,
     histtype="step",
     label="All Signals",
 )
 
+# 误关联
+misassociated_count = np.zeros_like(fp_bins[:-1])
+for fp_year, prob in data:
+    index = np.digitize(fp_year, fp_bins) - 1
+    if index < len(misassociated_count):
+        misassociated_count[index] += prob
+plt.stairs(
+    misassociated_count,
+    fp_bins,
+    fill=False,
+    edgecolor="C1",
+)
+
+# 闪电关联
 cursor.execute(
     "SELECT fp_year FROM signal WHERE start < '2025-01-01' AND associated_lightning_count > 0"
 )
 data = cursor.fetchall()
-fp_years_lightning = [row[0] for row in data]
-fp_years_lightning = np.array(fp_years_lightning)
-plt.hist(
-    fp_years_lightning,
+fp_years = [row[0] for row in data]
+fp_years = np.array(fp_years)
+n_associated, _, _ = plt.hist(
+    fp_years,
     bins=fp_bins,
     histtype="step",
     label="Signals with Lightning",
 )
 
-plt.stairs(
-    n * 4e-4,
-    fp_bins,
-    fill=False,
-    label="Mis-associated Signals",
+# 拟合
+condition = (fp_bins[:-1] + fp_bins[1:]) / 2 > 1e-3
+curve_fit_params_all_left, _ = curve_fit(
+    power_law,
+    ((fp_bins[:-1] + fp_bins[1:]) / 2)[condition],
+    n_all[condition],
 )
+print(curve_fit_params_all_left)
+x_fit = np.logspace(np.log10(min_fp), np.log10(max_fp), 100)
+y_fit = power_law(x_fit, *curve_fit_params_all_left)
+plt.plot(x_fit, y_fit, color="#CCCCCC", linestyle="--", zorder=-1)
 
-plt.axvline(1e-3, color="C3", linewidth=0.5, label="Old Threshold")
+condition = ((fp_bins[:-1] + fp_bins[1:]) / 2 < 1e-8) & (
+    (fp_bins[:-1] + fp_bins[1:]) / 2 > 1e-30
+)
+curve_fit_params_all_right, _ = curve_fit(
+    power_law,
+    ((fp_bins[:-1] + fp_bins[1:]) / 2)[condition],
+    n_all[condition],
+    p0=curve_fit_params_all_left,
+)
+print(curve_fit_params_all_right)
+x_fit = np.logspace(np.log10(min_fp), np.log10(max_fp), 100)
+y_fit = power_law(x_fit, *curve_fit_params_all_right)
+plt.plot(x_fit, y_fit, color="#CCCCCC", linestyle="--", zorder=-1)
 
-plt.legend()
+condition = ((fp_bins[:-1] + fp_bins[1:]) / 2 < 1e-2) & (
+    (fp_bins[:-1] + fp_bins[1:]) / 2 > 1e-30
+)
+curve_fit_params_associated, _ = curve_fit(
+    power_law,
+    ((fp_bins[:-1] + fp_bins[1:]) / 2)[condition],
+    n_associated[condition],
+    p0=curve_fit_params_all_right,
+)
+x_fit = np.logspace(np.log10(min_fp), np.log10(max_fp), 100)
+y_fit = power_law(x_fit, *curve_fit_params_associated)
+plt.plot(x_fit, y_fit, color="#CCCCCC", linestyle="--", zorder=-1)
+
+plt.axvspan(1e-30, 1e-5, facecolor="C2", edgecolor="None", alpha=0.1, zorder=-2)
+plt.axvspan(1e-5, 1, facecolor="C1", edgecolor="None", alpha=0.1, zorder=-2)
+plt.axvspan(1, 20, facecolor="C3", edgecolor="None", alpha=0.1, zorder=-2)
+
+
+plt.ylim(0.5, 1e6)
+
+# 手动创建图例句柄
+legend_handles = [
+    mpatches.Patch(edgecolor="C0", facecolor="None", label="All Signals"),
+    mpatches.Patch(edgecolor="C1", facecolor="None", label="Mis-associated Signals"),
+    mpatches.Patch(edgecolor="C2", facecolor="None", label="Signals with Lightning"),
+    plt.Line2D([0], [0], color="#CCCCCC", linestyle="--", label="Power Law Fit"),
+    mpatches.Patch(facecolor="C2", edgecolor="None", alpha=0.1, label="Accept"),
+    mpatches.Patch(
+        facecolor="C1", edgecolor="None", alpha=0.1, label="Associated Only"
+    ),
+    mpatches.Patch(facecolor="C3", edgecolor="None", alpha=0.1, label="Reject"),
+]
+plt.legend(handles=legend_handles)
 plt.xlabel("FP per year")
 plt.ylabel("Number")
 
