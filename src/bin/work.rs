@@ -1,7 +1,8 @@
+use blink::hxmt::HxmtScintillator;
 use rusqlite::Connection;
 
 use blink::database::{fail_task, finish_task, get_task, write_signal};
-use blink::types::Instance as BlinkInstance;
+use blink::types::{Event, Instance as BlinkInstance};
 
 fn consume() {
     let hostname = hostname::get().unwrap().into_string().unwrap();
@@ -59,7 +60,12 @@ fn consume() {
                 let instance = blink::hxmt::Instance::from_epoch(&time);
                 match instance {
                     Ok(instance) => {
-                        for channel in instance.event_file.channel {
+                        for channel in instance
+                            .into_iter()
+                            .filter(|event| !event.detector.am241)
+                            .filter(|event| event.detector.scintillator == HxmtScintillator::CsI)
+                            .map(|event| event.energy())
+                        {
                             result[channel as usize] += 1;
                         }
                         Ok(serde_json::to_value(result).unwrap().to_string())
