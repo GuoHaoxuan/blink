@@ -56,7 +56,7 @@ fn consume() {
     while let Some((time, what)) = blink::database::get_statistics(&conn, &worker) {
         let result = match what.as_str() {
             "HXMT-HE: Energy Spectrum" => {
-                let mut result = vec![0u64; 256];
+                let mut result = vec![0u64; 256 + 20];
                 let instance = blink::hxmt::Instance::from_epoch(&time);
                 match instance {
                     Ok(instance) => {
