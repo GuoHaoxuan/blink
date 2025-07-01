@@ -4,6 +4,7 @@ import cartopy.crs as ccrs
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+from dateutil.parser import parse
 from PIL import Image
 
 # 增加PIL图像大小限制
@@ -13,13 +14,13 @@ conn = sqlite3.connect("blink.db")
 cursor = conn.cursor()
 cursor.execute(
     """
-    SELECT longitude, latitude, associated_lightning_count
+    SELECT longitude, latitude, associated_lightning_count, start
     FROM signal
     WHERE start < '2025-01-01'
         AND (fp_year < 1e-5 OR (fp_year < 1 AND associated_lightning_count > 0));
     """
 )
-signals = cursor.fetchall()
+signals = [row for row in cursor.fetchall() if parse(row[3]).month in [6, 7, 8]]
 cursor.close()
 conn.close()
 
@@ -101,10 +102,10 @@ ax_map.fill(
 ax_map.fill(
     SAA_Lon_ARR_Raw,
     SAA_Lat_ARR_Raw,
-    facecolor="#DDDDDD",
+    facecolor="C3",
     edgecolor="None",
     linewidth=0,
-    # alpha=0.1,
+    alpha=0.1,
     transform=ccrs.PlateCarree(),
 )
 
@@ -176,7 +177,7 @@ legend_handles = [
     mpatches.Patch(facecolor="C0", edgecolor="None", label="All Signals"),
     mpatches.Patch(facecolor="C2", edgecolor="None", label="Lightning Associated"),
     # plt.Line2D([], [], color="black", linestyle="-", label="Coastline"),
-    mpatches.Patch(facecolor="#DDDDDD", edgecolor="None", label="SAA"),
+    mpatches.Patch(facecolor="C3", edgecolor="None", alpha=0.1, label="SAA"),
 ]
 legend_ax.legend(
     handles=legend_handles, loc="center", ncol=len(legend_handles), frameon=False
@@ -187,4 +188,4 @@ legend_ax.axis("off")  # 隐藏图例轴
 # 隐藏地图顶部和右侧的tick短线
 ax_map.tick_params(top=False, right=False)
 
-plt.savefig("hxmt-catalog/output/geo-distribution2.pdf", bbox_inches="tight")
+plt.savefig("hxmt-catalog/output/jja.pdf", bbox_inches="tight")

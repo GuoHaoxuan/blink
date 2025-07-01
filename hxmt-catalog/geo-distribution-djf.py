@@ -4,6 +4,7 @@ import cartopy.crs as ccrs
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+from dateutil.parser import parse
 from PIL import Image
 
 # 增加PIL图像大小限制
@@ -13,13 +14,13 @@ conn = sqlite3.connect("blink.db")
 cursor = conn.cursor()
 cursor.execute(
     """
-    SELECT longitude, latitude, associated_lightning_count
+    SELECT longitude, latitude, associated_lightning_count, start
     FROM signal
     WHERE start < '2025-01-01'
         AND (fp_year < 1e-5 OR (fp_year < 1 AND associated_lightning_count > 0));
     """
 )
-signals = cursor.fetchall()
+signals = [row for row in cursor.fetchall() if parse(row[3]).month in [12, 1, 2]]
 cursor.close()
 conn.close()
 
@@ -40,19 +41,18 @@ plt.rcParams.update(
     }
 )
 cm = 1 / 2.54
-fig = plt.figure(figsize=(20 * cm, 6.6 * cm), dpi=1200)
+fig = plt.figure(figsize=(20 * cm, 5.72 * cm), dpi=1200)
 
 # 创建网格布局，共享坐标轴
 # 调整width_ratios，让右侧直方图更窄，以匹配地图的长宽比
 gs = fig.add_gridspec(
-    3, 2, height_ratios=[0.7, 1, 3.5], width_ratios=[12, 1], hspace=0, wspace=0
+    2, 2, height_ratios=[1, 3.5], width_ratios=[12, 1], hspace=0, wspace=0
 )
 
 # 创建子图并共享坐标轴
-ax_map = fig.add_subplot(gs[2, 0], projection=ccrs.PlateCarree(central_longitude=150))
-longitude_ax = fig.add_subplot(gs[1, 0])
-latitude_ax = fig.add_subplot(gs[2, 1])
-legend_ax = fig.add_subplot(gs[0, :])
+ax_map = fig.add_subplot(gs[1, 0], projection=ccrs.PlateCarree(central_longitude=150))
+longitude_ax = fig.add_subplot(gs[0, 0])
+latitude_ax = fig.add_subplot(gs[1, 1])
 
 ax_map.set_extent([-180, 180, -43, 43], crs=ccrs.PlateCarree())
 fname = "NE1_HR_LC_SR_W_DR/NE1_HR_LC_SR_W_DR.tif"
@@ -101,10 +101,10 @@ ax_map.fill(
 ax_map.fill(
     SAA_Lon_ARR_Raw,
     SAA_Lat_ARR_Raw,
-    facecolor="#DDDDDD",
+    facecolor="C3",
     edgecolor="None",
     linewidth=0,
-    # alpha=0.1,
+    alpha=0.1,
     transform=ccrs.PlateCarree(),
 )
 
@@ -172,19 +172,7 @@ latitude_ax.tick_params(labelleft=False, left=False)  # 隐藏y轴标签和左�
 # latitude_ax.set_xscale("log")  # 设置x轴为对数刻度
 latitude_ax.set_xlabel("Number")
 
-legend_handles = [
-    mpatches.Patch(facecolor="C0", edgecolor="None", label="All Signals"),
-    mpatches.Patch(facecolor="C2", edgecolor="None", label="Lightning Associated"),
-    # plt.Line2D([], [], color="black", linestyle="-", label="Coastline"),
-    mpatches.Patch(facecolor="#DDDDDD", edgecolor="None", label="SAA"),
-]
-legend_ax.legend(
-    handles=legend_handles, loc="center", ncol=len(legend_handles), frameon=False
-)
-# hide legend axes
-legend_ax.axis("off")  # 隐藏图例轴
-
 # 隐藏地图顶部和右侧的tick短线
 ax_map.tick_params(top=False, right=False)
 
-plt.savefig("hxmt-catalog/output/geo-distribution2.pdf", bbox_inches="tight")
+plt.savefig("hxmt-catalog/output/djf.pdf", bbox_inches="tight")

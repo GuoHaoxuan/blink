@@ -4,11 +4,11 @@ import sqlite3
 import matplotlib.pyplot as plt
 import numpy as np
 
-conn = sqlite3.connect("statistics.db")
+conn = sqlite3.connect("blink.db")
 cursor = conn.cursor()
 cursor.execute(
     """
-    SELECT value FROM statistics WHERE status = 'Finished'
+    SELECT value FROM statistics WHERE status = 'Finished' AND time < '2025-01-01'
     """
 )
 data = cursor.fetchall()
@@ -33,20 +33,24 @@ plt.rcParams.update(
         "lines.linewidth": 1,
     }
 )
-plt.figure(dpi=1200)
+cm = 1 / 2.54
+plt.figure(figsize=(8 * cm, 7 * cm), dpi=1200)
 plt.stairs(
     data_new,
     np.arange(len(data_new) + 1),
     edgecolor="C0",
     facecolor="None",
+    label="HE CsI Spectrum",
 )
 plt.axvline(
     38,
     color="C3",
     lw=0.5,
+    label="Threshold",
 )
 plt.xlabel("Channel")
 plt.ylabel("Frequency")
+plt.legend()
 
 plt.tight_layout()
 

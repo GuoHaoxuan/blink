@@ -44,8 +44,9 @@ def satellite_time_to_iso8601(satellite_time: float) -> str:
 
 data = fits.open("HXMT_20180826T12_HE-Evt_FFFFFF_V1_1K.FITS")
 time = data["Events"].data["Time"]
+pulse_width = data["Events"].data["Pulse_Width"]
 time_ref = isot_to_satellite_time("2018-08-26T12:31:59.217Z")
-cond = (time > time_ref - 20e-3) & (time < time_ref + 20e-3)
+cond = (time > time_ref - 50e-3) & (time < time_ref + 50e-3) & (pulse_width >= 75)
 time = time[cond]
 time = time - time_ref
 channel = np.array(data["Events"].data["Channel"], dtype=np.int64)
@@ -63,16 +64,17 @@ plt.rcParams.update(
         "lines.linewidth": 1,
     }
 )
-plt.figure(dpi=1200)
+cm = 1 / 2.54
+plt.figure(figsize=(20 * cm, 7 * cm), dpi=1200)
 
 n, bins, patches = plt.hist(
     time,
-    bins=np.linspace(-20e-3, 20e-3, 100),
+    bins=np.linspace(-50e-3, 50e-3, 100),
     histtype="step",
     edgecolor="C0",
 )
-plt.xlim(-20e-3, 20e-3)
-plt.xlabel("Time (s)")
+plt.xlim(-50e-3, 50e-3)
+plt.xlabel("Time Since 2018-08-26T12:31:59.217Z (s)")
 plt.ylabel("Frequency")
 
 twinx = plt.twinx()
@@ -81,7 +83,7 @@ twinx.set_ylabel("Channel")
 
 legend = plt.legend(
     handles=[patches[0], sca],
-    labels=["Light Curve", "Events"],
+    labels=["Light Curve", "HE CsI Event"],
     loc="upper left",
 )
 
