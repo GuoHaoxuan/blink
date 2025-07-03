@@ -22,8 +22,8 @@ use crate::{
 };
 
 use super::{
+    super::ec::HxmtCsiEc,
     att_file::AttFile,
-    ec::HxmtCsiEc,
     eng_file::EngFile,
     event_file::{EventFile, Iter},
     orbit_file::OrbitFile,

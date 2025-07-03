@@ -2,7 +2,7 @@ use serde::Serialize;
 
 use crate::types::{GenericEvent, Group, Time};
 
-use super::{Hxmt, detector::HxmtDetectorType, instance::HxmtCsiEc};
+use super::{Hxmt, detector::HxmtDetectorType, ec::HxmtCsiEc};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Serialize)]
 pub struct HxmtEvent {

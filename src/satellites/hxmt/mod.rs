@@ -1,4 +1,5 @@
 mod detector;
+pub mod ec;
 mod event;
 mod instance;
 pub mod saturation;

@@ -35,3 +35,10 @@ pub static HXMT_EC_DIR: LazyLock<String> = LazyLock::new(|| {
     env::var("HXMT_EC_DIR")
         .unwrap_or_else(|_| "/hxmtfs2/work/GRB/Software/RSPgenerator_v1/EC_FWHM".to_string())
 });
+
+pub static HXMT_NAI_EC_FILE: LazyLock<String> = LazyLock::new(|| {
+    env::var("HXMT_NAI_EC_FILE").unwrap_or_else(|_| {
+        "/hxmtfs/work/users/hxmtsoft/CALDB/CALDB2.07/data/hxmt/he/bcf/hxmt_he_e2p_20190311.fits"
+            .to_string()
+    })
+});
