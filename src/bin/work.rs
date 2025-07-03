@@ -1,4 +1,4 @@
-use blink::hxmt::HxmtScintillator;
+use blink::satellites::hxmt::HxmtScintillator;
 use rusqlite::Connection;
 
 use blink::database::{fail_task, finish_task, get_task, write_signal};
@@ -16,9 +16,9 @@ fn consume() {
     while let Some((time, satellite, detector)) = get_task(&conn, &worker) {
         let hour: anyhow::Result<Box<dyn BlinkInstance>> =
             match (satellite.as_str(), detector.as_str()) {
-                ("Fermi", "GBM") => blink::fermi::Instance::from_epoch(&time)
+                ("Fermi", "GBM") => blink::satellites::fermi::Instance::from_epoch(&time)
                     .map(|inst| Box::new(inst) as Box<dyn BlinkInstance>),
-                ("HXMT", "HE") => blink::hxmt::Instance::from_epoch(&time)
+                ("HXMT", "HE") => blink::satellites::hxmt::Instance::from_epoch(&time)
                     .map(|inst| Box::new(inst) as Box<dyn BlinkInstance>),
                 _ => panic!("Unknown satellite or detector"),
             };
@@ -57,7 +57,7 @@ fn consume() {
         let result = match what.as_str() {
             "HXMT-HE: Energy Spectrum" => {
                 let mut result = vec![0u64; 256 + 20];
-                let instance = blink::hxmt::Instance::from_epoch(&time);
+                let instance = blink::satellites::hxmt::Instance::from_epoch(&time);
                 match instance {
                     Ok(instance) => {
                         for channel in instance

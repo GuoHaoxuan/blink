@@ -2,9 +2,9 @@ use std::iter::zip;
 
 use crate::types::{Ebounds, Time};
 
-use crate::fermi::detector::FermiDetectorType;
-use crate::fermi::event::FermiEvent;
-use crate::fermi::Fermi;
+use crate::satellites::fermi::Fermi;
+use crate::satellites::fermi::detector::FermiDetectorType;
+use crate::satellites::fermi::event::FermiEvent;
 
 pub(super) struct File {
     // HDU 1: EBOUNDS

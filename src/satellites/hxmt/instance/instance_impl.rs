@@ -3,17 +3,16 @@ use std::path::Path;
 use anyhow::{Context, Result, anyhow};
 use chrono::{TimeDelta, prelude::*};
 use itertools::Itertools;
-use statrs::statistics::Statistics;
 
 use crate::{
     env::HXMT_1K_DIR,
-    hxmt::{
+    lightning::{associated_lightning, coincidence_prob},
+    satellites::hxmt::{
         Hxmt,
         detector::HxmtScintillator,
         event::HxmtEvent,
         saturation::{get_all_filenames, rec_sci_data},
     },
-    lightning::{associated_lightning, coincidence_prob},
     search::{
         algorithms::{SearchConfig, search_new},
         lightcurve::light_curve,
@@ -24,7 +23,7 @@ use crate::{
 
 use super::{
     att_file::AttFile,
-    ec::HxmtEc,
+    ec::HxmtCsiEc,
     eng_file::EngFile,
     event_file::{EventFile, Iter},
     orbit_file::OrbitFile,
@@ -37,7 +36,7 @@ pub struct Instance {
     sci_files: [SciFile; 3],
     pub orbit_file: OrbitFile,
     pub att_file: AttFile,
-    pub hxmt_ec: HxmtEc,
+    pub hxmt_ec: HxmtCsiEc,
     span: [Time<Hxmt>; 2],
 }
 
@@ -105,7 +104,7 @@ impl InstanceTrait for Instance {
             SciFile::new(&sci_files[1])?,
             SciFile::new(&sci_files[2])?,
         ];
-        let hxmt_ec = HxmtEc::from_datetime(epoch)
+        let hxmt_ec = HxmtCsiEc::from_datetime(epoch)
             .with_context(|| format!("Failed to create HxmtEc from datetime: {}", epoch))?;
         Ok(Self {
             event_file,
@@ -200,9 +199,6 @@ impl InstanceTrait for Instance {
                     distance_tolerance,
                     lightning_window,
                 );
-                fn to_general(event: &HxmtEvent) -> [f64; 2] {
-                    [event.energy() as f64, event.energy() as f64]
-                }
                 let original_events = original_events_extended
                     .iter()
                     .filter(|event| event.time() >= trigger.start && event.time() <= trigger.stop)
@@ -241,22 +237,6 @@ impl InstanceTrait for Instance {
                         count_filtered,
                         count_filtered_best,
                         trigger.mean / trigger.bin_size_best.to_seconds(),
-                        original_events
-                            .iter()
-                            .map(|event| event.to_general(to_general).energy[0])
-                            .mean(),
-                        original_events_best
-                            .iter()
-                            .map(|event| event.to_general(to_general).energy[0])
-                            .mean(),
-                        filtered_events
-                            .iter()
-                            .map(|event| event.to_general(to_general).energy[0])
-                            .mean(),
-                        filtered_events_best
-                            .iter()
-                            .map(|event| event.to_general(to_general).energy[0])
-                            .mean(),
                         original_events
                             .iter()
                             .filter(|event| event.detector().acd != 0)
@@ -303,7 +283,7 @@ impl InstanceTrait for Instance {
                             / filtered_events_best.len() as f64,
                         original_events_extended
                             .iter()
-                            .map(|event| event.to_general(to_general))
+                            .map(|event| event.to_general())
                             .collect(),
                         light_curve(
                             &self

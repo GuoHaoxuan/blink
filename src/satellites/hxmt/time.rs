@@ -5,8 +5,8 @@ use chrono::prelude::*;
 
 use crate::types::Satellite;
 
-use super::event::HxmtEvent;
 use super::Hxmt;
+use super::event::HxmtEvent;
 
 impl Satellite for Hxmt {
     type Event = HxmtEvent;

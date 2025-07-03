@@ -2,7 +2,7 @@ use serde::Serialize;
 
 use crate::types::{GenericEvent, Group, Time};
 
-use super::{Hxmt, detector::HxmtDetectorType};
+use super::{Hxmt, detector::HxmtDetectorType, instance::HxmtCsiEc};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Serialize)]
 pub struct HxmtEvent {
@@ -29,10 +29,13 @@ impl crate::types::Event for HxmtEvent {
         self.energy
     }
 
-    fn to_general(&self, ec_function: impl Fn(&Self) -> [f64; 2]) -> GenericEvent {
+    fn to_general(&self) -> GenericEvent {
+        let ec = HxmtCsiEc::from_datetime(&self.time.to_chrono()).unwrap();
         GenericEvent {
             time: self.time.to_chrono(),
-            energy: ec_function(self),
+            energy_channel: self.energy as u32,
+            energy_deposition: ec.channel_to_energy(self.energy).unwrap(),
+            energy_incident: 0.0, // [TODO] Placeholder, as we don't have incident energy in this context
             detector: serde_json::to_value(self.detector).unwrap(),
         }
     }

@@ -4,7 +4,7 @@ mod rec_sci_data_impl;
 
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::prelude::*;
 
 use crate::env::HXMT_1B_DIR;

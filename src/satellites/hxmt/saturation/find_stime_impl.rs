@@ -1,5 +1,5 @@
 use crate::{
-    hxmt::{instance::EngFile, Hxmt},
+    satellites::hxmt::{Hxmt, instance::EngFile},
     types::Time,
 };
 use anyhow::Result;
@@ -38,7 +38,7 @@ pub fn find_stime(eng_file: &EngFile, evt_time: Time<Hxmt>) -> Result<(i32, u64,
         // println!("burstLoc in this unit (UTC time) is {} row.", index);
         stime_a = stime[index];
         stime_type = StimeType::GpsNormal; // 代表 GPS 正常状态
-                                           // println!("burst stime in this unit is: {}.", stime_a);
+    // println!("burst stime in this unit is: {}.", stime_a);
     } else {
         let stime_diff = bus_time
             .iter()
@@ -63,7 +63,7 @@ pub fn find_stime(eng_file: &EngFile, evt_time: Time<Hxmt>) -> Result<(i32, u64,
         // println!("burstLoc in this unit (UTC time) is {} row.", index);
         stime_a = stime[index];
         stime_type = StimeType::GpsUnlocked; // 代表 GPS 失锁状态
-                                             // println!("burst stime in this unit is: {}.", stime_a);
+        // println!("burst stime in this unit is: {}.", stime_a);
     }
 
     Ok((stime_a, time_stamp, stime_type))

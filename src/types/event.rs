@@ -11,12 +11,14 @@ pub trait Event: Serialize + Eq + Ord + Copy + Group {
     fn time(&self) -> Time<Self::Satellite>;
     fn energy(&self) -> Self::EnergyType;
     // fn detector(&self) -> Self::DetectorType;
-    fn to_general(&self, ec_function: impl Fn(&Self) -> [f64; 2]) -> GenericEvent;
+    fn to_general(&self) -> GenericEvent;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenericEvent {
     pub time: DateTime<Utc>,
-    pub energy: [f64; 2],
+    pub energy_channel: u32,
+    pub energy_deposition: f64,
+    pub energy_incident: f64,
     pub detector: serde_json::Value,
 }

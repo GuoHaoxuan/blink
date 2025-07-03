@@ -1,7 +1,7 @@
 use crate::{
-    hxmt::{
-        instance::{EngFile, SciFile},
+    satellites::hxmt::{
         Hxmt,
+        instance::{EngFile, SciFile},
     },
     types::Time,
 };

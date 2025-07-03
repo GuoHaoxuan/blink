@@ -34,10 +34,12 @@ impl crate::types::Event for FermiEvent {
     //     self.detector
     // }
 
-    fn to_general(&self, ec_function: impl Fn(&Self) -> [f64; 2]) -> GenericEvent {
+    fn to_general(&self) -> GenericEvent {
         GenericEvent {
             time: self.time.to_chrono(),
-            energy: ec_function(self),
+            energy_channel: self.energy as u32,
+            energy_deposition: 0.0, // [TODO] Placeholder, as we don't have energy deposition in this context
+            energy_incident: 0.0, // [TODO] Placeholder, as we don't have incident energy in this context
             detector: serde_json::Value::String(self.detector.to_string()),
         }
     }

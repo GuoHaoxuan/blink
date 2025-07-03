@@ -33,10 +33,6 @@ fn main() {
         "flux_best",
         "flux_filtered",
         "flux_filtered_best",
-        "mean_energy",
-        "mean_energy_best",
-        "mean_energy_filtered",
-        "mean_energy_filtered_best",
         "veto_proportion",
         "veto_proportion_best",
         "veto_proportion_filtered",
@@ -104,10 +100,6 @@ fn main() {
                 flux_best,
                 flux_filtered,
                 flux_filtered_best,
-                mean_energy,
-                mean_energy_best,
-                mean_energy_filtered,
-                mean_energy_filtered_best,
                 veto_proportion,
                 veto_proportion_best,
                 veto_proportion_filtered,
@@ -163,40 +155,36 @@ fn main() {
         let flux_best = row.get::<_, f64>(14)?;
         let flux_filtered = row.get::<_, f64>(15)?;
         let flux_filtered_best = row.get::<_, f64>(16)?;
-        let mean_energy = row.get::<_, f64>(17)?;
-        let mean_energy_best = row.get::<_, f64>(18)?;
-        let mean_energy_filtered = row.get::<_, f64>(19)?;
-        let mean_energy_filtered_best = row.get::<_, f64>(20)?;
-        let veto_proportion = row.get::<_, f64>(21)?;
-        let veto_proportion_best = row.get::<_, f64>(22)?;
-        let veto_proportion_filtered = row.get::<_, f64>(23)?;
-        let veto_proportion_filtered_best = row.get::<_, f64>(24)?;
-        let simultaneous_proportion = row.get::<_, f64>(25)?;
-        let simultaneous_proportion_best = row.get::<_, f64>(26)?;
-        let simultaneous_proportion_filtered = row.get::<_, f64>(27)?;
-        let simultaneous_proportion_filtered_best = row.get::<_, f64>(28)?;
-        let events = row.get::<_, String>(29)?;
-        let light_curve_1s = row.get::<_, String>(30)?;
-        let light_curve_1s_filtered = row.get::<_, String>(31)?;
-        let light_curve_100ms = row.get::<_, String>(32)?;
-        let light_curve_100ms_filtered = row.get::<_, String>(33)?;
-        let longitude = row.get::<_, f64>(34)?;
-        let latitude = row.get::<_, f64>(35)?;
-        let altitude = row.get::<_, f64>(36)?;
-        let q1 = row.get::<_, f64>(37)?;
-        let q2 = row.get::<_, f64>(38)?;
-        let q3 = row.get::<_, f64>(39)?;
-        let orbit = row.get::<_, String>(40)?;
-        let lightnings = row.get::<_, String>(41)?;
-        let associated_lightning_count = row.get::<_, u32>(42)?;
-        let coincidence_probability = row.get::<_, f64>(43)?;
-        let mean_solar_time = row.get::<_, String>(44)?;
-        let apparent_solar_time = row.get::<_, String>(45)?;
-        let day_of_year = row.get::<_, u32>(46)?;
-        let month = row.get::<_, u32>(47)?;
-        let solar_zenith_angle = row.get::<_, f64>(48)?;
-        let solar_zenith_angle_at_noon = row.get::<_, f64>(49)?;
-        let solar_azimuth_angle = row.get::<_, f64>(50)?;
+        let veto_proportion = row.get::<_, f64>(17)?;
+        let veto_proportion_best = row.get::<_, f64>(18)?;
+        let veto_proportion_filtered = row.get::<_, f64>(19)?;
+        let veto_proportion_filtered_best = row.get::<_, f64>(20)?;
+        let simultaneous_proportion = row.get::<_, f64>(21)?;
+        let simultaneous_proportion_best = row.get::<_, f64>(22)?;
+        let simultaneous_proportion_filtered = row.get::<_, f64>(23)?;
+        let simultaneous_proportion_filtered_best = row.get::<_, f64>(24)?;
+        let events = row.get::<_, String>(25)?;
+        let light_curve_1s = row.get::<_, String>(26)?;
+        let light_curve_1s_filtered = row.get::<_, String>(27)?;
+        let light_curve_100ms = row.get::<_, String>(28)?;
+        let light_curve_100ms_filtered = row.get::<_, String>(29)?;
+        let longitude = row.get::<_, f64>(30)?;
+        let latitude = row.get::<_, f64>(31)?;
+        let altitude = row.get::<_, f64>(32)?;
+        let q1 = row.get::<_, f64>(33)?;
+        let q2 = row.get::<_, f64>(34)?;
+        let q3 = row.get::<_, f64>(35)?;
+        let orbit = row.get::<_, String>(36)?;
+        let lightnings = row.get::<_, String>(37)?;
+        let associated_lightning_count = row.get::<_, u32>(38)?;
+        let coincidence_probability = row.get::<_, f64>(39)?;
+        let mean_solar_time = row.get::<_, String>(40)?;
+        let apparent_solar_time = row.get::<_, String>(41)?;
+        let day_of_year = row.get::<_, u32>(42)?;
+        let month = row.get::<_, u32>(43)?;
+        let solar_zenith_angle = row.get::<_, f64>(44)?;
+        let solar_zenith_angle_at_noon = row.get::<_, f64>(45)?;
+        let solar_azimuth_angle = row.get::<_, f64>(46)?;
         Ok(Signal {
             start: serde_json::from_str(&format!("\"{}\"", start)).unwrap(),
             start_best: serde_json::from_str(&format!("\"{}\"", start_best)).unwrap(),
@@ -215,10 +203,6 @@ fn main() {
             flux_best,
             flux_filtered,
             flux_filtered_best,
-            mean_energy,
-            mean_energy_best,
-            mean_energy_filtered,
-            mean_energy_filtered_best,
             veto_proportion,
             veto_proportion_best,
             veto_proportion_filtered,
@@ -288,10 +272,6 @@ fn main() {
             signal.flux_best.to_string(),
             signal.flux_filtered.to_string(),
             signal.flux_filtered_best.to_string(),
-            signal.mean_energy.to_string(),
-            signal.mean_energy_best.to_string(),
-            signal.mean_energy_filtered.to_string(),
-            signal.mean_energy_filtered_best.to_string(),
             signal.veto_proportion.to_string(),
             signal.veto_proportion_best.to_string(),
             signal.veto_proportion_filtered.to_string(),

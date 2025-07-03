@@ -5,8 +5,8 @@ use chrono::prelude::*;
 
 use crate::types::Satellite;
 
-use super::event::FermiEvent;
 use super::Fermi;
+use super::event::FermiEvent;
 
 impl Satellite for Fermi {
     type Event = FermiEvent;
