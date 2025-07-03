@@ -126,8 +126,8 @@ impl InstanceTrait for Instance {
             .filter(|(count, _)| *count == 1)
             .map(|(_, event)| event)
             .filter(|event| match event.detector() {
-                FermiDetectorType::Nai(_) => event.energy() >= 30 && event.energy() <= 124,
-                FermiDetectorType::Bgo(_) => event.energy() >= 19 && event.energy() <= 126,
+                FermiDetectorType::Nai(_) => event.channel() >= 30 && event.channel() <= 124,
+                FermiDetectorType::Bgo(_) => event.channel() >= 19 && event.channel() <= 126,
             })
             .collect();
         let gti = self.gti();

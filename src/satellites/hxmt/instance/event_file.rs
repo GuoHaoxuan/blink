@@ -119,7 +119,7 @@ impl Iterator for Iter<'_> {
             }
             let event = HxmtEvent {
                 time: Time::seconds(self.event_file.time[self.index]),
-                energy,
+                channel: energy,
                 detector: HxmtDetectorType {
                     id: self.event_file.det_id[self.index],
                     acd: self.event_file.acd[self.index]

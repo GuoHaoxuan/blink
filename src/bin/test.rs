@@ -12,7 +12,7 @@ fn test() {
     let events = evt_file
         .into_iter()
         .filter(|event| !event.detector.am241)
-        .filter(|event| event.energy() >= CHANNEL_THRESHOLD)
+        .filter(|event| event.channel() >= CHANNEL_THRESHOLD)
         .collect::<Vec<_>>();
     let test_start = DateTime::parse_from_rfc3339("2017-08-24T10:00:00+00:00")
         .unwrap()

@@ -129,7 +129,7 @@ impl InstanceTrait for Instance {
             // .dedup_by_with_count(|a, b| b.time() - a.time() < Span::seconds(0.3e-6))
             // .filter(|(count, _)| *count == 1)
             // .map(|(_, event)| event)
-            .filter(|event| event.energy() >= CHANNEL_THRESHOLD)
+            .filter(|event| event.channel() >= CHANNEL_THRESHOLD)
             // .filter(|event| !event.detector().acd.iter().any(|acd| *acd))
             // .map(|event| event.time())
             .collect::<Vec<_>>();
@@ -168,7 +168,7 @@ impl InstanceTrait for Instance {
                     .collect::<Vec<_>>();
                 let filtered_events_extended = original_events_extended
                     .iter()
-                    .filter(|event| event.energy() >= CHANNEL_THRESHOLD)
+                    .filter(|event| event.channel() >= CHANNEL_THRESHOLD)
                     .collect::<Vec<_>>();
                 if filtered_events_extended.len() >= 100000 {
                     eprintln!(

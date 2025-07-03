@@ -5,11 +5,11 @@ use super::{Group, Satellite, Time};
 
 pub trait Event: Serialize + Eq + Ord + Copy + Group {
     type Satellite: Satellite;
-    type EnergyType;
+    type ChannelType;
     // type DetectorType;
 
     fn time(&self) -> Time<Self::Satellite>;
-    fn energy(&self) -> Self::EnergyType;
+    fn channel(&self) -> Self::ChannelType;
     // fn detector(&self) -> Self::DetectorType;
     fn to_general(&self) -> GenericEvent;
 }
@@ -17,8 +17,6 @@ pub trait Event: Serialize + Eq + Ord + Copy + Group {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenericEvent {
     pub time: DateTime<Utc>,
-    pub energy_channel: u32,
-    pub energy_deposition: f64,
-    pub energy_incident: f64,
+    pub channel: u32,
     pub detector: serde_json::Value,
 }

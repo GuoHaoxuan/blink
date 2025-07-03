@@ -1,6 +1,6 @@
 use std::iter::zip;
 
-use crate::types::{Ebounds, Time};
+use crate::types::Time;
 
 use crate::satellites::fermi::Fermi;
 use crate::satellites::fermi::detector::FermiDetectorType;
@@ -9,8 +9,8 @@ use crate::satellites::fermi::event::FermiEvent;
 pub(super) struct File {
     // HDU 1: EBOUNDS
     // ebounds_channel: Vec<i16>,
-    ebounds_e_min: Vec<f32>,
-    ebounds_e_max: Vec<f32>,
+    // ebounds_e_min: Vec<f32>,
+    // ebounds_e_max: Vec<f32>,
 
     // HDU 2: EVENTS
     events_time: Vec<f64>,
@@ -32,10 +32,10 @@ impl File {
         let mut fptr = fitsio::FitsFile::open(filename)?;
 
         // HDU 1: EBOUNDS
-        let ebounds = fptr.hdu("EBOUNDS")?;
+        // let ebounds = fptr.hdu("EBOUNDS")?;
         // let ebounds_channel = ebounds.read_col::<i16>(&mut fptr, "CHANNEL")?;
-        let ebounds_e_min = ebounds.read_col::<f32>(&mut fptr, "E_MIN")?;
-        let ebounds_e_max = ebounds.read_col::<f32>(&mut fptr, "E_MAX")?;
+        // let ebounds_e_min = ebounds.read_col::<f32>(&mut fptr, "E_MIN")?;
+        // let ebounds_e_max = ebounds.read_col::<f32>(&mut fptr, "E_MAX")?;
 
         // HDU 2: EVENTS
         let events = fptr.hdu("EVENTS")?;
@@ -49,8 +49,8 @@ impl File {
 
         Ok(Self {
             // ebounds_channel,
-            ebounds_e_min,
-            ebounds_e_max,
+            // ebounds_e_min,
+            // ebounds_e_max,
             events_time,
             events_pha,
             gti_start,
@@ -65,13 +65,13 @@ impl File {
             .collect()
     }
 
-    pub(super) fn ebounds(&self) -> Ebounds {
-        self.ebounds_e_min
-            .iter()
-            .zip(self.ebounds_e_max.iter())
-            .map(|(e_min, e_max)| [*e_min as f64, *e_max as f64])
-            .collect()
-    }
+    // pub(super) fn ebounds(&self) -> Ebounds {
+    //     self.ebounds_e_min
+    //         .iter()
+    //         .zip(self.ebounds_e_max.iter())
+    //         .map(|(e_min, e_max)| [*e_min as f64, *e_max as f64])
+    //         .collect()
+    // }
 }
 
 impl<'a> IntoIterator for &'a File {
@@ -98,7 +98,7 @@ impl Iterator for Iter<'_> {
         if self.index < self.file.events_time.len() {
             let event = FermiEvent {
                 time: Time::seconds(self.file.events_time[self.index]),
-                energy: self.file.events_pha[self.index],
+                channel: self.file.events_pha[self.index],
                 detector: self.file.detector,
             };
             self.index += 1;

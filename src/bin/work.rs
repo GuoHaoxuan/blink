@@ -64,7 +64,7 @@ fn consume() {
                             .into_iter()
                             .filter(|event| !event.detector.am241)
                             .filter(|event| event.detector.scintillator == HxmtScintillator::CsI)
-                            .map(|event| event.energy())
+                            .map(|event| event.channel())
                         {
                             result[channel as usize] += 1;
                         }

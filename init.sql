@@ -33,10 +33,6 @@ CREATE TABLE
         flux_best REAL NOT NULL, -- 最佳每秒通量
         flux_filtered REAL NOT NULL, -- 有效事件每秒通量
         flux_filtered_best REAL NOT NULL, -- 最佳有效事件每秒通量
-        mean_energy REAL NOT NULL, -- 平均能量
-        mean_energy_best REAL NOT NULL, -- 最佳平均能量
-        mean_energy_filtered REAL NOT NULL, -- 有效事件平均能量
-        mean_energy_filtered_best REAL NOT NULL, -- 最佳有效事件平均能量
         veto_proportion REAL NOT NULL, -- Veto 比率
         veto_proportion_best REAL NOT NULL, -- 最佳 Veto 比率
         veto_proportion_filtered REAL NOT NULL, -- 有效事件 Veto 比率
