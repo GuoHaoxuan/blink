@@ -1,15 +1,13 @@
 mod ebounds;
 mod event;
-mod group;
 mod satellite;
 mod signal;
 mod time;
 
 pub use ebounds::Ebounds;
 pub use event::{Event, GenericEvent};
-pub use group::Group;
 pub use satellite::Satellite;
-pub use signal::{Location, Signal};
+pub use signal::{Location, LocationList, Signal};
 pub use time::{Span, Time};
 
 use anyhow::Result;

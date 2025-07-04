@@ -1,7 +1,5 @@
-use crate::{
-    satellites::hxmt::{Hxmt, instance::EngFile},
-    types::Time,
-};
+use super::super::super::{data::data_1b::EngFile, types::Hxmt};
+use crate::types::Time;
 use anyhow::Result;
 
 pub enum StimeType {

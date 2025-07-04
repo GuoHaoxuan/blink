@@ -1,4 +1,3 @@
-use blink::satellites::hxmt::HxmtScintillator;
 use rusqlite::Connection;
 
 use blink::database::{fail_task, finish_task, get_task, write_signal};

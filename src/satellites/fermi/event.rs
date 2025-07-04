@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::types::{GenericEvent, Group, Time};
+use crate::types::{GenericEvent, Time};
 
 use super::{Fermi, detector::FermiDetectorType};
 
@@ -34,16 +34,6 @@ impl crate::types::Event for FermiEvent {
     //     self.detector
     // }
 
-    fn to_general(&self) -> GenericEvent {
-        GenericEvent {
-            time: self.time.to_chrono(),
-            channel: self.channel as u32,
-            detector: serde_json::Value::String(self.detector.to_string()),
-        }
-    }
-}
-
-impl Group for FermiEvent {
     fn group(&self) -> u8 {
         match self.detector {
             FermiDetectorType::Nai(0..=2) => 0,
@@ -53,6 +43,14 @@ impl Group for FermiEvent {
             FermiDetectorType::Bgo(0) => 4,
             FermiDetectorType::Bgo(1) => 5,
             _ => panic!("Invalid detector"),
+        }
+    }
+
+    fn to_general(&self) -> GenericEvent {
+        GenericEvent {
+            time: self.time.to_chrono(),
+            channel: self.channel as u32,
+            detector: serde_json::Value::String(self.detector.to_string()),
         }
     }
 }

@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{Group, Satellite, Time};
+use super::{Satellite, Time};
 
-pub trait Event: Serialize + Eq + Ord + Copy + Group {
+pub trait Event: Serialize + Eq + Ord + Copy {
     type Satellite: Satellite;
     type ChannelType;
     // type DetectorType;
@@ -11,6 +11,12 @@ pub trait Event: Serialize + Eq + Ord + Copy + Group {
     fn time(&self) -> Time<Self::Satellite>;
     fn channel(&self) -> Self::ChannelType;
     // fn detector(&self) -> Self::DetectorType;
+    fn group(&self) -> u8 {
+        0
+    }
+    fn keep_for_tgf(&self) -> bool {
+        true
+    }
     fn to_general(&self) -> GenericEvent;
 }
 

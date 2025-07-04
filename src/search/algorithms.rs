@@ -1,7 +1,7 @@
 use statrs::distribution::{DiscreteCDF, Poisson};
 
 use super::trigger::Trigger;
-use crate::types::{Event, Group, Satellite, Span, Time};
+use crate::types::{Event, Satellite, Span, Time};
 
 pub struct SearchConfig<T: Satellite> {
     pub min_duration: Span<T>,
@@ -72,7 +72,7 @@ fn poisson_cdf(cache: &mut [Vec<Option<f64>>], mean: f64, count: u32) -> f64 {
     }
 }
 
-pub fn search<E: Event + Group>(
+pub fn search<E: Event>(
     data: &[E],
     group_count: usize,
     start: Time<E::Satellite>,
@@ -198,7 +198,7 @@ pub fn poisson_isf(p: f64, lambda: f64) -> u32 {
     k
 }
 
-pub fn search_new<E: Event + Group>(
+pub fn search_new<E: Event>(
     data: &[E],
     group_number: usize,
     start: Time<E::Satellite>,

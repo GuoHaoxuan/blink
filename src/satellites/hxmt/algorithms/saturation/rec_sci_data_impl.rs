@@ -1,10 +1,8 @@
-use crate::{
-    satellites::hxmt::{
-        Hxmt,
-        instance::{EngFile, SciFile},
-    },
-    types::Time,
+use super::super::super::{
+    data::data_1b::{EngFile, SciFile},
+    types::Hxmt,
 };
+use crate::types::Time;
 
 use super::{crc_check_impl::crc_check, find_stime_impl::find_stime};
 

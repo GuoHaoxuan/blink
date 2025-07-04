@@ -11,9 +11,56 @@ use super::GenericEvent;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Location {
+    pub time: DateTime<Utc>,
     pub longitude: f64,
     pub latitude: f64,
     pub altitude: f64,
+}
+
+pub struct LocationList {
+    pub data: Vec<Location>,
+}
+
+impl LocationList {
+    pub fn interpolate(&self, time: DateTime<Utc>) -> Option<Location> {
+        let mut i = 0;
+        while i < self.data.len() - 1 && self.data[i + 1].time < time {
+            i += 1;
+        }
+        if i == self.data.len() - 1 {
+            return None;
+        }
+
+        let t0 = self.data[i].time;
+        let t1 = self.data[i + 1].time;
+        let lon0 = self.data[i].longitude;
+        let lon1 = self.data[i + 1].longitude;
+        let lat0 = self.data[i].latitude;
+        let lat1 = self.data[i + 1].latitude;
+        let alt0 = self.data[i].altitude;
+        let alt1 = self.data[i + 1].altitude;
+
+        let ratio = (time - t0).num_nanoseconds()? as f64 / (t1 - t0).num_nanoseconds()? as f64;
+
+        let lon = lon0 + (lon1 - lon0) * ratio;
+        let lat = lat0 + (lat1 - lat0) * ratio;
+        let alt = alt0 + (alt1 - alt0) * ratio;
+
+        Some(Location {
+            time,
+            longitude: lon,
+            latitude: lat,
+            altitude: alt,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Attitude {
+    pub time: DateTime<Utc>,
+    pub q1: f64,
+    pub q2: f64,
+    pub q3: f64,
 }
 
 #[derive(Debug, Serialize)]

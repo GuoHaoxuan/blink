@@ -1,8 +1,8 @@
 use serde::Serialize;
 
-use crate::types::{GenericEvent, Group, Time};
+use crate::types::{GenericEvent, Time};
 
-use super::{Hxmt, detector::HxmtDetectorType};
+use super::{Hxmt, HxmtDetectorType, HxmtScintillator};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Serialize)]
 pub struct HxmtEvent {
@@ -29,17 +29,18 @@ impl crate::types::Event for HxmtEvent {
         self.channel
     }
 
+    fn keep_for_tgf(&self) -> bool {
+        const CHANNEL_THRESHOLD: u16 = 38;
+        self.detector.scintillator == HxmtScintillator::CsI
+            && !self.detector.am241
+            && self.channel >= CHANNEL_THRESHOLD
+    }
+
     fn to_general(&self) -> GenericEvent {
         GenericEvent {
             time: self.time.to_chrono(),
             channel: self.channel as u32,
             detector: serde_json::to_value(self.detector).unwrap(),
         }
-    }
-}
-
-impl Group for HxmtEvent {
-    fn group(&self) -> u8 {
-        0
     }
 }

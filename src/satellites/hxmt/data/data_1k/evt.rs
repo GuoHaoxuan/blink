@@ -1,5 +1,4 @@
-use crate::satellites::hxmt::detector::{HxmtDetectorType, HxmtScintillator};
-use crate::satellites::hxmt::event::HxmtEvent;
+use super::super::super::types::{HxmtDetectorType, HxmtEvent, HxmtScintillator};
 use crate::types::Time;
 use anyhow::{Context, Result};
 

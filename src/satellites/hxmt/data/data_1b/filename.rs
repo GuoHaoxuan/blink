@@ -1,15 +1,7 @@
-mod crc_check_impl;
-mod find_stime_impl;
-mod rec_sci_data_impl;
-
-use std::path::Path;
-
+use crate::env::HXMT_1B_DIR;
 use anyhow::{Result, anyhow};
 use chrono::prelude::*;
-
-use crate::env::HXMT_1B_DIR;
-
-pub use rec_sci_data_impl::rec_sci_data;
+use std::path::Path;
 
 pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Option<String> {
     let code = match (type_, serial_num) {
