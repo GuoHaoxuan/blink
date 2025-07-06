@@ -45,11 +45,27 @@ impl InstanceTrait for Instance {
             },
         );
 
+        for result in &results {
+            println!(
+                "[DEBUG] Trigger found: {} - {}",
+                result.start.to_chrono(),
+                result.stop.to_chrono()
+            );
+        }
+
         let results = continuous(results, Span::seconds(10.0), Span::seconds(1.0), 10);
         let results = results
             .into_iter()
             .filter(|trigger| !self.check_saturation(trigger.start))
             .collect::<Vec<_>>();
+
+        for result in &results {
+            println!(
+                "[DEBUG] Filtered Trigger found: {} - {}",
+                result.start.to_chrono(),
+                result.stop.to_chrono()
+            );
+        }
 
         let signals = results
             .into_iter()
@@ -66,7 +82,7 @@ impl InstanceTrait for Instance {
                 let attitude = self.att_file.interpolate(trigger.start).unwrap();
                 let orbit = self.orbit_file.window(trigger.start, 1000.0);
 
-                return Signal::new(trigger, events, attitude, orbit);
+                Signal::new(trigger, events, attitude, orbit)
             })
             .collect::<Vec<_>>();
 
