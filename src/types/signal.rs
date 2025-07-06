@@ -26,6 +26,16 @@ pub struct LocationList {
 
 impl LocationList {
     pub fn interpolate(&self, time: DateTime<Utc>) -> Option<Location> {
+        println!(
+            "[DEBUG] Interpolating location for time: {}",
+            time.to_rfc3339()
+        );
+        println!("[DEBUG] Location data length: {}", self.data.len());
+        println!(
+            "[DEBUG] Time range: {} - {}",
+            self.data.first()?.time.to_rfc3339(),
+            self.data.last()?.time.to_rfc3339()
+        );
         let mut i = 0;
         while i < self.data.len() - 1 && self.data[i + 1].time < time {
             i += 1;
