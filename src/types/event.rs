@@ -24,6 +24,6 @@ pub trait Event: Serialize + Eq + Ord + Copy {
 pub struct GenericEvent {
     pub time: DateTime<Utc>,
     pub channel: u32,
-    pub detector: serde_json::Value,
+    pub info: serde_json::Value,
     pub keep: bool,
 }

@@ -40,7 +40,7 @@ impl crate::types::Event for HxmtEvent {
         GenericEvent {
             time: self.time.to_chrono(),
             channel: self.channel as u32,
-            detector: serde_json::to_value(self.detector).unwrap(),
+            info: serde_json::to_value(self.detector).unwrap(),
             keep: self.keep(),
         }
     }

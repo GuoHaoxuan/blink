@@ -50,7 +50,7 @@ impl crate::types::Event for FermiEvent {
         GenericEvent {
             time: self.time.to_chrono(),
             channel: self.channel as u32,
-            detector: serde_json::Value::String(self.detector.to_string()),
+            info: serde_json::Value::String(self.detector.to_string()),
             keep: true,
         }
     }
