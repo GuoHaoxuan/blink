@@ -111,7 +111,7 @@ pub fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detecto
                 duration_full,
                 duration_best,
                 false_positive,
-                false_positive_year,
+                false_positive_per_year,
                 count_unfiltered_full,
                 count_unfiltered_best,
                 count_filtered_full,
