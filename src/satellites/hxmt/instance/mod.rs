@@ -66,6 +66,12 @@ impl InstanceTrait for Instance {
                 let attitude = self.att_file.interpolate(trigger.start).unwrap();
                 let orbit = self.orbit_file.window(trigger.start, 1000.0);
 
+                println!(
+                    "[DEBUG] Trigger found: {} - {}",
+                    trigger.start.to_chrono(),
+                    trigger.stop.to_chrono()
+                );
+
                 Signal::new(trigger, events, attitude, orbit)
             })
             .collect::<Vec<_>>();
