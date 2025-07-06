@@ -195,7 +195,13 @@ impl Signal {
             TimeDelta::milliseconds(1),
         );
 
+        println!("[DEBUG] Signal: {} - {}", start_full, stop_full);
+
         let location = orbit.interpolate(peak)?;
+        println!(
+            "[DEBUG] Location: {} - {}, {}, {}",
+            location.time, location.longitude, location.latitude, location.altitude
+        );
         let lightnings = associated_lightning(
             location,
             TimeDelta::milliseconds(5),
