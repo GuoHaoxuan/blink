@@ -8,8 +8,8 @@ use file::File;
 use itertools::Itertools;
 use position::Position;
 
+use crate::algorithms::algorithms::{SearchConfig, search};
 use crate::env::GBM_DAILY_PATH;
-use crate::search::algorithms::{SearchConfig, search};
 use crate::types::{Event as _, Instance as InstanceTrait, Signal, Span, Time};
 
 use super::Fermi;
@@ -163,40 +163,7 @@ impl InstanceTrait for Instance {
                     .collect::<Vec<_>>();
                 let position = self.position.get_row(start);
 
-                Signal::new(
-                    start.to_chrono(),
-                    start.to_chrono(),
-                    stop.to_chrono(),
-                    stop.to_chrono(),
-                    fp_year,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    events,
-                    vec![],
-                    vec![],
-                    vec![],
-                    vec![],
-                    position.sc_lon as f64,
-                    position.sc_lat as f64,
-                    altitude(&position.pos) as f64,
-                    0.0,
-                    0.0,
-                    0.0,
-                    vec![],
-                    vec![],
-                    0.0,
-                )
+                unimplemented!("Search for fermi signals is not implemented yet");
             })
             .collect();
 

@@ -1,15 +1,17 @@
-use chrono::prelude::*;
-use serde::{Deserialize, Serialize};
-
-use crate::lightning::LightningAssociation;
+use crate::algorithms::lightcurve::light_curve_chrono;
+use crate::algorithms::trigger::Trigger;
+use crate::lightning::{LightningAssociation, associated_lightning, coincidence_prob};
 use crate::solar::{
     apparent_solar_time, day_of_year, mean_solar_time, solar_azimuth_angle, solar_zenith_angle,
     solar_zenith_angle_at_noon,
 };
+use crate::types::Satellite;
+use chrono::{TimeDelta, prelude::*};
+use serde::{Deserialize, Serialize};
 
 use super::GenericEvent;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct Location {
     pub time: DateTime<Utc>,
     pub longitude: f64,
@@ -17,6 +19,7 @@ pub struct Location {
     pub altitude: f64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LocationList {
     pub data: Vec<Location>,
 }
@@ -65,35 +68,28 @@ pub struct Attitude {
 
 #[derive(Debug, Serialize)]
 pub struct Signal {
-    pub start: DateTime<Utc>,
+    pub start_full: DateTime<Utc>,
     pub start_best: DateTime<Utc>,
-    pub stop: DateTime<Utc>,
+    pub stop_full: DateTime<Utc>,
     pub stop_best: DateTime<Utc>,
     pub peak: DateTime<Utc>,
-    pub duration: f64,
+    pub duration_full: f64,
     pub duration_best: f64,
-    pub fp_year: f64,
-    pub count: u32,
-    pub count_best: u32,
-    pub count_filtered: u32,
+    pub false_positive: f64,
+    pub false_positive_per_year: f64,
+    pub count_unfiltered_full: u32,
+    pub count_unfiltered_best: u32,
+    pub count_filtered_full: u32,
     pub count_filtered_best: u32,
     pub background: f64,
-    pub flux: f64,
-    pub flux_best: f64,
-    pub flux_filtered: f64,
+    pub flux_unfiltered_full: f64,
+    pub flux_unfiltered_best: f64,
+    pub flux_filtered_full: f64,
     pub flux_filtered_best: f64,
-    pub veto_proportion: f64,
-    pub veto_proportion_best: f64,
-    pub veto_proportion_filtered: f64,
-    pub veto_proportion_filtered_best: f64,
-    pub simultaneous_proportion: f64,
-    pub simultaneous_proportion_best: f64,
-    pub simultaneous_proportion_filtered: f64,
-    pub simultaneous_proportion_filtered_best: f64,
     pub events: Vec<GenericEvent>,
-    pub light_curve_1s: Vec<u32>,
+    pub light_curve_1s_unfiltered: Vec<u32>,
     pub light_curve_1s_filtered: Vec<u32>,
-    pub light_curve_100ms: Vec<u32>,
+    pub light_curve_100ms_unfiltered: Vec<u32>,
     pub light_curve_100ms_filtered: Vec<u32>,
     pub longitude: f64,
     pub latitude: f64,
@@ -101,7 +97,7 @@ pub struct Signal {
     pub q1: f64,
     pub q2: f64,
     pub q3: f64,
-    pub orbit: Vec<Location>,
+    pub orbit: LocationList,
     pub lightnings: Vec<LightningAssociation>,
     pub associated_lightning_count: u32,
     pub coincidence_probability: f64,
@@ -115,93 +111,149 @@ pub struct Signal {
 }
 
 impl Signal {
-    pub fn new(
-        start: DateTime<Utc>,
-        start_best: DateTime<Utc>,
-        stop: DateTime<Utc>,
-        stop_best: DateTime<Utc>,
-        fp_year: f64,
-        count: u32,
-        count_best: u32,
-        count_filtered: u32,
-        count_filtered_best: u32,
-        background: f64,
-        veto_proportion: f64,
-        veto_proportion_best: f64,
-        veto_proportion_filtered: f64,
-        veto_proportion_filtered_best: f64,
-        simultaneous_proportion: f64,
-        simultaneous_proportion_best: f64,
-        simultaneous_proportion_filtered: f64,
-        simultaneous_proportion_filtered_best: f64,
+    pub fn new<S: Satellite>(
+        trigger: Trigger<S>,
         events: Vec<GenericEvent>,
-        light_curve_1s: Vec<u32>,
-        light_curve_1s_filtered: Vec<u32>,
-        light_curve_100ms: Vec<u32>,
-        light_curve_100ms_filtered: Vec<u32>,
-        longitude: f64,
-        latitude: f64,
-        altitude: f64,
-        q1: f64,
-        q2: f64,
-        q3: f64,
-        orbit: Vec<Location>,
-        lightnings: Vec<LightningAssociation>,
-        coincidence_probability: f64,
-    ) -> Self {
-        let peak = start_best + (stop_best - start_best) / 2;
-        let duration = (stop - start).num_nanoseconds().unwrap() as f64 / 1e9;
-        let duration_best = (stop_best - start_best).num_nanoseconds().unwrap() as f64 / 1e9;
-        let associated_lightning_count =
-            lightnings.iter().filter(|l| l.is_associated).count() as u32;
-        Self {
-            start,
+        attitude: Attitude,
+        orbit: LocationList,
+    ) -> Option<Self> {
+        let events_filtered: Vec<GenericEvent> =
+            events.iter().filter(|event| event.keep).cloned().collect();
+
+        let start_full = trigger.start.to_chrono();
+        let start_best = (trigger.start + trigger.delay).to_chrono();
+        let stop_full = trigger.stop.to_chrono();
+        let stop_best = (trigger.start + trigger.delay + trigger.bin_size_best).to_chrono();
+        let peak = (trigger.start + trigger.delay + trigger.bin_size_best / 2.0).to_chrono();
+        let duration_full = (trigger.stop - trigger.start).to_seconds();
+        let duration_best = trigger.bin_size_best.to_seconds();
+
+        let events_unfiltered_full: Vec<GenericEvent> = events
+            .iter()
+            .filter(|event| event.time >= start_full && event.time <= stop_full)
+            .cloned()
+            .collect();
+        let events_unfiltered_best: Vec<GenericEvent> = events_unfiltered_full
+            .iter()
+            .filter(|event| event.time >= start_best && event.time <= stop_best)
+            .cloned()
+            .collect();
+        let events_filtered_full: Vec<GenericEvent> = events_unfiltered_full
+            .iter()
+            .filter(|event| event.keep)
+            .cloned()
+            .collect();
+        let events_filtered_best: Vec<GenericEvent> = events_unfiltered_best
+            .iter()
+            .filter(|event| event.keep)
+            .cloned()
+            .collect();
+
+        if events_filtered_full.len() >= 100_000 {
+            eprintln!(
+                "Too many events({}) in signal: {} - {}",
+                events_filtered_full.len(),
+                trigger.start.to_chrono(),
+                trigger.stop.to_chrono()
+            );
+            return None;
+        }
+
+        let count_unfiltered_full = events_unfiltered_full.len() as u32;
+        let count_unfiltered_best = events_unfiltered_best.len() as u32;
+        let count_filtered_full = events_filtered_full.len() as u32;
+        let count_filtered_best = events_filtered_best.len() as u32;
+
+        let light_curve_1s_unfiltered = light_curve_chrono(
+            &events.iter().map(|event| event.time).collect::<Vec<_>>(),
+            start_full - TimeDelta::milliseconds(500),
+            stop_full + TimeDelta::milliseconds(500),
+            TimeDelta::milliseconds(10),
+        );
+        let light_curve_1s_filtered = light_curve_chrono(
+            &events_filtered
+                .iter()
+                .map(|event| event.time)
+                .collect::<Vec<_>>(),
+            start_full - TimeDelta::milliseconds(500),
+            stop_full + TimeDelta::milliseconds(500),
+            TimeDelta::milliseconds(10),
+        );
+        let light_curve_100ms_unfiltered = light_curve_chrono(
+            &events.iter().map(|event| event.time).collect::<Vec<_>>(),
+            start_full - TimeDelta::milliseconds(50),
+            stop_full + TimeDelta::milliseconds(50),
+            TimeDelta::milliseconds(1),
+        );
+        let light_curve_100ms_filtered = light_curve_chrono(
+            &events_filtered
+                .iter()
+                .map(|event| event.time)
+                .collect::<Vec<_>>(),
+            start_full - TimeDelta::milliseconds(50),
+            stop_full + TimeDelta::milliseconds(50),
+            TimeDelta::milliseconds(1),
+        );
+
+        let location = orbit.interpolate(peak)?;
+        let lightnings = associated_lightning(
+            location,
+            TimeDelta::milliseconds(5),
+            800_000.0,
+            TimeDelta::minutes(2),
+        );
+        let associated_lightning_count = lightnings
+            .iter()
+            .filter(|lightning| lightning.is_associated)
+            .count() as u32;
+        let coincidence_probability = coincidence_prob(
+            location,
+            TimeDelta::milliseconds(5),
+            800_000.0,
+            TimeDelta::minutes(2),
+        );
+
+        Some(Signal {
+            start_full,
             start_best,
-            stop,
+            stop_full,
             stop_best,
             peak,
-            duration,
+            duration_full,
             duration_best,
-            fp_year,
-            count,
-            count_best,
-            count_filtered,
+            false_positive: trigger.sf(),
+            false_positive_per_year: trigger.false_positive_per_year(),
+            count_unfiltered_full,
+            count_unfiltered_best,
+            count_filtered_full,
             count_filtered_best,
-            background,
-            flux: count as f64 / duration,
-            flux_best: count_best as f64 / duration_best,
-            flux_filtered: count_filtered as f64 / duration,
+            background: trigger.mean / duration_best,
+            flux_unfiltered_full: count_unfiltered_full as f64 / duration_full,
+            flux_unfiltered_best: count_unfiltered_best as f64 / duration_best,
+            flux_filtered_full: count_filtered_full as f64 / duration_full,
             flux_filtered_best: count_filtered_best as f64 / duration_best,
-            veto_proportion,
-            veto_proportion_best,
-            veto_proportion_filtered,
-            veto_proportion_filtered_best,
-            simultaneous_proportion,
-            simultaneous_proportion_best,
-            simultaneous_proportion_filtered,
-            simultaneous_proportion_filtered_best,
             events,
-            light_curve_1s,
+            light_curve_1s_unfiltered,
             light_curve_1s_filtered,
-            light_curve_100ms,
+            light_curve_100ms_unfiltered,
             light_curve_100ms_filtered,
-            longitude,
-            latitude,
-            altitude,
-            q1,
-            q2,
-            q3,
+            longitude: location.longitude,
+            latitude: location.latitude,
+            altitude: location.altitude,
+            q1: attitude.q1,
+            q2: attitude.q2,
+            q3: attitude.q3,
             orbit,
             lightnings,
             associated_lightning_count,
             coincidence_probability,
-            mean_solar_time: mean_solar_time(peak, longitude),
-            apparent_solar_time: apparent_solar_time(peak, longitude),
+            mean_solar_time: mean_solar_time(peak, location.longitude),
+            apparent_solar_time: apparent_solar_time(peak, location.longitude),
             day_of_year: day_of_year(peak),
             month: peak.month(),
-            solar_zenith_angle: solar_zenith_angle(peak, latitude, longitude),
-            solar_zenith_angle_at_noon: solar_zenith_angle_at_noon(peak, latitude),
-            solar_azimuth_angle: solar_azimuth_angle(peak, latitude, longitude),
-        }
+            solar_zenith_angle: solar_zenith_angle(peak, location.latitude, location.longitude),
+            solar_zenith_angle_at_noon: solar_zenith_angle_at_noon(peak, location.latitude),
+            solar_azimuth_angle: solar_azimuth_angle(peak, location.latitude, location.longitude),
+        })
     }
 }

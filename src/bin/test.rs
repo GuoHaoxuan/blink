@@ -1,13 +1,12 @@
-use blink::satellites::hxmt::Hxmt;
-use blink::search::algorithms::{SearchConfig, search_new};
+use blink::algorithms::algorithms::{SearchConfig, search_new};
+use blink::satellites::hxmt::data::data_1k::EventFile;
+use blink::satellites::hxmt::types::Hxmt;
 
 use blink::types::{Event, Span, Time};
 use chrono::prelude::*;
 
 fn test() {
-    let evt_file =
-        blink::satellites::hxmt::EventFile::new("HXMT_20170824T10_HE-Evt_FFFFFF_V1_1K.FITS")
-            .unwrap();
+    let evt_file = EventFile::new("HXMT_20170824T10_HE-Evt_FFFFFF_V1_1K.FITS").unwrap();
     const CHANNEL_THRESHOLD: u16 = 38;
     let events = evt_file
         .into_iter()
@@ -30,13 +29,13 @@ fn test() {
             max_duration: Span::microseconds(1000.0),
             neighbor: Span::seconds(1.0),
             hollow: Span::milliseconds(10.0),
-            fp_year: 20.0,
+            false_positive_per_year: 20.0,
             min_number: 8,
         },
     );
     // print!("{:#?}", results);
     results.iter().for_each(|trigger| {
-        println!("{}", trigger.fp_year());
+        println!("{}", trigger.false_positive_per_year());
     });
     // println!(
     //     "{:?}",

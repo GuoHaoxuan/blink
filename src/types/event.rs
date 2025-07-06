@@ -14,7 +14,7 @@ pub trait Event: Serialize + Eq + Ord + Copy {
     fn group(&self) -> u8 {
         0
     }
-    fn keep_for_tgf(&self) -> bool {
+    fn keep(&self) -> bool {
         true
     }
     fn to_general(&self) -> GenericEvent;
@@ -25,4 +25,5 @@ pub struct GenericEvent {
     pub time: DateTime<Utc>,
     pub channel: u32,
     pub detector: serde_json::Value,
+    pub keep: bool,
 }

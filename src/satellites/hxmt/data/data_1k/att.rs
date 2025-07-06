@@ -1,3 +1,7 @@
+use crate::{
+    satellites::hxmt::types::Hxmt,
+    types::{Attitude, Time},
+};
 use anyhow::{Context, Result, anyhow};
 
 pub struct AttFile {
@@ -43,16 +47,14 @@ impl AttFile {
         Ok(Self { time, q1, q2, q3 })
     }
 
-    pub fn interpolate(&self, time: f64) -> Result<(f64, f64, f64)> {
+    pub fn interpolate(&self, time: Time<Hxmt>) -> Option<Attitude> {
+        let time_f64 = time.time.into_inner();
         let mut i = 0;
-        while i < self.time.len() - 1 && self.time[i + 1] < time {
+        while i < self.time.len() - 1 && self.time[i + 1] < time_f64 {
             i += 1;
         }
         if i == self.time.len() - 1 {
-            return Err(anyhow!(
-                "Time {} is out of bounds for the attitude data",
-                time
-            ));
+            return None;
         }
 
         let t0 = self.time[i];
@@ -65,10 +67,15 @@ impl AttFile {
         let q31 = self.q3[i + 1];
 
         // Linear interpolation
-        let q1_interp = q10 + (q11 - q10) * (time - t0) / (t1 - t0);
-        let q2_interp = q20 + (q21 - q20) * (time - t0) / (t1 - t0);
-        let q3_interp = q30 + (q31 - q30) * (time - t0) / (t1 - t0);
+        let q1_interp = q10 + (q11 - q10) * (time_f64 - t0) / (t1 - t0);
+        let q2_interp = q20 + (q21 - q20) * (time_f64 - t0) / (t1 - t0);
+        let q3_interp = q30 + (q31 - q30) * (time_f64 - t0) / (t1 - t0);
 
-        Ok((q1_interp, q2_interp, q3_interp))
+        Some(Attitude {
+            time: time.to_chrono(),
+            q1: q1_interp,
+            q2: q2_interp,
+            q3: q3_interp,
+        })
     }
 }

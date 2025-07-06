@@ -29,7 +29,7 @@ impl crate::types::Event for HxmtEvent {
         self.channel
     }
 
-    fn keep_for_tgf(&self) -> bool {
+    fn keep(&self) -> bool {
         const CHANNEL_THRESHOLD: u16 = 38;
         self.detector.scintillator == HxmtScintillator::CsI
             && !self.detector.am241
@@ -41,6 +41,7 @@ impl crate::types::Event for HxmtEvent {
             time: self.time.to_chrono(),
             channel: self.channel as u32,
             detector: serde_json::to_value(self.detector).unwrap(),
+            keep: self.keep(),
         }
     }
 }

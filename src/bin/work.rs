@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 
 use blink::database::{fail_task, finish_task, get_task, write_signal};
+use blink::satellites::hxmt::types::HxmtScintillator;
 use blink::types::{Event, Instance as BlinkInstance};
 
 fn consume() {

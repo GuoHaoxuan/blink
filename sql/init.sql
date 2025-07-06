@@ -23,7 +23,8 @@ CREATE TABLE
         peak TEXT NOT NULL, -- 峰值
         duration_full REAL NOT NULL, -- 持续时间
         duration_best REAL NOT NULL, -- 最佳持续时间
-        fp_year REAL NOT NULL, -- 年误触发个数
+        false_positive REAL NOT NULL, -- 年误触发个数
+        false_positive_per_year REAL NOT NULL, -- 年误触发个数
         count_unfiltered_full INTEGER NOT NULL, -- 事件个数
         count_unfiltered_best INTEGER NOT NULL, -- 最佳事件个数
         count_filtered_full INTEGER NOT NULL, -- 有效事件个数
@@ -33,14 +34,6 @@ CREATE TABLE
         flux_unfiltered_best REAL NOT NULL, -- 最佳每秒通量
         flux_filtered_full REAL NOT NULL, -- 有效事件每秒通量
         flux_filtered_best REAL NOT NULL, -- 最佳有效事件每秒通量
-        veto_proportion_unfiltered_full REAL NOT NULL, -- Veto 比率
-        veto_proportion_unfiltered_best REAL NOT NULL, -- 最佳 Veto 比率
-        veto_proportion_filtered_full REAL NOT NULL, -- 有效事件 Veto 比率
-        veto_proportion_filtered_best REAL NOT NULL, -- 最佳有效事件 Veto 比率
-        simultaneous_proportion_unfiltered_full REAL NOT NULL, -- 同时事件比率
-        simultaneous_proportion_unfiltered_best REAL NOT NULL, -- 最佳同时事件比率
-        simultaneous_proportion_filtered_full REAL NOT NULL, -- 有效事件同时事件比率
-        simultaneous_proportion_filtered_best REAL NOT NULL, -- 最佳有效事件同时事件比率
         events TEXT NOT NULL, -- 事件
         light_curve_1s_unfiltered TEXT NOT NULL, -- 光变曲线
         light_curve_1s_filtered TEXT NOT NULL, -- 有效事件光变曲线

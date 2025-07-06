@@ -16,31 +16,24 @@ fn main() {
     let catalog = File::create("output/catalog.csv").unwrap();
     let mut wtr = Writer::from_writer(catalog);
     wtr.write_record([
-        "start",
+        "start_full",
         "start_best",
-        "stop",
+        "stop_full",
         "stop_best",
         "peak",
-        "duration",
+        "duration_full",
         "duration_best",
-        "fp_year",
-        "count",
-        "count_best",
-        "count_filtered",
+        "false_positive",
+        "false_positive_per_year",
+        "count_unfiltered_full",
+        "count_unfiltered_best",
+        "count_filtered_full",
         "count_filtered_best",
         "background",
-        "flux",
-        "flux_best",
-        "flux_filtered",
+        "flux_unfiltered_full",
+        "flux_unfiltered_best",
+        "flux_filtered_full",
         "flux_filtered_best",
-        "veto_proportion",
-        "veto_proportion_best",
-        "veto_proportion_filtered",
-        "veto_proportion_filtered_best",
-        "simultaneous_proportion",
-        "simultaneous_proportion_best",
-        "simultaneous_proportion_filtered",
-        "simultaneous_proportion_filtered_best",
         "longitude",
         "latitude",
         "altitude",
@@ -83,35 +76,28 @@ fn main() {
     conn.prepare(
         "
             SELECT
-                start,
+                start_full,
                 start_best,
-                stop,
+                stop_full,
                 stop_best,
                 peak,
-                duration,
+                duration_full,
                 duration_best,
-                fp_year,
-                count,
-                count_best,
-                count_filtered,
+                false_positive,
+                false_positive_per_year,
+                count_unfiltered_full,
+                count_unfiltered_best,
+                count_filtered_full,
                 count_filtered_best,
                 background,
-                flux,
-                flux_best,
-                flux_filtered,
+                flux_unfiltered_full,
+                flux_unfiltered_best,
+                flux_filtered_full,
                 flux_filtered_best,
-                veto_proportion,
-                veto_proportion_best,
-                veto_proportion_filtered,
-                veto_proportion_filtered_best,
-                simultaneous_proportion,
-                simultaneous_proportion_best,
-                simultaneous_proportion_filtered,
-                simultaneous_proportion_filtered_best,
                 events,
-                light_curve_1s,
+                light_curve_1s_unfiltered,
                 light_curve_1s_filtered,
-                light_curve_100ms,
+                light_curve_100ms_unfiltered,
                 light_curve_100ms_filtered,
                 longitude,
                 latitude,
@@ -138,83 +124,70 @@ fn main() {
     )
     .unwrap()
     .query_map(params![], |row| {
-        let start = row.get::<_, String>(0)?;
+        let start_full = row.get::<_, String>(0)?;
         let start_best = row.get::<_, String>(1)?;
-        let stop = row.get::<_, String>(2)?;
+        let stop_full = row.get::<_, String>(2)?;
         let stop_best = row.get::<_, String>(3)?;
         let peak = row.get::<_, String>(4)?;
-        let duration = row.get::<_, f64>(5)?;
+        let duration_full = row.get::<_, f64>(5)?;
         let duration_best = row.get::<_, f64>(6)?;
-        let fp_year = row.get::<_, f64>(7)?;
-        let count = row.get::<_, u32>(8)?;
-        let count_best = row.get::<_, u32>(9)?;
-        let count_filtered = row.get::<_, u32>(10)?;
-        let count_filtered_best = row.get::<_, u32>(11)?;
-        let background = row.get::<_, f64>(12)?;
-        let flux = row.get::<_, f64>(13)?;
-        let flux_best = row.get::<_, f64>(14)?;
-        let flux_filtered = row.get::<_, f64>(15)?;
-        let flux_filtered_best = row.get::<_, f64>(16)?;
-        let veto_proportion = row.get::<_, f64>(17)?;
-        let veto_proportion_best = row.get::<_, f64>(18)?;
-        let veto_proportion_filtered = row.get::<_, f64>(19)?;
-        let veto_proportion_filtered_best = row.get::<_, f64>(20)?;
-        let simultaneous_proportion = row.get::<_, f64>(21)?;
-        let simultaneous_proportion_best = row.get::<_, f64>(22)?;
-        let simultaneous_proportion_filtered = row.get::<_, f64>(23)?;
-        let simultaneous_proportion_filtered_best = row.get::<_, f64>(24)?;
-        let events = row.get::<_, String>(25)?;
-        let light_curve_1s = row.get::<_, String>(26)?;
-        let light_curve_1s_filtered = row.get::<_, String>(27)?;
-        let light_curve_100ms = row.get::<_, String>(28)?;
-        let light_curve_100ms_filtered = row.get::<_, String>(29)?;
-        let longitude = row.get::<_, f64>(30)?;
-        let latitude = row.get::<_, f64>(31)?;
-        let altitude = row.get::<_, f64>(32)?;
-        let q1 = row.get::<_, f64>(33)?;
-        let q2 = row.get::<_, f64>(34)?;
-        let q3 = row.get::<_, f64>(35)?;
-        let orbit = row.get::<_, String>(36)?;
-        let lightnings = row.get::<_, String>(37)?;
-        let associated_lightning_count = row.get::<_, u32>(38)?;
-        let coincidence_probability = row.get::<_, f64>(39)?;
-        let mean_solar_time = row.get::<_, String>(40)?;
-        let apparent_solar_time = row.get::<_, String>(41)?;
-        let day_of_year = row.get::<_, u32>(42)?;
-        let month = row.get::<_, u32>(43)?;
-        let solar_zenith_angle = row.get::<_, f64>(44)?;
-        let solar_zenith_angle_at_noon = row.get::<_, f64>(45)?;
-        let solar_azimuth_angle = row.get::<_, f64>(46)?;
+        let false_positive = row.get::<_, f64>(7)?;
+        let false_positive_per_year = row.get::<_, f64>(8)?;
+        let count_unfiltered_full = row.get::<_, u32>(9)?;
+        let count_unfiltered_best = row.get::<_, u32>(10)?;
+        let count_filtered_full = row.get::<_, u32>(11)?;
+        let count_filtered_best = row.get::<_, u32>(12)?;
+        let background = row.get::<_, f64>(13)?;
+        let flux_unfiltered_full = row.get::<_, f64>(14)?;
+        let flux_unfiltered_best = row.get::<_, f64>(15)?;
+        let flux_filtered_full = row.get::<_, f64>(16)?;
+        let flux_filtered_best = row.get::<_, f64>(17)?;
+        let events = row.get::<_, String>(18)?;
+        let light_curve_1s_unfiltered = row.get::<_, String>(19)?;
+        let light_curve_1s_filtered = row.get::<_, String>(20)?;
+        let light_curve_100ms_unfiltered = row.get::<_, String>(21)?;
+        let light_curve_100ms_filtered = row.get::<_, String>(22)?;
+        let longitude = row.get::<_, f64>(23)?;
+        let latitude = row.get::<_, f64>(24)?;
+        let altitude = row.get::<_, f64>(25)?;
+        let q1 = row.get::<_, f64>(26)?;
+        let q2 = row.get::<_, f64>(27)?;
+        let q3 = row.get::<_, f64>(28)?;
+        let orbit = row.get::<_, String>(29)?;
+        let lightnings = row.get::<_, String>(30)?;
+        let associated_lightning_count = row.get::<_, u32>(31)?;
+        let coincidence_probability = row.get::<_, f64>(32)?;
+        let mean_solar_time = row.get::<_, String>(33)?;
+        let apparent_solar_time = row.get::<_, String>(34)?;
+        let day_of_year = row.get::<_, u32>(35)?;
+        let month = row.get::<_, u32>(36)?;
+        let solar_zenith_angle = row.get::<_, f64>(37)?;
+        let solar_zenith_angle_at_noon = row.get::<_, f64>(38)?;
+        let solar_azimuth_angle = row.get::<_, f64>(39)?;
         Ok(Signal {
-            start: serde_json::from_str(&format!("\"{}\"", start)).unwrap(),
+            start_full: serde_json::from_str(&format!("\"{}\"", start_full)).unwrap(),
             start_best: serde_json::from_str(&format!("\"{}\"", start_best)).unwrap(),
-            stop: serde_json::from_str(&format!("\"{}\"", stop)).unwrap(),
+            stop_full: serde_json::from_str(&format!("\"{}\"", stop_full)).unwrap(),
             stop_best: serde_json::from_str(&format!("\"{}\"", stop_best)).unwrap(),
             peak: serde_json::from_str(&format!("\"{}\"", peak)).unwrap(),
-            duration,
+            duration_full,
             duration_best,
-            fp_year,
-            count,
-            count_best,
-            count_filtered,
+            false_positive,
+            false_positive_per_year,
+            count_unfiltered_full,
+            count_unfiltered_best,
+            count_filtered_full,
             count_filtered_best,
             background,
-            flux,
-            flux_best,
-            flux_filtered,
+            flux_unfiltered_full,
+            flux_unfiltered_best,
+            flux_filtered_full,
             flux_filtered_best,
-            veto_proportion,
-            veto_proportion_best,
-            veto_proportion_filtered,
-            veto_proportion_filtered_best,
-            simultaneous_proportion,
-            simultaneous_proportion_best,
-            simultaneous_proportion_filtered,
-            simultaneous_proportion_filtered_best,
             events: serde_json::from_str(&events).unwrap(),
-            light_curve_1s: serde_json::from_str(&light_curve_1s).unwrap(),
+            light_curve_1s_unfiltered: serde_json::from_str(&light_curve_1s_unfiltered).unwrap(),
             light_curve_1s_filtered: serde_json::from_str(&light_curve_1s_filtered).unwrap(),
-            light_curve_100ms: serde_json::from_str(&light_curve_100ms).unwrap(),
+            light_curve_100ms_unfiltered: serde_json::from_str(&light_curve_100ms_unfiltered)
+                .unwrap(),
             light_curve_100ms_filtered: serde_json::from_str(&light_curve_100ms_filtered).unwrap(),
             longitude,
             latitude,
@@ -240,7 +213,7 @@ fn main() {
     .for_each(|row| {
         let signal = row.unwrap();
         wtr.write_record([
-            serde_json::to_string(&signal.start)
+            serde_json::to_string(&signal.start_full)
                 .unwrap()
                 .trim_matches('"')
                 .to_string(),
@@ -248,7 +221,7 @@ fn main() {
                 .unwrap()
                 .trim_matches('"')
                 .to_string(),
-            serde_json::to_string(&signal.stop)
+            serde_json::to_string(&signal.stop_full)
                 .unwrap()
                 .trim_matches('"')
                 .to_string(),
@@ -260,26 +233,19 @@ fn main() {
                 .unwrap()
                 .trim_matches('"')
                 .to_string(),
-            signal.duration.to_string(),
+            signal.duration_full.to_string(),
             signal.duration_best.to_string(),
-            signal.fp_year.to_string(),
-            signal.count.to_string(),
-            signal.count_best.to_string(),
-            signal.count_filtered.to_string(),
+            signal.false_positive.to_string(),
+            signal.false_positive_per_year.to_string(),
+            signal.count_unfiltered_full.to_string(),
+            signal.count_unfiltered_best.to_string(),
+            signal.count_filtered_full.to_string(),
             signal.count_filtered_best.to_string(),
             signal.background.to_string(),
-            signal.flux.to_string(),
-            signal.flux_best.to_string(),
-            signal.flux_filtered.to_string(),
+            signal.flux_unfiltered_full.to_string(),
+            signal.flux_unfiltered_best.to_string(),
+            signal.flux_filtered_full.to_string(),
             signal.flux_filtered_best.to_string(),
-            signal.veto_proportion.to_string(),
-            signal.veto_proportion_best.to_string(),
-            signal.veto_proportion_filtered.to_string(),
-            signal.veto_proportion_filtered_best.to_string(),
-            signal.simultaneous_proportion.to_string(),
-            signal.simultaneous_proportion_best.to_string(),
-            signal.simultaneous_proportion_filtered.to_string(),
-            signal.simultaneous_proportion_filtered_best.to_string(),
             signal.longitude.to_string(),
             signal.latitude.to_string(),
             signal.altitude.to_string(),
@@ -305,7 +271,7 @@ fn main() {
         .unwrap();
         let json_file_path = format!(
             "output/detail/{}.json",
-            serde_json::to_string(&signal.start)
+            serde_json::to_string(&signal.start_full)
                 .unwrap()
                 .trim_matches('"')
         );

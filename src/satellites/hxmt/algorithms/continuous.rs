@@ -1,5 +1,5 @@
 use super::super::types::Hxmt;
-use crate::{search::trigger::Trigger, types::Span};
+use crate::{algorithms::trigger::Trigger, types::Span};
 
 pub fn continuous(
     triggers: Vec<Trigger<Hxmt>>,

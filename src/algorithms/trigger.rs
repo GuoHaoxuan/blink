@@ -1,5 +1,7 @@
+use super::poission::{
+    false_positive_per_year as poission_false_positive_per_year, sf as poisson_sf,
+};
 use serde::Serialize;
-use statrs::distribution::{DiscreteCDF, Poisson};
 use std::fmt::Debug;
 
 use crate::types::{Satellite, Span, Time};
@@ -32,26 +34,17 @@ impl<S: Satellite> Trigger<S> {
     }
 
     pub fn sf(&self) -> f64 {
-        match (self.mean, self.count) {
-            (0.0, 0) => 0.0,
-            (0.0, _) => 1.0,
-            _ => Poisson::new(self.mean)
-                .inspect_err(|e| {
-                    eprintln!("Error in Poisson distribution: {}", e);
-                    eprintln!("Mean: {}", self.mean);
-                })
-                .unwrap()
-                .sf(self.count as u64),
-        }
+        poisson_sf(self.mean, self.count)
     }
 
-    pub fn fp_year(&self) -> f64 {
-        self.sf() * (Span::seconds(3600.0) * 24.0 * 365.0 / (self.stop - self.start))
+    pub fn false_positive_per_year(&self) -> f64 {
+        poission_false_positive_per_year(self.sf(), self.bin_size_best)
     }
 
     pub fn mergeable(&self, other: &Self, vision: f64) -> bool {
         self.stop + self.bin_size_max.max(other.bin_size_max) * vision >= other.start
     }
+
     pub fn merge(&self, other: &Self) -> Self {
         let mut res = self.clone();
         res = Trigger {
@@ -60,7 +53,7 @@ impl<S: Satellite> Trigger<S> {
             bin_size_max: res.bin_size_max.max(other.bin_size_max),
             ..res
         };
-        if other.sf() < res.sf() {
+        if other.false_positive_per_year() < res.false_positive_per_year() {
             res = Trigger {
                 count: other.count,
                 mean: other.mean,

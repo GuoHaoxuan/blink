@@ -3,7 +3,7 @@ use itertools::Itertools;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
-use crate::env::LIGHTNING_CONNECTION;
+use crate::{env::LIGHTNING_CONNECTION, types::Location};
 
 const SPEED_OF_LIGHT: f64 = 299_792_458.0;
 const R_EARTH: f64 = 6_371_000.0;
@@ -98,23 +98,26 @@ fn get_lightnings(time_start: DateTime<Utc>, time_end: DateTime<Utc>) -> Vec<Lig
 }
 
 pub fn associated_lightning(
-    time: DateTime<Utc>,
-    lat: f64,
-    lon: f64,
-    alt: f64,
+    location: Location,
     time_tolerance: Duration,
     distance_tolerance: f64,
     time_window: Duration,
 ) -> Vec<LightningAssociation> {
-    let time_start = time - time_tolerance - time_window / 2;
-    let time_end = time + time_tolerance + time_window / 2;
+    let time_start = location.time - time_tolerance - time_window / 2;
+    let time_end = location.time + time_tolerance + time_window / 2;
     let rows = get_lightnings(time_start, time_end);
 
     rows.into_iter()
         .map(|lightning| {
-            let dist = distance(lat, lon, lightning.lat, lightning.lon);
-            let time_of_arrival_value = time_of_arrival(dist, alt, LIGHTNING_ALTITUDE);
-            let fixed_time = time - time_of_arrival_value;
+            let dist = distance(
+                location.latitude,
+                location.longitude,
+                lightning.lat,
+                lightning.lon,
+            );
+            let time_of_arrival_value =
+                time_of_arrival(dist, location.altitude, LIGHTNING_ALTITUDE);
+            let fixed_time = location.time - time_of_arrival_value;
             let time_delta = lightning.time - fixed_time;
             (lightning, dist, time_delta)
         })
@@ -157,24 +160,34 @@ fn trim(window: &[DateTime<Utc>; 2], min: DateTime<Utc>, max: DateTime<Utc>) -> 
 }
 
 pub fn coincidence_prob(
-    time: DateTime<Utc>,
-    lat: f64,
-    lon: f64,
-    alt: f64,
+    location: Location,
     time_tolerance: Duration,
     distance_tolerance: f64,
     time_window: Duration,
 ) -> f64 {
-    let time_start = time - time_tolerance - Duration::seconds(1) - time_window / 2;
-    let time_end = time + time_tolerance + Duration::seconds(1) + time_window / 2;
+    let time_start = location.time - time_tolerance - Duration::seconds(1) - time_window / 2;
+    let time_end = location.time + time_tolerance + Duration::seconds(1) + time_window / 2;
     let mut rows = get_lightnings(time_start, time_end);
     rows.retain(|lightning| {
-        let dist = distance(lat, lon, lightning.lat, lightning.lon);
+        let dist = distance(
+            location.latitude,
+            location.longitude,
+            lightning.lat,
+            lightning.lon,
+        );
         dist <= distance_tolerance
     });
     let windows = rows
         .iter()
-        .map(|lightning| coincidence_window(lightning, lat, lon, alt, time_tolerance))
+        .map(|lightning| {
+            coincidence_window(
+                lightning,
+                location.latitude,
+                location.longitude,
+                location.altitude,
+                time_tolerance,
+            )
+        })
         .sorted_by(|a, b| a[0].partial_cmp(&b[0]).unwrap())
         .coalesce(|a, b| {
             if mergeable(&a, &b) {
