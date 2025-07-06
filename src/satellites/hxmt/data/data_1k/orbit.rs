@@ -61,16 +61,11 @@ impl OrbitFile {
                 .iter()
                 .enumerate()
                 .filter(|(_, t)| **t >= start_time && **t <= end_time)
-                .map(|(i, _)| {
-                    let longitude = self.lon[i];
-                    let latitude = self.lat[i];
-                    let altitude = self.alt[i];
-                    Location {
-                        time: time.to_chrono(),
-                        longitude,
-                        latitude,
-                        altitude,
-                    }
+                .map(|(i, _)| Location {
+                    time: Time::<Hxmt>::seconds(self.time[i]).to_chrono(),
+                    longitude: self.lon[i],
+                    latitude: self.lat[i],
+                    altitude: self.alt[i],
                 })
                 .collect(),
         }
