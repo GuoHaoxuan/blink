@@ -1,7 +1,10 @@
 use statrs::distribution::{DiscreteCDF, Poisson};
 
 use super::trigger::Trigger;
-use crate::types::{Event, Satellite, Span, Time};
+use crate::{
+    env::DAYS_1_YEAR,
+    types::{Event, Satellite, Span, Time},
+};
 
 pub struct SearchConfig<T: Satellite> {
     pub min_duration: Span<T>,
@@ -118,7 +121,8 @@ pub fn search<E: Event>(
             let mean_duration = (mean_stop_time - mean_start_time) - duration;
             let mean_percent = duration.to_seconds() / mean_duration.to_seconds();
             let threshold = 1.0
-                - config.false_positive_per_year / (3600.0 * 24.0 * 365.0 / duration.to_seconds());
+                - config.false_positive_per_year
+                    / (3600.0 * 24.0 * DAYS_1_YEAR / duration.to_seconds());
             let probs = (0..group_count)
                 .map(|group| {
                     let count = counts[group];
@@ -130,7 +134,8 @@ pub fn search<E: Event>(
                 .collect::<Vec<f64>>();
             let prob = coincidence_prob(&probs, 3);
             if prob > threshold {
-                let fp_year_real = (1.0 - prob) * 3600.0 * 24.0 * 365.0 / duration.to_seconds();
+                let fp_year_real =
+                    (1.0 - prob) * 3600.0 * 24.0 * DAYS_1_YEAR / duration.to_seconds();
                 let new_interval = [data[cursor].time(), data[cursor + step].time()];
                 if let Some(last) = result.last_mut() {
                     if last.0[1] >= new_interval[0] {
@@ -278,7 +283,7 @@ pub fn search_new<E: Event>(
                     .collect::<Vec<f64>>();
                 let fp = fps[0];
                 let threshold = config.false_positive_per_year
-                    / (Span::seconds(3600.0) * 24.0 * 365.0 / duration);
+                    / (Span::seconds(3600.0) * 24.0 * DAYS_1_YEAR / duration);
                 if fp < threshold {
                     let total_equivalent_background_number = (0..group_number)
                         .map(|group| mean_numbers[group] - hollow_numbers[group])

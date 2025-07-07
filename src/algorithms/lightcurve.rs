@@ -2,7 +2,10 @@ use chrono::{TimeDelta, prelude::*};
 use itertools::Itertools;
 
 use super::trigger::Trigger;
-use crate::types::{Satellite, Span, Time};
+use crate::{
+    env::DAYS_1_YEAR,
+    types::{Satellite, Span, Time},
+};
 
 pub fn search_light_curve<S: Satellite>(
     light_curve_prefix_sum: &[u32],
@@ -39,7 +42,7 @@ pub fn search_light_curve<S: Satellite>(
             let mean = (mean_count - hollow_count) / (mean_length - hollow_length);
 
             let threshold = poisson_isf_cached(
-                fp_year / (Span::seconds(3600.0) * 24.0 * 365.0 / bin_size),
+                fp_year / (Span::seconds(3600.0) * 24.0 * DAYS_1_YEAR / bin_size),
                 mean,
                 &mut cache,
             );

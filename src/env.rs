@@ -42,3 +42,6 @@ pub static HXMT_NAI_EC_FILE: LazyLock<String> = LazyLock::new(|| {
             .to_string()
     })
 });
+
+// Use Julian year for exact calculations
+pub static DAYS_1_YEAR: f64 = 365.25;
