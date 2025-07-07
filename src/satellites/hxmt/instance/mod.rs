@@ -63,7 +63,7 @@ impl InstanceTrait for Instance {
                     })
                     .map(|event| event.to_general())
                     .collect::<Vec<_>>();
-                let attitude = self.att_file.interpolate(trigger.start).unwrap();
+                let attitude = self.att_file.interpolate(trigger.start);
                 let orbit = self.orbit_file.window(trigger.start, 1000.0);
 
                 Signal::new(trigger, events, attitude, orbit)
