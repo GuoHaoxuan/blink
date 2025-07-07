@@ -169,7 +169,10 @@ impl Signal {
             start_full - TimeDelta::milliseconds(500),
             stop_full + TimeDelta::milliseconds(500),
             TimeDelta::milliseconds(10),
-        );
+        )
+        .into_iter()
+        .take(100)
+        .collect::<Vec<_>>();
         let light_curve_1s_filtered = light_curve_chrono(
             &events_filtered
                 .iter()
@@ -178,13 +181,19 @@ impl Signal {
             start_full - TimeDelta::milliseconds(500),
             stop_full + TimeDelta::milliseconds(500),
             TimeDelta::milliseconds(10),
-        );
+        )
+        .into_iter()
+        .take(100)
+        .collect::<Vec<_>>();
         let light_curve_100ms_unfiltered = light_curve_chrono(
             &events.iter().map(|event| event.time).collect::<Vec<_>>(),
             start_full - TimeDelta::milliseconds(50),
             stop_full + TimeDelta::milliseconds(50),
             TimeDelta::milliseconds(1),
-        );
+        )
+        .into_iter()
+        .take(100)
+        .collect::<Vec<_>>();
         let light_curve_100ms_filtered = light_curve_chrono(
             &events_filtered
                 .iter()
@@ -193,7 +202,10 @@ impl Signal {
             start_full - TimeDelta::milliseconds(50),
             stop_full + TimeDelta::milliseconds(50),
             TimeDelta::milliseconds(1),
-        );
+        )
+        .into_iter()
+        .take(100)
+        .collect::<Vec<_>>();
 
         let location = orbit.interpolate(peak).unwrap();
         let lightnings = associated_lightning(
