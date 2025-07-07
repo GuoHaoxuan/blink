@@ -5,7 +5,7 @@ use crate::solar::{
     apparent_solar_time, day_of_year, mean_solar_time, solar_azimuth_angle, solar_zenith_angle,
     solar_zenith_angle_at_noon,
 };
-use crate::types::Satellite;
+use crate::types::{Satellite, Time};
 use chrono::{TimeDelta, prelude::*};
 use serde::{Deserialize, Serialize};
 
@@ -232,7 +232,14 @@ impl Signal {
             flux_unfiltered_best: count_unfiltered_best as f64 / duration_best,
             flux_filtered_full: count_filtered_full as f64 / duration_full,
             flux_filtered_best: count_filtered_best as f64 / duration_best,
-            events,
+            events: events
+                .iter()
+                .filter(|event| {
+                    event.time >= start_full - TimeDelta::milliseconds(1)
+                        && event.time <= stop_full + TimeDelta::milliseconds(1)
+                })
+                .cloned()
+                .collect(),
             light_curve_1s_unfiltered,
             light_curve_1s_filtered,
             light_curve_100ms_unfiltered,
