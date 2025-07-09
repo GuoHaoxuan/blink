@@ -6,9 +6,9 @@
     \definecolor{C0}{HTML}{1f77b4}
     \definecolor{C1}{HTML}{ff7f0e}
     \definecolor{C2}{HTML}{2ca02c}
-    \definecolor{C3}{HTML}{d62728}
+    \definecolor{C3}{HTML}{cccccc}
 
-    \path[draw, ultra thick] (0,0) -- (20,0);
+    \path[draw, ultra thick, -stealth] (0,0) -- (20,0);
 
     \node[draw, shape=circle, fill=white] (e1) at (2,0) {E1};
     \node[draw, shape=circle, fill=white] (e2) at (8,0) {E2};
@@ -32,9 +32,9 @@
 
     \path[draw=C0] (e2) -- ($ (e2) + (0,2.6) $);
     \path[draw=C0] (e3) -- ($ (e3) + (0,2.3) $);
-    \path[draw=C0, <->] ($ (e2) + (0,2.2) $) -- node [fill=white] {\textcolor{C0}{Best}} ($ (e3) + (0,2.2) $);
+    \path[draw=C0, stealth-stealth] ($ (e2) + (0,2.2) $) -- node [fill=white] {\textcolor{C0}{Best}} ($ (e3) + (0,2.2) $);
     \path[draw=C0] (e4) -- ($ (e4) + (0,2.6) $);
-    \path[draw=C0, <->] ($ (e2) + (0,2.5) $) -- node [fill=white] {\textcolor{C0}{Full}} ($ (e4) + (0,2.5) $);
+    \path[draw=C0, stealth-stealth] ($ (e2) + (0,2.5) $) -- node [fill=white] {\textcolor{C0}{Full}} ($ (e4) + (0,2.5) $);
 
     \begin{scope}[xshift=3.3cm, yshift=-2.3cm]
         \node[draw, shape=circle, anchor=base] (ex) at (0,0) {EX};
@@ -42,7 +42,7 @@
         \path[draw=C3, thick] (3,0.1) -- (3.5,0.1);
         \node at (3.5,0) [right, anchor=base west] {Failed Attempt};
         \path[draw=C1, thick] (7,0.1) -- (7.5,0.1);
-        \node at (7.5,0) [right, anchor=base west] {Succeed Attempt};
+        \node at (7.5,0) [right, anchor=base west] {Successful Attempt};
         \path[draw=C2, thick] (11,0.1) -- (11.5,0.1);
         \node at (11.5,0) [right, anchor=base west] {Best Attempt};
     \end{scope}
