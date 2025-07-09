@@ -1,52 +1,20 @@
-use blink::algorithms::algorithms::{SearchConfig, search_new};
-use blink::satellites::hxmt::data::data_1k::EventFile;
-use blink::satellites::hxmt::types::Hxmt;
-
-use blink::types::{Event, Span, Time};
-use chrono::prelude::*;
-
-fn test() {
-    let evt_file = EventFile::new("HXMT_20170824T10_HE-Evt_FFFFFF_V1_1K.FITS").unwrap();
-    const CHANNEL_THRESHOLD: u16 = 38;
-    let events = evt_file
-        .into_iter()
-        .filter(|event| !event.detector.am241)
-        .filter(|event| event.channel() >= CHANNEL_THRESHOLD)
-        .collect::<Vec<_>>();
-    let test_start = DateTime::parse_from_rfc3339("2017-08-24T10:00:00+00:00")
-        .unwrap()
-        .to_utc();
-    let test_stop = DateTime::parse_from_rfc3339("2017-08-24T11:00:00+00:00")
-        .unwrap()
-        .to_utc();
-    let results = search_new(
-        &events,
-        1,
-        Time::<Hxmt>::from(test_start),
-        Time::<Hxmt>::from(test_stop),
-        SearchConfig {
-            min_duration: Span::microseconds(0.0),
-            max_duration: Span::microseconds(1000.0),
-            neighbor: Span::seconds(1.0),
-            hollow: Span::milliseconds(10.0),
-            false_positive_per_year: 20.0,
-            min_number: 8,
-        },
-    );
-    // print!("{:#?}", results);
-    results.iter().for_each(|trigger| {
-        println!("{}", trigger.false_positive_per_year());
-    });
-    // println!(
-    //     "{:?}",
-    //     results
-    //         .iter()
-    //         .map(|trigger| { (trigger.stop - trigger.start).to_seconds() })
-    //         .collect::<Vec<_>>()
-    // );
-    // println!("Number of triggers: {}", results.len());
-}
+use blink::satellites::hxmt::instance::Instance;
+use blink::types::Instance as _;
+use chrono::{TimeDelta, prelude::*};
 
 fn main() {
-    test();
+    let mut start_time = DateTime::parse_from_rfc3339("2025-07-06T16:45:22.626+00:00")
+        .unwrap()
+        .to_utc()
+        - TimeDelta::seconds(10);
+    let ins = Instance::from_epoch(&start_time).unwrap();
+    let time_delta = TimeDelta::milliseconds(100);
+    let stop_time = start_time + TimeDelta::seconds(50);
+    // enum time
+    while start_time <= stop_time {
+        let time = start_time;
+        let saturation = ins.check_saturation(time.into());
+        println!("{}", saturation);
+        start_time += time_delta;
+    }
 }
