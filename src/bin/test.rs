@@ -8,14 +8,14 @@ fn main() {
         .to_utc();
     let mut total_number: u64 = 0;
     let mut saturation_number: u64 = 0;
-    for i in 0..23 {
+    for i in 0..=23 {
         let mut start_time = start_time_snapshot + TimeDelta::hours(i);
         let ins = Instance::from_epoch(&start_time).unwrap();
         let time_delta = TimeDelta::milliseconds(100);
         let stop_time = start_time + TimeDelta::hours(1);
         // enum time
         let mut sa = false;
-        while start_time <= stop_time {
+        while start_time < stop_time {
             let time = start_time;
             let saturation = ins.check_saturation(time.into());
             if saturation {
