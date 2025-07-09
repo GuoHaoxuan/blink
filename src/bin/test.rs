@@ -23,7 +23,6 @@ fn main() {
             if !saturation && sa {
                 sa = false;
             }
-            println!("Saturation at: {}", time);
             start_time += time_delta;
         }
     }
