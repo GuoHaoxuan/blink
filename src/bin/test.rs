@@ -13,8 +13,8 @@ fn main() {
     // enum time
     while start_time <= stop_time {
         let time = start_time;
-        let saturation = ins.check_saturation(time.into());
-        println!("{}", saturation);
+        let saturation = ins.check_saturation_group(time.into());
+        println!("{:?}", saturation);
         start_time += time_delta;
     }
 }

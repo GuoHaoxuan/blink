@@ -10,4 +10,12 @@ impl Instance {
             || rec_sci_data(time, &self.eng_files[1], &self.sci_files[1])
             || rec_sci_data(time, &self.eng_files[2], &self.sci_files[2])
     }
+
+    pub fn check_saturation_group(&self, time: Time<Hxmt>) -> [bool; 3] {
+        [
+            rec_sci_data(time, &self.eng_files[0], &self.sci_files[0]),
+            rec_sci_data(time, &self.eng_files[1], &self.sci_files[1]),
+            rec_sci_data(time, &self.eng_files[2], &self.sci_files[2]),
+        ]
+    }
 }
