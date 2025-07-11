@@ -65,7 +65,7 @@ plt.rcParams.update(
     }
 )
 cm = 1 / 2.54
-plt.figure(figsize=(20 * cm, 7 * cm), dpi=1200)
+plt.figure(figsize=(20 * cm, 5 * cm), dpi=1200)
 
 n, bins, patches = plt.hist(
     time,

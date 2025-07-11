@@ -43,7 +43,7 @@ plt.rcParams.update(
     }
 )
 cm = 1 / 2.54
-plt.figure(figsize=(12 * cm, 7 * cm), dpi=1200)
+plt.figure(figsize=(20 * cm, 5 * cm), dpi=1200)
 
 n, bins, patches = plt.hist(
     time,
@@ -56,7 +56,10 @@ plt.xlabel("Time Since 2017-06-27T14:08:39.627Z (s)")
 plt.ylabel("Frequency")
 
 twinx = plt.twinx()
-sca = twinx.scatter(time, channel, s=5, facecolor="C1", edgecolor="None", marker="o")
+sca = twinx.scatter(time, channel, s=20, facecolor="None", edgecolor="C1", marker="o")
+threshold = plt.axhline(
+    38, color="C3", linestyle="--", linewidth=0.5, label="Channel 38"
+)
 twinx.set_ylabel("Channel")
 
 twinx.annotate(
@@ -68,14 +71,14 @@ twinx.annotate(
     ),
 )
 legend = plt.legend(
-    handles=[patches[0], sca],
-    labels=["Light Curve", "HE CsI Event"],
+    handles=[patches[0], sca, threshold],
+    labels=["Light Curve", "HE CsI Event", "Channel 38"],
     loc="upper left",
 )
 
 plt.tight_layout()
 plt.savefig(
-    "hxmt-catalog/output/glitch.pdf",
+    "hxmt-catalog/output/spike.pdf",
     bbox_inches="tight",
     transparent=True,
 )
