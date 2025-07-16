@@ -1,11 +1,8 @@
 import sqlite3
 
-import cartopy.crs as ccrs
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
-from dateutil.parser import parse
-from PIL import Image
 
 conn = sqlite3.connect("blink.db")
 cursor = conn.cursor()
@@ -13,8 +10,10 @@ cursor.execute(
     """
     SELECT duration_best, associated_lightning_count
     FROM signal
-    WHERE start < '2025-01-01'
-        AND (fp_year < 1e-5 OR (fp_year < 1 AND associated_lightning_count > 0));
+    WHERE start_full < '2025-01-01'
+        AND (
+            false_positive_per_year <= 1e-5
+                OR false_positive_per_year <= 1 AND associated_lightning_count > 0)
     """
 )
 signals = cursor.fetchall()
@@ -39,19 +38,35 @@ gs = fig.add_gridspec(2, 1, height_ratios=[1, 3.5], hspace=0, wspace=0)
 plt.subplot(gs[1])
 maxval = np.max(durations)
 minval = np.min(durations)
-bins = np.logspace(np.log10(minval), np.log10(maxval), 100)
-plt.hist(durations, bins=bins, color="C0", histtype="step")
-plt.hist(durations_lightning, bins=bins, color="C2", histtype="step")
+bins = np.logspace(np.log10(minval), np.log10(maxval), 50)
+n_all, _, _ = plt.hist(durations, bins=bins, color="C0", histtype="step")
+n_lightning, _, _ = plt.hist(
+    durations_lightning, bins=bins, color="C2", histtype="step"
+)
 plt.xscale("log")
 plt.yscale("log")
 plt.xlim(minval, maxval)
 plt.xlabel("Duration (seconds)")
 plt.ylabel("Number")
 
+twinx = plt.twinx()
+twinx.set_zorder(-1)
+twinx.plot(
+    (bins[1:] + bins[:-1]) / 2,
+    n_lightning / n_all,
+    color="#CCCCCC",
+    linestyle="--",
+)
+twinx.set_ylabel("Fraction")
+twinx.set_ylim(0, 1)
+
 plt.subplot(gs[0])
 handles = [
     mpatches.Patch(edgecolor="C0", facecolor="None", label="All Signals"),
     mpatches.Patch(edgecolor="C2", facecolor="None", label="Signals with Lightning"),
+    plt.Line2D(
+        [0], [0], color="#CCCCCC", linestyle="--", label="Fraction with Lightning"
+    ),
 ]
 plt.legend(handles=handles, ncols=len(handles), loc="center", frameon=False)
 plt.axis("off")

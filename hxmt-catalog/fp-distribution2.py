@@ -27,7 +27,7 @@ cursor = conn.cursor()
 
 # 全部的
 cursor.execute(
-    "SELECT fp_year, coincidence_probability FROM signal WHERE start < '2025-01-01'"
+    "SELECT false_positive_per_year, coincidence_probability FROM signal WHERE start_full < '2025-01-01'"
 )
 data = cursor.fetchall()
 fp_years = [row[0] for row in data]
@@ -58,7 +58,7 @@ plt.stairs(
 
 # 闪电关联
 cursor.execute(
-    "SELECT fp_year FROM signal WHERE start < '2025-01-01' AND associated_lightning_count > 0"
+    "SELECT false_positive_per_year FROM signal WHERE start_full < '2025-01-01' AND associated_lightning_count > 0"
 )
 data = cursor.fetchall()
 fp_years = [row[0] for row in data]
@@ -68,6 +68,17 @@ n_associated, _, _ = plt.hist(
     bins=fp_bins,
     histtype="step",
     label="Signals with Lightning",
+    edgecolor="C2",
+    alpha=0.5,
+)
+
+# 闪电关联 - 误关联
+n_diff = n_associated - misassociated_count
+plt.stairs(
+    n_diff,
+    fp_bins,
+    fill=False,
+    edgecolor="C2",
 )
 
 # 拟合
@@ -120,6 +131,9 @@ plt.ylim(0.5, 1e6)
 legend_handles = [
     mpatches.Patch(edgecolor="C0", facecolor="None", label="All Signals"),
     mpatches.Patch(edgecolor="C1", facecolor="None", label="Mis-associated Signals"),
+    mpatches.Patch(
+        edgecolor="C2", facecolor="None", alpha=0.5, label="Signals with Lightning"
+    ),
     mpatches.Patch(edgecolor="C2", facecolor="None", label="Signals with Lightning"),
     plt.Line2D([0], [0], color="#CCCCCC", linestyle="--", label="Power Law Fit"),
     mpatches.Patch(facecolor="C2", edgecolor="None", alpha=0.1, label="Accept"),
