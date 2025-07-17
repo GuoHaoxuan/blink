@@ -15,8 +15,10 @@ cursor.execute(
     """
     SELECT longitude, latitude, associated_lightning_count
     FROM signal
-    WHERE start < '2025-01-01'
-        AND (fp_year < 1e-5 OR (fp_year < 1 AND associated_lightning_count > 0));
+    WHERE start_full < '2025-01-01'
+        AND (
+            false_positive_per_year <= 1e-5
+                OR false_positive_per_year <= 1 AND associated_lightning_count > 0)
     """
 )
 signals = cursor.fetchall()
@@ -127,6 +129,10 @@ ax_map.set_yticklabels(
 )
 # ax_map.set_xlabel("Longitude")
 # ax_map.set_ylabel("Latitude")
+ax_map.annotate("1", xy=(-150, 26), fontsize=6)
+ax_map.annotate("2", xy=(-124, 20), fontsize=6)
+ax_map.annotate("3", xy=(-69, 35), fontsize=6)
+ax_map.annotate("4", xy=(-49, 38), fontsize=6)
 
 longitude_ax.hist(
     [x if x < 330 else x - 360 for x in longitudes_all],
