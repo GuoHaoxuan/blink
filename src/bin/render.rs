@@ -1,4 +1,4 @@
-use blink::types::Signal;
+use blink::types::{LocationList, Signal};
 use csv::Writer;
 use indicatif::{ProgressBar, ProgressStyle};
 use rusqlite::{Connection, params};
@@ -201,7 +201,9 @@ fn main() {
             q1,
             q2,
             q3,
-            orbit: serde_json::from_str(&orbit).unwrap(),
+            orbit: LocationList {
+                data: serde_json::from_str(&orbit).unwrap(),
+            },
             lightnings: serde_json::from_str(&lightnings).unwrap(),
             associated_lightning_count,
             coincidence_probability,

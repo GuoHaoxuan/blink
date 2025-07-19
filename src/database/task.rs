@@ -193,7 +193,7 @@ pub fn write_signal(conn: &Connection, signal: &Signal, satellite: &str, detecto
             signal.q1,
             signal.q2,
             signal.q3,
-            serde_json::to_string(&signal.orbit).unwrap(),
+            serde_json::to_string(&signal.orbit.data).unwrap(),
             serde_json::to_string(&signal.lightnings).unwrap(),
             signal.associated_lightning_count,
             signal.coincidence_probability,
