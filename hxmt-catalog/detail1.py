@@ -2,7 +2,6 @@ import json
 import sqlite3
 
 import cartopy.crs as ccrs
-import dateutil
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
@@ -55,12 +54,12 @@ plt.rcParams.update(
         "font.family": "serif",  # 使用衬线字体（如 Times New Roman）
         "font.serif": ["Computer Modern"],  # 如果你用的是 LaTeX 默认字体
         "font.size": 8,
-        "text.latex.preamble": "\\usepackage{amsmath}",  # 如果需要数学公式支持
+        "text.latex.preamble": "\\usepackage{amsmath}\\usepackage{siunitx}",  # 如果需要数学公式支持
         "lines.linewidth": 1,
     }
 )
 cm = 1 / 2.54
-fig = plt.figure(figsize=(20 * cm, 8 * cm), dpi=1200)
+fig = plt.figure(figsize=(20 * cm, 7.25 * cm), dpi=1200)
 
 gs = GridSpec(4, 2, width_ratios=[1, 2], height_ratios=[1, 4, 4, 4])
 
@@ -90,12 +89,10 @@ ax_map.imshow(
 ax_map.scatter(
     longitude,
     latitude,
-    marker="o",
+    marker="x",
     s=20,
-    facecolor="C1",
-    edgecolors="None",
+    color="C0",
     transform=ccrs.PlateCarree(),
-    label=f"Signal ({start_full})",
 )
 # ax_map.set_title("Signal Location", fontsize=10)
 ax_map.set_xticks(np.arange(-10, 11, 10), crs=ccrs.PlateCarree())
@@ -131,18 +128,17 @@ ax_map.scatter(
     latitudes_with_lightning,
     marker="o",
     s=5,
-    facecolor="C4",
+    facecolor="C2",
     edgecolors="None",
     transform=ccrs.PlateCarree(),
-    label=f"Signal with Lightnings ({len(longitudes_with_lightning)})",
 )
 # draw a 800km radius circle around the signal point
 circle = mpatches.Circle(
     (longitude, latitude),
     radius=800 / 6371 * 180 / np.pi,  # Convert km to degrees
     transform=ccrs.PlateCarree(),
-    color="C5",
-    alpha=0.3,
+    edgecolor="#CCCCCC",
+    facecolor="None",
 )
 ax_map.add_patch(circle)
 
@@ -156,21 +152,72 @@ for event in events:
         marker="^" if event["info"]["scintillator"] == "NaI" else "o",
         s=20,
         facecolor="None",
-        edgecolor=["C0" if event["info"]["acd"] == 0 else "C1"],
+        edgecolor=["C2" if event["info"]["acd"] == 0 else "C0"],
+        lw=0.5,
     )
+ax_detail_twin.axhline(38, color="#CCCCCC", linestyle="--", zorder=-1)
 ax_detail_twin.set_ylabel("Channel")
+duration = (
+    dateutil_parse(stop_best).timestamp() - dateutil_parse(start_best).timestamp()
+) * 1000
+offset = (dateutil_parse(start_best).timestamp() - start_full.timestamp()) * 1000
+bins = np.arange(
+    offset - 30 * duration,
+    offset + 30 * duration,
+    duration,
+)
 ax_detail.hist(
     [
         (dateutil_parse(event["time"]).timestamp() - start_full.timestamp()) * 1000
         for event in events
     ],
+    bins=bins,
     histtype="step",
+    color="C0",
+    weights=[1000 / duration] * len(events),
 )
+ax_detail.hist(
+    [
+        (dateutil_parse(event["time"]).timestamp() - start_full.timestamp()) * 1000
+        for event in events
+        if event["keep"]
+    ],
+    bins=bins,
+    histtype="step",
+    color="C2",
+    weights=[1000 / duration] * len([event for event in events if event["keep"]]),
+)
+ax_detail.axvspan(0, offset, facecolor="C0", edgecolor="None", alpha=0.1, zorder=-2)
+ax_detail.axvspan(
+    offset + duration,
+    (dateutil_parse(stop_full).timestamp() - start_full.timestamp()) * 1000,
+    facecolor="C0",
+    edgecolor="None",
+    alpha=0.1,
+    zorder=-2,
+)
+ax_detail.axvspan(
+    offset,
+    offset + duration,
+    facecolor="C2",
+    edgecolor="None",
+    alpha=0.2,
+    zorder=-2,
+)
+ax_detail.axhline(background, color="#CCCCCC", linestyle="-", zorder=-1)
+ax_detail.set_xlim(
+    (dateutil_parse(events[0]["time"]).timestamp() - start_full.timestamp()) * 1000,
+    (dateutil_parse(events[-1]["time"]).timestamp() - start_full.timestamp()) * 1000,
+)
+ax_detail.yaxis.set_major_formatter(lambda x, pos: f"$\\num{{{x:.0f}}}$")
 # ax_detail.set_xlabel("Time (ms)")
-ax_detail.set_ylabel("Counts")
+ax_detail.set_ylabel("CPS (\\unit{\\per\\second})")
+ax_detail.xaxis.set_major_formatter(
+    plt.FuncFormatter(lambda x, _: f"$\\SI{{{x}}}{{\\milli\\second}}$")
+)
 
 ax_100ms.stairs(
-    json.loads(light_curve_100ms_unfiltered),
+    np.array(json.loads(light_curve_100ms_unfiltered)) / 1e-3,
     np.linspace(
         -50,
         50,
@@ -180,21 +227,27 @@ ax_100ms.stairs(
     color="C0",
 )
 ax_100ms.stairs(
-    json.loads(light_curve_100ms_filtered),
+    np.array(json.loads(light_curve_100ms_filtered)) / 1e-3,
     np.linspace(
         -50,
         50,
         101,
     ),
     label="100ms Filtered",
-    color="C1",
+    color="C2",
 )
+ax_100ms.axhline(background, color="#CCCCCC", linestyle="-", zorder=-1)
 # ax_100ms.set_xlabel("Time (ms)")
-ax_100ms.set_ylabel("Counts")
+ax_100ms.yaxis.set_major_formatter(lambda x, pos: f"$\\num{{{x:.0f}}}$")
+ax_100ms.set_ylabel("CPS (\\unit{\\per\\second})")
 ax_100ms.set_xlim(-50, 50)
+ax_100ms.xaxis.set_major_locator(plt.MultipleLocator(25))
+ax_100ms.xaxis.set_major_formatter(
+    plt.FuncFormatter(lambda x, _: f"$\\SI{{{x:.0f}}}{{\\milli\\second}}$")
+)
 
 ax_1s.stairs(
-    json.loads(light_curve_1s_unfiltered),
+    np.array(json.loads(light_curve_1s_unfiltered)) / 1e-2,
     np.linspace(
         -500,
         500,
@@ -204,49 +257,105 @@ ax_1s.stairs(
     color="C0",
 )
 ax_1s.stairs(
-    json.loads(light_curve_1s_filtered),
+    np.array(json.loads(light_curve_1s_filtered)) / 1e-2,
     np.linspace(
         -500,
         500,
         101,
     ),
     label="1s Filtered",
-    color="C1",
+    color="C2",
 )
+ax_1s.axhline(background, color="#CCCCCC", linestyle="-", zorder=-1)
 # ax_1s.set_xlabel("Time (ms)")
-ax_1s.set_ylabel("Counts")
+ax_1s.yaxis.set_major_formatter(lambda x, pos: f"$\\num{{{x:.0f}}}$")
+ax_1s.set_ylabel("CPS (\\unit{\\per\\second})")
 ax_1s.set_xlim(-500, 500)
-ax_1s.set_xticks(
-    [-500, -250, 0, 250, 500], labels=["-500", "-250", "0", "250", "500 (ms)"]
+ax_1s.xaxis.set_major_locator(plt.MultipleLocator(250))
+ax_1s.xaxis.set_major_formatter(
+    plt.FuncFormatter(lambda x, _: f"$\\SI{{{x:.0f}}}{{\\milli\\second}}$")
 )
 
 legend_map_handles = [
-    mpatches.Patch(color="C0", label="Subsatellite"),
-    mpatches.Patch(color="C1", label="800km Radius"),
-    mpatches.Patch(color="C0", label="lightning"),
+    plt.Line2D(
+        [],
+        [],
+        markerfacecolor="C0",
+        marker="x",
+        linestyle="None",
+        label="Sub-satellite",
+    ),
+    plt.Line2D(
+        [],
+        [],
+        color="#CCCCCC",
+        linestyle="-",
+        label="\\SI{800}{\\kilo\\meter} Radius",
+    ),
+    plt.Line2D(
+        [],
+        [],
+        markerfacecolor="C2",
+        markeredgecolor="None",
+        marker="o",
+        linestyle="None",
+        label="Lightning",
+    ),
 ]
 legend_light_curve_handles = [
-    mpatches.Patch(color="C1", label="NaI"),
-    mpatches.Patch(color="C2", label="CsI"),
-    mpatches.Patch(color="C3", label="No Veto"),
-    mpatches.Patch(color="C4", label="Veto"),
-    mpatches.Patch(color="C5", label="Filtered"),
-    mpatches.Patch(color="C6", label="Unfiltered"),
+    plt.Line2D(
+        [],
+        [],
+        markeredgecolor="black",
+        markerfacecolor="None",
+        marker="^",
+        linestyle="None",
+        label="NaI",
+    ),
+    plt.Line2D(
+        [],
+        [],
+        markeredgecolor="black",
+        markerfacecolor="None",
+        marker="o",
+        linestyle="None",
+        label="CsI",
+    ),
+    mpatches.Patch(color="C0", label="Veto"),
+    mpatches.Patch(color="C2", label="No Veto"),
+    mpatches.Patch(edgecolor="C0", facecolor="None", label="Unfiltered"),
+    mpatches.Patch(edgecolor="C2", facecolor="None", label="Filtered"),
+    plt.Line2D(
+        [],
+        [],
+        color="#CCCCCC",
+        linestyle="-",
+        label="Background",
+    ),
+    plt.Line2D(
+        [],
+        [],
+        color="#CCCCCC",
+        linestyle="--",
+        label="Threshold",
+    ),
+    mpatches.Patch(facecolor="C0", edgecolor="None", alpha=0.1, label="Full Duration"),
+    mpatches.Patch(facecolor="C2", edgecolor="None", alpha=0.2, label="Best Duration"),
 ]
 ax_legend_map.legend(
     handles=legend_map_handles,
-    ncols=1,
+    ncols=2,
     loc="center",
     frameon=False,
 )
 ax_legend_map.axis("off")
 ax_legend_light_curve.legend(
     handles=legend_light_curve_handles,
-    ncols=3,
+    ncols=5,
     loc="center",
     frameon=False,
 )
 ax_legend_light_curve.axis("off")
 
 plt.tight_layout()
-plt.savefig("hxmt-catalog/output/detail.pdf", bbox_inches="tight")
+plt.savefig("hxmt-catalog/output/detail1.pdf", bbox_inches="tight")
