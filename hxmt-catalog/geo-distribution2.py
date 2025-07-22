@@ -113,12 +113,12 @@ ax_map.fill(
 # 设置地图坐标轴
 ax_map.set_xlim(-180, 180)
 ax_map.set_ylim(-43, 43)
-ax_map.set_xticks(np.arange(-180, 179, 45))
+ax_map.set_xticks(np.arange(-180, 179, 30))
 ax_map.set_yticks(np.arange(-30, 36, 15))
 ax_map.set_xticklabels(
     [
-        f"{abs(int(x))}°{'W' if x < 0 else 'E' if x > 0 else ''}"
-        for x in np.arange(-180, 179, 45)
+        f"{abs(int((x + 180) % 360 - 180))}°{'' if x == 0 or x == 180 else 'W' if x < 0 or x > 180 else 'E' if x > 0 else ''}"
+        for x in np.arange(-30, 330, 30)
     ]
 )
 ax_map.set_yticklabels(
