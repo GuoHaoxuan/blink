@@ -13,8 +13,10 @@ cursor.execute(
     """
     SELECT solar_zenith_angle_at_noon, associated_lightning_count
     FROM signal
-    WHERE start < '2025-01-01'
-        AND (fp_year < 1e-5 OR (fp_year < 1 AND associated_lightning_count > 0));
+    WHERE start_full < '2025-01-01'
+        AND (
+            false_positive_per_year <= 1e-5
+                OR false_positive_per_year <= 1 AND associated_lightning_count > 0)
     """
 )
 signals = cursor.fetchall()
@@ -39,12 +41,12 @@ gs = fig.add_gridspec(2, 1, height_ratios=[1, 3.5], hspace=0, wspace=0)
 plt.subplot(gs[1])
 plt.hist(angles, bins=np.arange(0, 91, 1), color="C0", histtype="step")
 plt.hist(angles_lightning, bins=np.arange(0, 91, 1), color="C2", histtype="step")
-plt.axvspan(
-    0, 23.5, facecolor="C1", edgecolor="None", alpha=0.1, label="Summer", zorder=-2
-)
-plt.axvspan(23.5, 66.5, facecolor="C2", edgecolor="None", alpha=0.1, zorder=-2)
-plt.axvspan(66.5, 90, facecolor="C0", edgecolor="None", alpha=0.1, zorder=-2)
-plt.xlim(0, 90)
+# plt.axvspan(
+#     0, 23.5, facecolor="C1", edgecolor="None", alpha=0.1, label="Summer", zorder=-2
+# )
+# plt.axvspan(23.5, 66.5, facecolor="C2", edgecolor="None", alpha=0.1, zorder=-2)
+# plt.axvspan(66.5, 90, facecolor="C0", edgecolor="None", alpha=0.1, zorder=-2)
+plt.xlim(0, 66.5)
 plt.xlabel("Solar Zenith Angle at Noon (degrees)")
 plt.ylabel("Number")
 plt.yscale("log")
@@ -53,11 +55,11 @@ plt.subplot(gs[0])
 handles = [
     mpatches.Patch(edgecolor="C0", facecolor="None", label="All Signals"),
     mpatches.Patch(edgecolor="C2", facecolor="None", label="Signals with Lightning"),
-    mpatches.Patch(facecolor="C0", edgecolor="None", alpha=0.1, label="Winter"),
-    mpatches.Patch(facecolor="C1", edgecolor="None", alpha=0.1, label="Summer"),
-    mpatches.Patch(
-        facecolor="C2", edgecolor="None", alpha=0.1, label="Spring or Autumn"
-    ),
+    # mpatches.Patch(facecolor="C0", edgecolor="None", alpha=0.1, label="Winter"),
+    # mpatches.Patch(facecolor="C1", edgecolor="None", alpha=0.1, label="Summer"),
+    # mpatches.Patch(
+    #     facecolor="C2", edgecolor="None", alpha=0.1, label="Spring or Autumn"
+    # ),
 ]
 plt.legend(handles=handles, ncols=len(handles), loc="center", frameon=False)
 plt.axis("off")

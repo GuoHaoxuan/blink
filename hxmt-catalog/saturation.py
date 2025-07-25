@@ -44,6 +44,7 @@ def satellite_time_to_iso8601(satellite_time: float) -> str:
 
 data = fits.open("HXMT_20180826T12_HE-Evt_FFFFFF_V1_1K.FITS")
 time = data["Events"].data["Time"]
+print("[DEBUG]", len(time), "events")
 pulse_width = data["Events"].data["Pulse_Width"]
 time_ref = isot_to_satellite_time("2018-08-26T12:31:59.217Z")
 cond = (time > time_ref - 50e-3) & (time < time_ref + 50e-3) & (pulse_width >= 75)
