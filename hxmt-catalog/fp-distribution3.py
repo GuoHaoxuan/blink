@@ -33,7 +33,7 @@ data = cursor.fetchall()
 fp_years = [row[0] for row in data]
 fp_years = np.array(fp_years)
 min_fp = np.min(fp_years)
-max_fp = np.max(1.6e11)
+max_fp = np.max(3.16e11)
 bins = 200
 fp_bins = np.logspace(np.log10(min_fp), np.log10(20), bins + 1)
 n_all, _, _ = plt.hist(
@@ -132,13 +132,20 @@ plt.ylim(0.5, 1e6)
 
 # 手动创建图例句柄
 legend_handles = [
-    mpatches.Patch(edgecolor="C0", facecolor="None", label="All Signals"),
-    mpatches.Patch(edgecolor="C1", facecolor="None", label="Mis-associated Signals"),
+    mpatches.Patch(edgecolor="C0", facecolor="None", label="TGF Candidates"),
+    mpatches.Patch(
+        edgecolor="C1", facecolor="None", label="Mis-associated TGF Candidates"
+    ),
     plt.Line2D([0], [0], color="#CCCCCC", linestyle="--", label="Power Law Fits"),
     mpatches.Patch(
-        edgecolor="C2", facecolor="None", alpha=0.5, label="Signals with Lightning"
+        edgecolor="C2",
+        facecolor="None",
+        alpha=0.5,
+        label="TGF Candidates with Lightning",
     ),
-    mpatches.Patch(edgecolor="C2", facecolor="None", label="Signals with Lightning"),
+    mpatches.Patch(
+        edgecolor="C2", facecolor="None", label="$\\cdots$ But Mis-associated Excluded"
+    ),
     mpatches.Patch(facecolor="C0", edgecolor="None", alpha=0.1, label="Estimated TGFs"),
 ]
 plt.legend(handles=legend_handles, ncols=2, loc="upper right")

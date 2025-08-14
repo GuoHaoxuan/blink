@@ -60,10 +60,10 @@ twinx.set_ylim(0, 1)
 
 plt.subplot(gs[0])
 handles = [
-    mpatches.Patch(edgecolor="C0", facecolor="None", label="All Signals"),
-    mpatches.Patch(edgecolor="C2", facecolor="None", label="Signals with Lightning"),
+    mpatches.Patch(edgecolor="C0", facecolor="None", label="TGFs"),
+    mpatches.Patch(edgecolor="C2", facecolor="None", label="TGFs with Lightning"),
     plt.Line2D(
-        [0], [0], color="#CCCCCC", linestyle="--", label="Fraction with Lightning"
+        [0], [0], color="#CCCCCC", linestyle="--", label="Proportion with Lightning"
     ),
 ]
 plt.legend(handles=handles, ncols=len(handles), loc="center", frameon=False)

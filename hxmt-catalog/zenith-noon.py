@@ -53,8 +53,8 @@ plt.yscale("log")
 
 plt.subplot(gs[0])
 handles = [
-    mpatches.Patch(edgecolor="C0", facecolor="None", label="All Signals"),
-    mpatches.Patch(edgecolor="C2", facecolor="None", label="Signals with Lightning"),
+    mpatches.Patch(edgecolor="C0", facecolor="None", label="TGFs"),
+    mpatches.Patch(edgecolor="C2", facecolor="None", label="TGFs with Lightning"),
     # mpatches.Patch(facecolor="C0", edgecolor="None", alpha=0.1, label="Winter"),
     # mpatches.Patch(facecolor="C1", edgecolor="None", alpha=0.1, label="Summer"),
     # mpatches.Patch(

@@ -129,12 +129,21 @@ plt.ylim(0.5, 1e6)
 
 # 手动创建图例句柄
 legend_handles = [
-    mpatches.Patch(edgecolor="C0", facecolor="None", label="All Signals"),
-    mpatches.Patch(edgecolor="C1", facecolor="None", label="Mis-associated Signals"),
+    mpatches.Patch(edgecolor="C0", facecolor="None", label="TGF Candidates"),
     mpatches.Patch(
-        edgecolor="C2", facecolor="None", alpha=0.5, label="Signals with Lightning"
+        edgecolor="C1", facecolor="None", label="Mis-associated TGF Candidates"
     ),
-    mpatches.Patch(edgecolor="C2", facecolor="None", label="Signals with Lightning"),
+    mpatches.Patch(
+        edgecolor="C2",
+        facecolor="None",
+        alpha=0.5,
+        label="TGF Candidates with Lightning",
+    ),
+    mpatches.Patch(
+        edgecolor="C2",
+        facecolor="None",
+        label="$\cdots$ But Mis-associated Excluded",
+    ),
     plt.Line2D([0], [0], color="#CCCCCC", linestyle="--", label="Power Law Fit"),
     mpatches.Patch(facecolor="C2", edgecolor="None", alpha=0.1, label="Accept"),
     mpatches.Patch(

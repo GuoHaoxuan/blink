@@ -13,8 +13,10 @@ cursor.execute(
     """
     SELECT apparent_solar_time, associated_lightning_count
     FROM signal
-    WHERE start < '2025-01-01'
-        AND (fp_year < 1e-5 OR (fp_year < 1 AND associated_lightning_count > 0));
+    WHERE start_full < '2025-01-01'
+        AND (
+            false_positive_per_year <= 1e-5
+                OR false_positive_per_year <= 1 AND associated_lightning_count > 0)
     """
 )
 signals = cursor.fetchall()
@@ -67,8 +69,8 @@ plt.ylabel("Number")
 
 plt.subplot(gs[0])
 handles = [
-    mpatches.Patch(edgecolor="C0", facecolor="None", label="All Signals"),
-    mpatches.Patch(edgecolor="C2", facecolor="None", label="Signals with Lightning"),
+    mpatches.Patch(edgecolor="C0", facecolor="None", label="TGFs"),
+    mpatches.Patch(edgecolor="C2", facecolor="None", label="TGFs with Lightning"),
     mpatches.Patch(facecolor="C0", edgecolor="None", alpha=0.1, label="Nighttime"),
     mpatches.Patch(facecolor="C1", edgecolor="None", alpha=0.1, label="Daytime"),
 ]
