@@ -142,7 +142,7 @@ legend_handles = [
     mpatches.Patch(
         edgecolor="C2",
         facecolor="None",
-        label="$\cdots$ But Mis-associated Excluded",
+        label="$\\cdots$ But Mis-associated Excluded",
     ),
     plt.Line2D([0], [0], color="#CCCCCC", linestyle="--", label="Power Law Fit"),
     mpatches.Patch(facecolor="C2", edgecolor="None", alpha=0.1, label="Accept"),

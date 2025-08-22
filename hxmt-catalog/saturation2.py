@@ -26,7 +26,7 @@ time = data["Events"].data["Time"]
 pulse_width = data["Events"].data["Pulse_Width"]
 acd = data["Events"].data["ACD"]
 event_type = data["Events"].data["Event_Type"]
-print(data["Events"].data.columns)
+# print(data["Events"].data.columns)
 
 time_ref = isot_to_satellite_time("2018-08-26T12:31:59.217Z")
 cond = (time > time_ref - 50e-3) & (time < time_ref + 50e-3)
@@ -73,7 +73,7 @@ plt.hist(
 
 plt.xlim(-50e-3, 50e-3)
 plt.gca().xaxis.set_major_formatter(
-    lambda x, _: f"\SI{{{x * 1e3:.0f}}}{{\milli\second}}"
+    lambda x, _: f"\\SI{{{x * 1e3:.0f}}}{{\\milli\\second}}"
 )
 plt.xlabel("Time Since 2018-08-26 12:31:59.217 UTC")
 plt.ylabel("Frequency")

@@ -57,7 +57,7 @@ twinx.plot(
     color="#CCCCCC",
     linestyle="--",
 )
-twinx.set_ylabel("Fraction")
+twinx.set_ylabel("Proportion")
 twinx.set_ylim(0, 1)
 
 plt.subplot(gs[0])
