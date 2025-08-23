@@ -109,9 +109,24 @@ x_fit = np.logspace(np.log10(min_fp), np.log10(max_fp), 100)
 y_fit = power_law(x_fit, *curve_fit_params_all_right)
 plt.plot(x_fit, y_fit, color="#CCCCCC", linestyle="--", zorder=-1)
 plt.fill_between(x_fit, y_fit, 1e-1, color="C0", alpha=0.1, zorder=-2)
+
 estimated_tgfs = 0
-for x in (fp_bins[:-1] + fp_bins[1:]) / 2:
-    estimated_tgfs += power_law(x, *curve_fit_params_all_right)
+fp_bins_extended = np.logspace(
+    np.log10(min_fp),
+    np.log10(max_fp),
+    int(
+        np.round(
+            (bins + 1)
+            * (np.log10(max_fp) - np.log10(min_fp))
+            / (np.log10(20) - np.log10(min_fp))
+        )
+    ),
+)
+for x in (fp_bins_extended[:-1] + fp_bins_extended[1:]) / 2:
+    y = power_law(x, *curve_fit_params_all_right)
+    # plt.scatter(x, y, color="C0", marker="^", s=3)
+    estimated_tgfs += y
+    # print(f"Estimated TGFs for {x}: {y}")
 print(f"Estimated TGFs: {estimated_tgfs}")
 
 condition = ((fp_bins[:-1] + fp_bins[1:]) / 2 < 1e-2) & (
