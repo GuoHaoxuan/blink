@@ -70,6 +70,15 @@ impl InstanceTrait for Instance {
             })
             .collect::<Vec<_>>();
 
+        let signals = signals
+            .into_iter()
+            .filter(|signal| {
+                signal.false_positive_per_year <= 1e-5
+                    || (signal.false_positive_per_year <= 1e0
+                        && signal.associated_lightning_count > 0)
+            })
+            .collect::<Vec<_>>();
+
         Ok(signals)
     }
 }
