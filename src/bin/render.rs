@@ -56,15 +56,7 @@ fn main() {
 
     // 先获取总记录数以初始化进度条
     let total_count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM signal
-            WHERE start_full < '2025-01-01'
-                AND (
-                    false_positive_per_year <= 1e-5
-                        OR false_positive_per_year <= 1 AND associated_lightning_count > 0)",
-            params![],
-            |row| row.get(0),
-        )
+        .query_row("SELECT COUNT(*) FROM signal", params![], |row| row.get(0))
         .unwrap();
 
     // 创建进度条
@@ -121,10 +113,6 @@ fn main() {
                 solar_zenith_angle_at_noon,
                 solar_azimuth_angle
             FROM signal
-            WHERE start_full < '2025-01-01'
-                AND (
-                    false_positive_per_year <= 1e-5
-                        OR false_positive_per_year <= 1 AND associated_lightning_count > 0)
             ORDER BY start_full
         ",
     )
