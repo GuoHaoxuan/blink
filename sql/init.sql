@@ -9,11 +9,13 @@ CREATE TABLE
         worker TEXT, -- 处理者
         status TEXT NOT NULL, -- 状态 Pending, Running, Finished, Failed
         error TEXT, -- 错误信息
-        UNIQUE (satellite, detector, time) ON CONFLICT IGNORE
+        UNIQUE (satellite, detector, time) ON CONFLICT IGNORE,
+        INDEX (time)
     );
 
 CREATE TABLE
     IF NOT EXISTS signal (
+        id TEXT,
         satellite TEXT NOT NULL, -- 要处理的卫星
         detector TEXT NOT NULL, -- 要处理的探测器
         start_full TEXT NOT NULL, -- 开始时间
@@ -56,7 +58,8 @@ CREATE TABLE
         solar_zenith_angle REAL NOT NULL, -- 太阳天顶角
         solar_zenith_angle_at_noon REAL NOT NULL, -- 中午太阳天顶角
         solar_azimuth_angle REAL NOT NULL, -- 太阳方位角
-        UNIQUE (satellite, detector, start_full) ON CONFLICT IGNORE
+        UNIQUE (satellite, detector, start_full) ON CONFLICT IGNORE,
+        UNIQUE (id) ON CONFLICT IGNORE
     );
 
 CREATE TABLE
