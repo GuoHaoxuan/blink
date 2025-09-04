@@ -9,9 +9,10 @@ CREATE TABLE
         worker TEXT, -- 处理者
         status TEXT NOT NULL, -- 状态 Pending, Running, Finished, Failed
         error TEXT, -- 错误信息
-        UNIQUE (satellite, detector, time) ON CONFLICT IGNORE,
-        INDEX (time)
+        UNIQUE (satellite, detector, time) ON CONFLICT IGNORE
     );
+
+CREATE INDEX IF NOT EXISTS idx_task_time ON task (time);
 
 CREATE TABLE
     IF NOT EXISTS signal (
