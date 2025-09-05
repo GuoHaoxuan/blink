@@ -35,3 +35,7 @@ path = "src/bin/render.rs"
 [[bin]]
 name = "test"
 path = "src/bin/test.rs"
+
+[[bin]]
+name = "extract"
+path = "src/bin/extract.rs"
