@@ -4,6 +4,7 @@ use serde::Serialize;
 #[derive(Serialize)]
 struct Tgf {
     id: String,
+    detector: String,
     start: String,
     duration: f64,
     confidence: f64,
@@ -113,7 +114,9 @@ fn main() {
                 longitude,
                 latitude,
                 altitude,
-                apparent_solar_time
+                apparent_solar_time,
+                satellite,
+                detector
             FROM signal
             ORDER BY id
             ",
@@ -122,6 +125,7 @@ fn main() {
         .query_map([], |row| {
             Ok(Tgf {
                 id: row.get(0)?,
+                detector: format!("{}/{}", row.get::<_, String>(8)?, row.get::<_, String>(9)?),
                 start: row.get(1)?,
                 duration: row.get(2)?,
                 confidence: row.get(3)?,
