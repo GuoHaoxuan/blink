@@ -13,6 +13,18 @@ struct Tgf {
     apparent_solar_time: String,
 }
 
+#[derive(Serialize)]
+struct LastUpdate {
+    #[serde(rename = "HXMT/HE")]
+    hxmt: String,
+}
+
+#[derive(Serialize)]
+struct Output {
+    last_update: LastUpdate,
+    tgfs: Vec<Tgf>,
+}
+
 fn main() {
     let conn = Connection::open("blink.db").unwrap();
     let times_to_be_number = conn
@@ -122,6 +134,25 @@ fn main() {
         .unwrap()
         .collect::<Result<Vec<Tgf>, _>>()
         .unwrap();
-    let json = serde_json::to_string_pretty(&tgfs).unwrap();
+    let hxmt_last_update: String = conn
+        .prepare(
+            "
+            SELECT MAX(time)
+            FROM task
+            WHERE satellite = 'HXMT'
+            AND detector = 'HE'
+            AND status = 'Finished'
+            ",
+        )
+        .unwrap()
+        .query_row([], |row| row.get(0))
+        .unwrap();
+    let output = Output {
+        last_update: LastUpdate {
+            hxmt: hxmt_last_update,
+        },
+        tgfs,
+    };
+    let json = serde_json::to_string_pretty(&output).unwrap();
     std::fs::write("tgfs.json", json).unwrap();
 }
