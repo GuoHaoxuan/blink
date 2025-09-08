@@ -15,14 +15,14 @@ struct Tgf {
 }
 
 #[derive(Serialize)]
-struct LastUpdate {
+struct LastUpdated {
     #[serde(rename = "HXMT/HE")]
     hxmt: String,
 }
 
 #[derive(Serialize)]
 struct Output {
-    last_update: LastUpdate,
+    last_updated: LastUpdated,
     tgfs: Vec<Tgf>,
 }
 
@@ -152,7 +152,7 @@ fn main() {
         .query_row([], |row| row.get(0))
         .unwrap();
     let output = Output {
-        last_update: LastUpdate {
+        last_updated: LastUpdated {
             hxmt: hxmt_last_update,
         },
         tgfs,
