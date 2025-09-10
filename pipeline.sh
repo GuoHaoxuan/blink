@@ -9,6 +9,12 @@ if [ $(hep_q -u | wc -l) -ne 4 ]; then
   exit 0
 fi
 
+cp ./tgfs.json ../snapshot-stepping-visual/app/
+cd ../snapshot-stepping-visual
+git add .
+git commit -m "Auto update tgfs.json at $(date '+%Y-%m-%d %H:%M:%S')"
+git push origin main
+
 comm -23 \
     <(find . \( -name "pipeline_run.sh.out.*" -or -name "pipeline_run.sh.err.*" \) -and -size 0 | sort) \
     <(hep_q -u | grep pipeline_run.sh | awk '{ print "./pipeline_run.sh.out." $1 "\n./pipeline_run.sh.err." $1 }' | sort) \
