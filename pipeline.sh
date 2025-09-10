@@ -9,22 +9,9 @@ if [ $(hep_q -u | wc -l) -ne 4 ]; then
   exit 0
 fi
 
-if [ $(ls | grep "work." | wc -l) -ne 0 ]; then
-  echo "Previous Task: Calculation."
-  comm -23 \
-    <(find . \( -name "work.out.*" -or -name "work.err.*" \) -and -size 0 | sort) \
-    <(hep_q -u | grep work.py | awk '{ print "./work.py.out." $1 "\n./work.py.err." $1 }' | sort) \
+comm -23 \
+    <(find . \( -name "pipeline_run.out.*" -or -name "pipeline_run.err.*" \) -and -size 0 | sort) \
+    <(hep_q -u | grep pipeline_run.py | awk '{ print "./pipeline_run.py.out." $1 "\n./pipeline_run.py.err." $1 }' | sort) \
     | xargs rm -rf
 
-  hep_sub -mem 8192 -g hxmt render
-
-else
-  echo "Previous Task: Rendering."
-  comm -23 \
-    <(find . \( -name "render.out.*" -or -name "render.err.*" \) -and -size 0 | sort) \
-    <(hep_q -u | grep render.py | awk '{ print "./render.py.out." $1 "\n./render.py.err." $1 }' | sort) \
-    | xargs rm -rf
-
-  sqlite3 blink.db < sql/refresh_task.sql
-  hep_sub -mem 8192 -g hxmt work
-fi
+hep_sub -mem 8192 -g hxmt pipeline_run.sh
