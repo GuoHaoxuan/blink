@@ -10,10 +10,11 @@ if [ $(hep_q -u | wc -l) -ne 4 ]; then
 fi
 
 cp ./tgfs.json ../snapshot-stepping-visual/app/
-cd ../snapshot-stepping-visual
+pushd ../snapshot-stepping-visual
 git add .
 git commit -m "Auto update tgfs.json at $(date '+%Y-%m-%d %H:%M:%S')"
 git push origin main
+popd
 
 comm -23 \
     <(find . \( -name "pipeline_run.sh.out.*" -or -name "pipeline_run.sh.err.*" \) -and -size 0 | sort) \
