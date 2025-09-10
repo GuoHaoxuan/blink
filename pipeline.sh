@@ -10,8 +10,8 @@ if [ $(hep_q -u | wc -l) -ne 4 ]; then
 fi
 
 comm -23 \
-    <(find . \( -name "pipeline_run.out.*" -or -name "pipeline_run.err.*" \) -and -size 0 | sort) \
-    <(hep_q -u | grep pipeline_run.py | awk '{ print "./pipeline_run.py.out." $1 "\n./pipeline_run.py.err." $1 }' | sort) \
+    <(find . \( -name "pipeline_run.sh.out.*" -or -name "pipeline_run.sh.err.*" \) -and -size 0 | sort) \
+    <(hep_q -u | grep pipeline_run.sh | awk '{ print "./pipeline_run.sh.out." $1 "\n./pipeline_run.sh.err." $1 }' | sort) \
     | xargs rm -rf
 
 hep_sub -mem 8192 -g hxmt pipeline_run.sh
