@@ -16,6 +16,7 @@ struct Tgf {
 
 #[derive(Serialize)]
 struct LastUpdated {
+    pipeline: String,
     #[serde(rename = "HXMT/HE")]
     hxmt: String,
 }
@@ -153,6 +154,7 @@ fn main() {
         .unwrap();
     let output = Output {
         last_updated: LastUpdated {
+            pipeline: format!("{}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")),
             hxmt: hxmt_last_update,
         },
         tgfs,
