@@ -31,7 +31,7 @@ impl crate::types::Event for HxmtEvent {
 
     fn keep(&self) -> bool {
         const CHANNEL_THRESHOLD: u16 = 38;
-        self.detector.scintillator == HxmtScintillator::CsI
+        self.detector.scintillator == HxmtScintillator::NaI
             && !self.detector.am241
             && self.channel >= CHANNEL_THRESHOLD
     }
