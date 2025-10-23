@@ -1,6 +1,4 @@
-use super::poission::{
-    false_positive_per_year as poission_false_positive_per_year, sf as poisson_sf,
-};
+use super::poission::sf as poisson_sf;
 use serde::Serialize;
 use std::fmt::Debug;
 
@@ -37,10 +35,6 @@ impl<S: Satellite> Trigger<S> {
         poisson_sf(self.mean, self.count)
     }
 
-    pub fn false_positive_per_year(&self) -> f64 {
-        poission_false_positive_per_year(self.sf(), self.bin_size_best)
-    }
-
     pub fn mergeable(&self, other: &Self, vision: f64) -> bool {
         self.stop + self.bin_size_max.max(other.bin_size_max) * vision >= other.start
     }
@@ -53,7 +47,7 @@ impl<S: Satellite> Trigger<S> {
             bin_size_max: res.bin_size_max.max(other.bin_size_max),
             ..res
         };
-        if other.false_positive_per_year() < res.false_positive_per_year() {
+        if other.sf() < res.sf() {
             res = Trigger {
                 count: other.count,
                 mean: other.mean,

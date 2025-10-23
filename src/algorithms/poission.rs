@@ -17,7 +17,3 @@ pub fn sf(mean: f64, count: u32) -> f64 {
             .sf(count as u64),
     }
 }
-
-pub fn false_positive_per_year<S: Satellite>(sf: f64, duration: Span<S>) -> f64 {
-    sf * (Span::seconds(3600.0 * 24.0 * DAYS_1_YEAR) / duration)
-}

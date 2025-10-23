@@ -11,7 +11,7 @@ pub struct SearchConfig<T: Satellite> {
     pub max_duration: Span<T>,
     pub neighbor: Span<T>,
     pub hollow: Span<T>,
-    pub false_positive_per_year: f64,
+    pub false_positive: f64,
     pub min_number: u32,
 }
 
@@ -22,7 +22,7 @@ impl<T: Satellite> Default for SearchConfig<T> {
             max_duration: Span::milliseconds(1.0),
             neighbor: Span::seconds(1.0),
             hollow: Span::milliseconds(10.0),
-            false_positive_per_year: 20.0,
+            false_positive: 1e-12,
             min_number: 8,
         }
     }
@@ -120,9 +120,7 @@ pub fn search<E: Event>(
             let mean_stop_time = (data[cursor + step].time() + config.neighbor / 2.0).min(stop);
             let mean_duration = (mean_stop_time - mean_start_time) - duration;
             let mean_percent = duration.to_seconds() / mean_duration.to_seconds();
-            let threshold = 1.0
-                - config.false_positive_per_year
-                    / (3600.0 * 24.0 * DAYS_1_YEAR / duration.to_seconds());
+            let threshold = 1.0 - config.false_positive;
             let probs = (0..group_count)
                 .map(|group| {
                     let count = counts[group];
@@ -282,8 +280,7 @@ pub fn search_new<E: Event>(
                     })
                     .collect::<Vec<f64>>();
                 let fp = fps[0];
-                let threshold = config.false_positive_per_year
-                    / (Span::seconds(3600.0) * 24.0 * DAYS_1_YEAR / duration);
+                let threshold = config.false_positive;
                 if fp < threshold {
                     let total_equivalent_background_number = (0..group_number)
                         .map(|group| mean_numbers[group] - hollow_numbers[group])

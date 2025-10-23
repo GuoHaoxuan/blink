@@ -234,7 +234,7 @@ impl Signal {
             duration_full,
             duration_best,
             false_positive: trigger.sf(),
-            false_positive_per_year: trigger.false_positive_per_year(),
+            false_positive_per_year: trigger.sf(),
             count_unfiltered_full,
             count_unfiltered_best,
             count_filtered_full,

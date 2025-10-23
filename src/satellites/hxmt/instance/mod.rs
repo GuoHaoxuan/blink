@@ -40,7 +40,7 @@ impl InstanceTrait for Instance {
                 max_duration: Span::milliseconds(1.0),
                 neighbor: Span::seconds(1.0),
                 hollow: Span::milliseconds(10.0),
-                false_positive_per_year: 20.0,
+                false_positive: 1e-12,
                 min_number: 8,
             },
         );
