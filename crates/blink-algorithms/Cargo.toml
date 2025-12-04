@@ -1,8 +1,0 @@
-[package]
-name = "blink-algorithms"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-statrs = "0.18.0"
-uom = "0.37.0"

@@ -1,0 +1,11 @@
+[package]
+name = "blink_hxmt_he"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+blink_algorithms = { version = "0.1.0", path = "../blink_algorithms" }
+blink_core = { version = "0.1.0", path = "../blink_core" }
+chrono = "0.4.42"
+fitsio = { version = "0.21.9", features = ["fitsio-src"] }
+uom = "0.37.0"

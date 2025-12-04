@@ -1,0 +1,6 @@
+[package]
+name = "blink_fermi_gbm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]

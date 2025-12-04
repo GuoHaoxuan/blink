@@ -27,6 +27,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "autotools"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef941527c41b0fc0dd48511a8154cd5fc7e29200a0ff8b7203c5d777dbc795cf"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -37,32 +46,57 @@ name = "blink"
 version = "0.1.0"
 
 [[package]]
-name = "blink-algorithms"
+name = "blink_algorithms"
 version = "0.1.0"
 dependencies = [
+ "blink_core",
  "statrs",
  "uom",
 ]
 
 [[package]]
-name = "blink-core"
+name = "blink_core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "fitsio",
  "thiserror",
  "uom",
 ]
 
 [[package]]
-name = "blink-lightning"
+name = "blink_fermi_gbm"
+version = "0.1.0"
+
+[[package]]
+name = "blink_hxmt_he"
 version = "0.1.0"
 dependencies = [
- "blink-core",
+ "blink_algorithms",
+ "blink_core",
+ "chrono",
+ "fitsio",
+ "uom",
+]
+
+[[package]]
+name = "blink_lightning"
+version = "0.1.0"
+dependencies = [
+ "blink_core",
  "chrono",
  "itertools",
  "rusqlite",
  "uom",
 ]
+
+[[package]]
+name = "blink_svom_grm"
+version = "0.1.0"
+
+[[package]]
+name = "blink_task"
+version = "0.1.0"
 
 [[package]]
 name = "bumpalo"
@@ -134,6 +168,26 @@ name = "find-msvc-tools"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a3076410a55c90011c298b04d0cfa770b00fa04e1e3c97d3f6c9de105a03844"
+
+[[package]]
+name = "fitsio"
+version = "0.21.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a37418b8a2e67655b4717287f3c170945ca5f453355a02274250b69400148f4"
+dependencies = [
+ "fitsio-sys",
+ "libc",
+]
+
+[[package]]
+name = "fitsio-sys"
+version = "0.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14929d0b6fa44a87b374a138ea2256c02c1b5beae1dbc98f62a3e132f862fed1"
+dependencies = [
+ "autotools",
+ "pkg-config",
+]
 
 [[package]]
 name = "foldhash"

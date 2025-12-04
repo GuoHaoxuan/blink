@@ -1,0 +1,13 @@
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Fitsio error: {0}")]
+    FitsioError(#[from] fitsio::errors::Error),
+    #[error("file not found: {0}")]
+    FileNotFound(String),
+    #[error("invalid data: {0}")]
+    InvalidData(String),
+    #[error("unknown error occurred")]
+    Unknown,
+}
