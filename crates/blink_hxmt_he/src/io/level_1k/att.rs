@@ -25,8 +25,8 @@ impl AttFile {
     }
 }
 
-impl From<AttFile> for Trajectory<MissionElapsedTime<Hxmt>, Attitude> {
-    fn from(att_file: AttFile) -> Self {
+impl From<&AttFile> for Trajectory<MissionElapsedTime<Hxmt>, Attitude> {
+    fn from(att_file: &AttFile) -> Self {
         let points = att_file
             .time
             .iter()

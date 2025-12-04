@@ -33,8 +33,8 @@ impl OrbitFile {
     }
 }
 
-impl From<OrbitFile> for Trajectory<MissionElapsedTime<Hxmt>, Position> {
-    fn from(orbit_file: OrbitFile) -> Self {
+impl From<&OrbitFile> for Trajectory<MissionElapsedTime<Hxmt>, Position> {
+    fn from(orbit_file: &OrbitFile) -> Self {
         let points = orbit_file
             .time
             .iter()

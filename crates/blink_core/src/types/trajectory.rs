@@ -30,18 +30,17 @@ impl<Time: Temporal, State: Interpolatable + Clone> Trajectory<Time, State> {
         })
     }
 
-    pub fn window(
-        &self,
-        time: Time,
-        half_width: Time::Duration,
-    ) -> Vec<TemporalState<Time, State>> {
+    pub fn window(&self, time: Time, half_width: Time::Duration) -> Self {
         let start_time = time - half_width;
         let end_time = time + half_width;
 
-        self.points
-            .iter()
-            .filter(|point| point.timestamp >= start_time && point.timestamp <= end_time)
-            .cloned()
-            .collect()
+        Trajectory {
+            points: self
+                .points
+                .iter()
+                .filter(|point| point.timestamp >= start_time && point.timestamp <= end_time)
+                .cloned()
+                .collect(),
+        }
     }
 }
