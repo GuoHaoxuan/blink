@@ -57,10 +57,34 @@ impl InstanceTrait for Instance {
         }
 
         let results = continuous(results, Span::seconds(10.0), Span::seconds(1.0), 10);
+        println!("After continuous merging:");
+        for result in &results {
+            println!(
+                "Found candidate: start = {} s, stop = {} s, count = {}, sf = {:.3}, FPPY = {:.3}",
+                result.start.to_chrono(),
+                result.stop.to_chrono(),
+                result.count,
+                result.sf(),
+                result.false_positive_per_year()
+            );
+        }
+
         let results = results
             .into_iter()
             .filter(|trigger| !self.check_saturation(trigger.start))
             .collect::<Vec<_>>();
+
+        println!("After saturation check:");
+        for result in &results {
+            println!(
+                "Found candidate: start = {} s, stop = {} s, count = {}, sf = {:.3}, FPPY = {:.3}",
+                result.start.to_chrono(),
+                result.stop.to_chrono(),
+                result.count,
+                result.sf(),
+                result.false_positive_per_year()
+            );
+        }
 
         let signals = results
             .into_iter()
