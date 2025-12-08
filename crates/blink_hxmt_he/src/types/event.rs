@@ -3,7 +3,9 @@ use crate::types::Hxmt;
 use crate::types::Scintillator;
 use blink_core::traits::Event as EventTrait;
 use blink_core::types::MissionElapsedTime;
+use serde::Serialize;
 
+#[derive(Serialize, Debug, Clone)]
 pub struct Event {
     time: MissionElapsedTime<Hxmt>,
     channel: u8,

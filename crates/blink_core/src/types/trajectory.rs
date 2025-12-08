@@ -1,8 +1,11 @@
+use serde::Serialize;
+
 use crate::{
     traits::{Interpolatable, Temporal},
     types::TemporalState,
 };
 
+#[derive(Serialize, Debug)]
 pub struct Trajectory<Time: Temporal, State: Interpolatable + Clone> {
     pub points: Vec<TemporalState<Time, State>>,
 }

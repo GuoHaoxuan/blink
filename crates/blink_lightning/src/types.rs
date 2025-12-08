@@ -1,5 +1,7 @@
 use chrono::prelude::*;
+use serde::Serialize;
 
+#[derive(Serialize, Debug)]
 pub struct Lightning {
     pub time: DateTime<Utc>,
     pub lat: f64,

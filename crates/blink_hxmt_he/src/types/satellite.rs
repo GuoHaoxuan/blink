@@ -4,7 +4,7 @@ use blink_core::traits::Satellite;
 use chrono::prelude::*;
 
 /// Hard X-ray Modulation Telescope (HXMT)
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Hxmt;
 
 impl Satellite for Hxmt {

@@ -11,18 +11,18 @@ use itertools::Itertools;
 use uom::si::f64::*;
 
 pub fn coincidence_prob(
-    location: TemporalState<DateTime<Utc>, Position>,
+    position: &TemporalState<DateTime<Utc>, Position>,
     time_tolerance: Duration,
     distance_tolerance: Length,
     time_window: Duration,
 ) -> f64 {
-    let time_start = location.timestamp - time_tolerance - Duration::seconds(1) - time_window / 2;
-    let time_end = location.timestamp + time_tolerance + Duration::seconds(1) + time_window / 2;
+    let time_start = position.timestamp - time_tolerance - Duration::seconds(1) - time_window / 2;
+    let time_end = position.timestamp + time_tolerance + Duration::seconds(1) + time_window / 2;
     let mut rows = get_lightnings(time_start, time_end);
     rows.retain(|lightning| {
         let dist = distance(
-            location.state.latitude,
-            location.state.longitude,
+            position.state.latitude,
+            position.state.longitude,
             lightning.lat,
             lightning.lon,
         );
@@ -33,9 +33,9 @@ pub fn coincidence_prob(
         .map(|lightning| {
             coincidence_window(
                 lightning,
-                location.state.latitude,
-                location.state.longitude,
-                location.state.altitude,
+                position.state.latitude,
+                position.state.longitude,
+                position.state.altitude,
                 time_tolerance,
             )
         })

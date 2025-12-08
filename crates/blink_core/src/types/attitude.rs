@@ -1,6 +1,8 @@
+use serde::Serialize;
+
 use crate::traits::Interpolatable;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct Attitude {
     pub q1: f64,
     pub q2: f64,

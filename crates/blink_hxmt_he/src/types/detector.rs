@@ -1,4 +1,6 @@
-#[derive(PartialEq, Eq)]
+use serde::Serialize;
+
+#[derive(PartialEq, Eq, Serialize, Debug, Clone)]
 pub enum Scintillator {
     /// Sodium Iodide (NaI)
     Nai,
@@ -6,6 +8,7 @@ pub enum Scintillator {
     Csi,
 }
 
+#[derive(Serialize, Debug, Clone)]
 pub struct Detector {
     pub id: u8,
     pub scintillator: Scintillator,

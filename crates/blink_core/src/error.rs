@@ -10,6 +10,8 @@ pub enum Error {
     InvalidData(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("unknown detector: {0}")]
+    UnknownDetector(String),
     #[error("unknown error occurred")]
     Unknown,
 }

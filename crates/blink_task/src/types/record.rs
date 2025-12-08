@@ -1,0 +1,48 @@
+use blink_core::traits::Event;
+use blink_core::types::{Position, Trajectory};
+use blink_lightning::types::Lightning;
+use chrono::prelude::*;
+
+#[derive(Debug)]
+pub struct Record<E: Event> {
+    pub start_full: DateTime<Utc>,
+    pub start_best: DateTime<Utc>,
+    pub stop_full: DateTime<Utc>,
+    pub stop_best: DateTime<Utc>,
+    pub peak: DateTime<Utc>,
+    pub duration_full: f64,
+    pub duration_best: f64,
+    pub false_positive: f64,
+    pub false_positive_per_year: f64,
+    pub count_unfiltered_full: u32,
+    pub count_unfiltered_best: u32,
+    pub count_filtered_full: u32,
+    pub count_filtered_best: u32,
+    pub background: f64,
+    pub flux_unfiltered_full: f64,
+    pub flux_unfiltered_best: f64,
+    pub flux_filtered_full: f64,
+    pub flux_filtered_best: f64,
+    pub events: Vec<E>,
+    pub light_curve_1s_unfiltered: Vec<u32>,
+    pub light_curve_1s_filtered: Vec<u32>,
+    pub light_curve_100ms_unfiltered: Vec<u32>,
+    pub light_curve_100ms_filtered: Vec<u32>,
+    pub longitude: f64,
+    pub latitude: f64,
+    pub altitude: f64,
+    pub q1: f64,
+    pub q2: f64,
+    pub q3: f64,
+    pub orbit: Trajectory<DateTime<Utc>, Position>,
+    pub lightnings: Vec<(Lightning, bool)>,
+    pub associated_lightning_count: u32,
+    pub coincidence_probability: f64,
+    pub mean_solar_time: NaiveTime,
+    pub apparent_solar_time: NaiveTime,
+    pub day_of_year: u32,
+    pub month: u32,
+    pub solar_zenith_angle: f64,
+    pub solar_zenith_angle_at_noon: f64,
+    pub solar_azimuth_angle: f64,
+}

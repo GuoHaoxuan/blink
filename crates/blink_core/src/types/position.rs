@@ -1,7 +1,8 @@
 use crate::traits::Interpolatable;
+use serde::Serialize;
 use uom::si::f64::*;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Debug)]
 pub struct Position {
     pub longitude: f64,
     pub latitude: f64,

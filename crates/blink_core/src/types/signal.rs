@@ -14,6 +14,7 @@ pub struct Signal<E: Event> {
     pub delay: Time,
     pub count: u32,
     pub mean: f64,
+    pub sf: f64,
     pub false_positive_per_year: f64,
     pub events: Vec<E>,
     pub attitude: TemporalState<MissionElapsedTime<E::Satellite>, Attitude>,

@@ -8,4 +8,5 @@ blink_core = { version = "0.1.0", path = "../blink_core" }
 chrono = "0.4.42"
 itertools = "0.14.0"
 rusqlite = "0.37.0"
+serde = { version = "1.0.228", features = ["derive"] }
 uom = "0.37.0"

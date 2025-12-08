@@ -1,12 +1,13 @@
 use crate::traits::Satellite;
 use chrono::{Duration, prelude::*};
+use serde::Serialize;
 use std::cmp::Ordering;
 use std::ops::{Add, Sub};
 use std::{marker::PhantomData, sync::LazyLock};
 use uom::si::f64::*;
 use uom::si::time::second;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Serialize, Debug)]
 pub struct MissionElapsedTime<S: Satellite> {
     time: Time,
     _phantom: PhantomData<S>,
@@ -38,6 +39,10 @@ impl<S: Satellite> MissionElapsedTime<S> {
 
     pub fn time(&self) -> Time {
         self.time
+    }
+
+    pub fn to_utc(&self) -> DateTime<Utc> {
+        (*self).into()
     }
 }
 

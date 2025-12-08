@@ -72,6 +72,7 @@ pub fn search(chunk: &Chunk) -> Vec<Signal<Event>> {
                 delay: candidate.delay,
                 count: candidate.count,
                 mean: candidate.mean,
+                sf: candidate.sf(),
                 false_positive_per_year: candidate.false_positive_per_year(),
                 events,
                 attitude,
