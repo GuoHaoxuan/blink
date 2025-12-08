@@ -45,10 +45,35 @@ pub fn search(chunk: &Chunk) -> Vec<Signal<Event>> {
         Time::new::<uom::si::time::second>(1.0),
         10,
     );
+
+    println!("After continuous merging:");
+    for result in &results {
+        println!(
+            "Found candidate: start = {} s, stop = {} s, count = {}, sf = {:.3}, FPPY = {:.3}",
+            result.start.to_utc(),
+            result.stop.to_utc(),
+            result.count,
+            result.sf(),
+            result.false_positive_per_year()
+        );
+    }
+
     let results = results
         .into_iter()
         .filter(|candidate| !chunk.check_saturation(candidate.start))
         .collect::<Vec<_>>();
+
+    println!("After saturation check:");
+    for result in &results {
+        println!(
+            "Found candidate: start = {} s, stop = {} s, count = {}, sf = {:.3}, FPPY = {:.3}",
+            result.start.to_utc(),
+            result.stop.to_utc(),
+            result.count,
+            result.sf(),
+            result.false_positive_per_year()
+        );
+    }
 
     // let signals = signals
     //     .into_iter()
