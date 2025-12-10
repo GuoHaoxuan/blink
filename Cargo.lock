@@ -107,6 +107,12 @@ dependencies = [
 [[package]]
 name = "blink_svom_grm"
 version = "0.1.0"
+dependencies = [
+ "blink_core",
+ "chrono",
+ "fitsio",
+ "serde",
+]
 
 [[package]]
 name = "blink_task"
