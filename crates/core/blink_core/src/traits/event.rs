@@ -11,7 +11,6 @@ pub trait Event: Serialize + Debug + Clone {
     fn time(&self) -> MissionElapsedTime<Self::Satellite>;
     fn channel(&self) -> Self::ChannelType;
     // fn detector(&self) -> Self::DetectorType;
-    fn group(&self) -> u8 {
-        0
-    }
+    fn group(&self) -> u8;
+    fn keep(&self) -> bool;
 }

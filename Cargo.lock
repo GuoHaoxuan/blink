@@ -125,6 +125,7 @@ dependencies = [
  "blink_hxmt_he",
  "blink_lightning",
  "blink_solar",
+ "blink_svom_grm",
  "chrono",
  "hostname",
  "rusqlite",

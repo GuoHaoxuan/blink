@@ -30,6 +30,10 @@ impl blink_core::traits::Event for Event {
     fn group(&self) -> u8 {
         0
     }
+
+    fn keep(&self) -> bool {
+        true
+    }
 }
 
 impl Ord for Event {

@@ -34,6 +34,13 @@ impl EventTrait for Event {
     fn group(&self) -> u8 {
         0
     }
+
+    fn keep(&self) -> bool {
+        const CHANNEL_THRESHOLD: u16 = 38;
+        self.detector.scintillator == Scintillator::Csi
+            && !self.is_am241
+            && self.channel() >= CHANNEL_THRESHOLD
+    }
 }
 
 impl Event {
@@ -51,12 +58,5 @@ impl Event {
             is_am241,
             acds,
         }
-    }
-
-    pub fn keep(&self) -> bool {
-        const CHANNEL_THRESHOLD: u16 = 38;
-        self.detector.scintillator == Scintillator::Csi
-            && !self.is_am241
-            && self.channel() >= CHANNEL_THRESHOLD
     }
 }
