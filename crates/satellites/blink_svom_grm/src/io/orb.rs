@@ -5,6 +5,10 @@ No.    Name      Ver    Type      Cards   Dimensions   Format
   1  ORB           1 BinTableHDU     92   2067R x 16C   [1D, 1E, 1E, 1E, 1E, 1E, 1E, 1E, 1E, 1E, 1E, 1E, 1E, 1E, 1E, 1E]
 */
 
+use blink_core::types::{MissionElapsedTime, Position, TemporalState, Trajectory};
+
+use crate::types::Svom;
+
 pub struct OrbFile {
     orb: OrbHdu,
 }
@@ -77,5 +81,28 @@ impl OrbHdu {
             lat,
             alt,
         })
+    }
+}
+
+impl From<&OrbFile> for Trajectory<MissionElapsedTime<Svom>, Position> {
+    fn from(orb_file: &OrbFile) -> Self {
+        let points = orb_file
+            .orb
+            .time
+            .iter()
+            .zip(orb_file.orb.lon.iter())
+            .zip(orb_file.orb.lat.iter())
+            .zip(orb_file.orb.alt.iter())
+            .map(|(((t, lon), lat), alt)| TemporalState {
+                timestamp: MissionElapsedTime::new(*t),
+                state: Position {
+                    longitude: *lon as f64,
+                    latitude: *lat as f64,
+                    altitude: uom::si::f64::Length::new::<uom::si::length::meter>(*alt as f64),
+                },
+            })
+            .collect();
+
+        Trajectory { points }
     }
 }

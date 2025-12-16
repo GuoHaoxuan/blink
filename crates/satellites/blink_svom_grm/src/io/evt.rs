@@ -9,6 +9,8 @@ No.    Name      Ver    Type      Cards   Dimensions   Format
   5  EVENTS03      1 BinTableHDU     68   1270337R x 7C   [D, I, B, E, B, B, B]
 */
 
+use std::{cmp::Reverse, collections::BinaryHeap};
+
 mod ebounds_hdu;
 mod events_hdu;
 mod gti_hdu;
@@ -16,6 +18,8 @@ mod gti_hdu;
 use ebounds_hdu::EboundsHdu;
 use events_hdu::EventsHdu;
 use gti_hdu::GtiHdu;
+
+use crate::{io::evt::events_hdu::EventsHduIterator, types::Event};
 
 pub struct EvtFile {
     ebounds: EboundsHdu,
@@ -42,5 +46,45 @@ impl EvtFile {
             events02,
             events03,
         })
+    }
+}
+
+impl<'a> IntoIterator for &'a EvtFile {
+    type Item = Event;
+    type IntoIter = EvtFileIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let mut file_iters = [
+            self.events01.into_iter(),
+            self.events02.into_iter(),
+            self.events03.into_iter(),
+        ];
+        let mut buffer = BinaryHeap::new();
+        for (index, file_iter) in file_iters.iter_mut().enumerate() {
+            if let Some(event) = file_iter.next() {
+                buffer.push(Reverse((event, index)));
+            }
+        }
+        EvtFileIter { file_iters, buffer }
+    }
+}
+
+pub struct EvtFileIter<'a> {
+    file_iters: [EventsHduIterator<'a>; 3],
+    buffer: BinaryHeap<Reverse<(Event, usize)>>,
+}
+
+impl Iterator for EvtFileIter<'_> {
+    type Item = Event;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(Reverse((event, index))) = self.buffer.pop() {
+            if let Some(next_event) = self.file_iters[index].next() {
+                self.buffer.push(Reverse((next_event, index)));
+            }
+            Some(event)
+        } else {
+            None
+        }
     }
 }

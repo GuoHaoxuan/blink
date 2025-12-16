@@ -1,3 +1,7 @@
+use blink_core::types::MissionElapsedTime;
+
+use crate::types::Event;
+
 pub(super) struct EventsHdu {
     id: u8,
     time: Vec<f64>,
@@ -31,5 +35,45 @@ impl EventsHdu {
             anti_coin,
             flag,
         })
+    }
+}
+
+impl<'a> IntoIterator for &'a EventsHdu {
+    type Item = Event;
+    type IntoIter = EventsHduIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        EventsHduIterator {
+            hdu: self,
+            index: 0,
+        }
+    }
+}
+
+pub struct EventsHduIterator<'a> {
+    hdu: &'a EventsHdu,
+    index: usize,
+}
+
+impl Iterator for EventsHduIterator<'_> {
+    type Item = Event;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.hdu.time.len() {
+            let event = Event {
+                time: MissionElapsedTime::new(self.hdu.time[self.index]),
+                channel: self.hdu.pi[self.index],
+                detector_id: self.hdu.id,
+                gain_type: self.hdu.gain_type[self.index],
+                dead_time: self.hdu.dead_time[self.index],
+                evt_type: self.hdu.evt_type[self.index],
+                anti_coin: self.hdu.anti_coin[self.index],
+                flag: self.hdu.flag[self.index],
+            };
+            self.index += 1;
+            Some(event)
+        } else {
+            None
+        }
     }
 }

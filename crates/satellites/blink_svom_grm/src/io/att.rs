@@ -5,6 +5,10 @@ No.    Name      Ver    Type      Cards   Dimensions   Format
   1  Quaternion    1 BinTableHDU     72   2069R x 12C   [1D, 1E, 1E, 1E, 1E, 1E, 1E, 1E, 1B, 1J, 1B, 1B]
 */
 
+use blink_core::types::{Attitude, MissionElapsedTime, TemporalState, Trajectory};
+
+use crate::types::Svom;
+
 pub struct AttFile {
     quaternion: QuaternionHdu,
 }
@@ -65,5 +69,28 @@ impl QuaternionHdu {
             quality,
             att_ref,
         })
+    }
+}
+
+impl From<&AttFile> for Trajectory<MissionElapsedTime<Svom>, Attitude> {
+    fn from(att_file: &AttFile) -> Self {
+        let points = att_file
+            .quaternion
+            .time
+            .iter()
+            .zip(att_file.quaternion.q0.iter())
+            .zip(att_file.quaternion.q1.iter())
+            .zip(att_file.quaternion.q2.iter())
+            .map(|(((t, q0), q1), q2)| TemporalState {
+                timestamp: MissionElapsedTime::new(*t),
+                state: Attitude {
+                    q1: *q0 as f64,
+                    q2: *q1 as f64,
+                    q3: *q2 as f64,
+                },
+            })
+            .collect();
+
+        Trajectory { points }
     }
 }
