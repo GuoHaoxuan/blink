@@ -42,7 +42,7 @@ impl QuaternionHdu {
     fn from_fptr(fptr: &mut fitsio::FitsFile) -> Result<Self, fitsio::errors::Error> {
         let quaternion = fptr.hdu("Quaternion")?;
 
-        let time = quaternion.read_col::<f64>(fptr, "Time")?;
+        let time = quaternion.read_col::<f64>(fptr, "TIME")?;
         let q0 = quaternion.read_col::<f32>(fptr, "Q0")?;
         let q1 = quaternion.read_col::<f32>(fptr, "Q1")?;
         let q2 = quaternion.read_col::<f32>(fptr, "Q2")?;
