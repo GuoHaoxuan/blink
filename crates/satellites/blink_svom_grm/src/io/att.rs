@@ -51,7 +51,7 @@ impl QuaternionHdu {
         let wy = quaternion.read_col::<f32>(fptr, "wy")?;
         let wz = quaternion.read_col::<f32>(fptr, "wz")?;
         let slew_stat = quaternion.read_col::<u8>(fptr, "slew_stat")?;
-        let target_id = quaternion.read_col::<i32>(fptr, "TargerID")?;
+        let target_id = quaternion.read_col::<i32>(fptr, "TargetID")?;
         let quality = quaternion.read_col::<u8>(fptr, "Quality")?;
         let att_ref = quaternion.read_col::<u8>(fptr, "AttRef")?;
 
