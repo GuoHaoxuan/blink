@@ -12,5 +12,10 @@
         "TSTART",
         "TSTOP"
     ],
-    "git.ignoreLimitWarning": true
+    "git.ignoreLimitWarning": true,
+    "python.defaultInterpreterPath": "${workspaceFolder}/analysis/.venv/bin/python",
+    "rust-analyzer.linkedProjects": [
+        "${workspaceFolder}/search/Cargo.toml"
+    ],
+    "cwd": "${workspaceFolder}/search"
 }
