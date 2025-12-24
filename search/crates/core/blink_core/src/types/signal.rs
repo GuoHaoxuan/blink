@@ -1,3 +1,4 @@
+use serde::Serialize;
 use uom::si::f64::*;
 
 use crate::{
@@ -5,6 +6,7 @@ use crate::{
     types::{Attitude, MissionElapsedTime, Position, TemporalState, Trajectory},
 };
 
+#[derive(Serialize)]
 pub struct Signal<E: Event> {
     pub start: MissionElapsedTime<E::Satellite>,
     pub stop: MissionElapsedTime<E::Satellite>,
