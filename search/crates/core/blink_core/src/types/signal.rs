@@ -3,7 +3,7 @@ use uom::si::f64::*;
 
 use crate::{
     traits::Event,
-    types::{Attitude, MissionElapsedTime, Position, TemporalState, Trajectory},
+    types::{Attitude, MissionElapsedTime, Position},
 };
 
 #[derive(Serialize)]
@@ -18,7 +18,6 @@ pub struct Signal<E: Event> {
     pub mean: f64,
     pub sf: f64,
     pub false_positive_per_year: f64,
-    pub events: Vec<E>,
-    pub attitude: TemporalState<MissionElapsedTime<E::Satellite>, Attitude>,
-    pub orbit: Trajectory<MissionElapsedTime<E::Satellite>, Position>,
+    pub attitude: Attitude,
+    pub position: Position,
 }

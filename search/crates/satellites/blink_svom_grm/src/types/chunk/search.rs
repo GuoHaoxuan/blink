@@ -28,33 +28,14 @@ pub(super) fn search(chunk: &Chunk) -> Vec<Signal<Event>> {
         },
     );
 
-    for result in &results {
-        println!(
-            "Found candidate: start = {} s, stop = {} s, count = {}, sf = {:.3}, FPPY = {:.3}",
-            result.start.to_utc(),
-            result.stop.to_utc(),
-            result.count,
-            result.sf(),
-            result.false_positive_per_year()
-        );
-    }
-
     results
         .into_iter()
         .filter_map(|candidate| {
-            let extended_half_time = Time::new::<uom::si::time::millisecond>(500.0);
-            let events = chunk
-                .evt_file
-                .into_iter()
-                .filter(|event| {
-                    event.time() >= candidate.start - extended_half_time
-                        && event.time() <= candidate.stop + extended_half_time
-                })
-                .collect::<Vec<_>>();
+            let peak = candidate.start + candidate.bin_size_best / 2.0;
             let attitude = Trajectory::<MissionElapsedTime<Svom>, Attitude>::from(&chunk.att_file)
-                .interpolate(candidate.start)?;
-            let orbit = Trajectory::<MissionElapsedTime<Svom>, Position>::from(&chunk.orb_file)
-                .window(candidate.start, Time::new::<uom::si::time::second>(500.0));
+                .interpolate(peak)?;
+            let position = Trajectory::<MissionElapsedTime<Svom>, Position>::from(&chunk.orb_file)
+                .interpolate(peak)?;
             Some(Signal {
                 start: candidate.start,
                 stop: candidate.stop,
@@ -66,9 +47,8 @@ pub(super) fn search(chunk: &Chunk) -> Vec<Signal<Event>> {
                 mean: candidate.mean,
                 sf: candidate.sf(),
                 false_positive_per_year: candidate.false_positive_per_year(),
-                events,
-                attitude,
-                orbit,
+                attitude: attitude.state,
+                position: position.state,
             })
         })
         .collect::<Vec<_>>()
