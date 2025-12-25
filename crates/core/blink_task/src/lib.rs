@@ -76,4 +76,8 @@ pub fn process_day<C: Chunk>(day: NaiveDate, multi_progress: &MultiProgress) {
     std::fs::write(&output_file, json).expect("failed to write output file");
     let final_output_file = output_file.trim_end_matches(".tmp");
     std::fs::rename(&output_file, final_output_file).expect("failed to rename output file");
+
+    for error in errors {
+        eprintln!("Error processing chunk for {}: {}", day, error);
+    }
 }
