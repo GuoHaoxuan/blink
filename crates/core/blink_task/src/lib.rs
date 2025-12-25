@@ -1,14 +1,15 @@
-use blink_core::traits::Chunk;
+use blink_core::traits::{Chunk, Satellite};
 use chrono::prelude::*;
 use indicatif::{MultiProgress, ProgressBar};
 
-pub fn process_all(total_workers: usize, idx_worker: usize) {
-    let hxmt_he_launch_day = NaiveDate::from_ymd_opt(2017, 6, 22).unwrap();
+pub fn process_all<S: Satellite>(total_workers: usize, idx_worker: usize) {
+    let launch_day = S::launch_day();
     let today = Utc::now().naive_utc().date();
-    let days_since_launch = (today - hxmt_he_launch_day).num_days();
+    let days_since_launch = (today - launch_day).num_days();
     println!(
-        "Processing HXMT-HE data from launch day ({}) to today ({}), total {} days.",
-        hxmt_he_launch_day,
+        "Processing {} data from launch day ({}) to today ({}), total {} days.",
+        S::name(),
+        launch_day,
         today,
         days_since_launch + 1
     );
@@ -23,17 +24,17 @@ pub fn process_all(total_workers: usize, idx_worker: usize) {
     );
 
     for day_offset in 0..=days_since_launch {
-        let day = hxmt_he_launch_day + chrono::Duration::days(day_offset);
+        let day = launch_day + chrono::Duration::days(day_offset);
         progress_bar.set_message(format!("{}", day));
         if (day_offset as usize) % total_workers == idx_worker {
-            process_day::<blink_hxmt_he::types::Chunk>(day, &multi_progress);
+            process_day::<S::Chunk>(day, &multi_progress);
         }
         progress_bar.inc(1);
     }
     progress_bar.finish();
 }
 
-pub fn process_day<C: Chunk>(day: NaiveDate, multi_progress: &MultiProgress) {
+fn process_day<C: Chunk>(day: NaiveDate, multi_progress: &MultiProgress) {
     let mut all_signals = Vec::new();
     let mut errors: Vec<blink_core::error::Error> = Vec::new();
 

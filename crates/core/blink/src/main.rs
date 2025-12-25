@@ -1,3 +1,7 @@
+use blink_hxmt_he::types::Hxmt;
+use blink_svom_grm::types::Svom;
+use blink_task::process_all;
+
 fn main() {
     let args = std::env::args().collect::<Vec<String>>();
     if args.len() != 4 {
@@ -5,13 +9,19 @@ fn main() {
         std::process::exit(1);
     }
 
-    if args[1] != "HXMT/HE" {
-        eprintln!("Unsupported detector: {}", args[1]);
-        std::process::exit(1);
-    }
+    let total_workers = args[2].parse::<usize>().expect("invalid total_workers");
+    let idx_worker = args[3].parse::<usize>().expect("invalid idx_worker");
 
-    blink_task::process_all(
-        args[2].parse::<usize>().expect("invalid total_workers"),
-        args[3].parse::<usize>().expect("invalid idx_worker"),
-    );
+    match args[1].as_str() {
+        "HXMT/HE" => {
+            process_all::<Hxmt>(total_workers, idx_worker);
+        }
+        "SVOM/GRM" => {
+            process_all::<Svom>(total_workers, idx_worker);
+        }
+        _ => {
+            eprintln!("Unsupported detector: {}", args[1]);
+            std::process::exit(1);
+        }
+    }
 }
