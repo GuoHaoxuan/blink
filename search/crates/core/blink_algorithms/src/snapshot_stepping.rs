@@ -25,24 +25,24 @@ impl Default for SearchConfig {
     }
 }
 
-fn coincidence_prob(probs: &[f64], n: usize) -> f64 {
-    let mut cache = vec![0.0; n + 1];
-    cache[0] = 1.0;
+// fn coincidence_prob(probs: &[f64], n: usize) -> f64 {
+//     let mut cache = vec![0.0; n + 1];
+//     cache[0] = 1.0;
 
-    for m_i in 1..=probs.len() {
-        for n_i in (0..=n).rev() {
-            cache[n_i] = match (m_i, n_i) {
-                (_, 0) => 1.0,
-                // The following line can be removed, because cache[n_i] is 0.0 initially,
-                // although it is meaningless mathematically
-                // (m_i, n_i) if m_i == n_i => probs[m_i - 1] * cache[n_i - 1],
-                (m_i, n_i) => probs[m_i - 1] * cache[n_i - 1] + (1.0 - probs[m_i - 1]) * cache[n_i],
-            }
-        }
-    }
+//     for m_i in 1..=probs.len() {
+//         for n_i in (0..=n).rev() {
+//             cache[n_i] = match (m_i, n_i) {
+//                 (_, 0) => 1.0,
+//                 // The following line can be removed, because cache[n_i] is 0.0 initially,
+//                 // although it is meaningless mathematically
+//                 // (m_i, n_i) if m_i == n_i => probs[m_i - 1] * cache[n_i - 1],
+//                 (m_i, n_i) => probs[m_i - 1] * cache[n_i - 1] + (1.0 - probs[m_i - 1]) * cache[n_i],
+//             }
+//         }
+//     }
 
-    cache[n]
-}
+//     cache[n]
+// }
 
 pub fn poisson_isf(p: f64, lambda: f64) -> u32 {
     let mut k = 0;

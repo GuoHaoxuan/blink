@@ -15,15 +15,15 @@ mod ebounds_hdu;
 mod events_hdu;
 mod gti_hdu;
 
-use ebounds_hdu::EboundsHdu;
+// use ebounds_hdu::EboundsHdu;
 use events_hdu::EventsHdu;
-use gti_hdu::GtiHdu;
+// use gti_hdu::GtiHdu;
 
 use crate::{io::evt::events_hdu::EventsHduIterator, types::Event};
 
 pub struct EvtFile {
-    ebounds: EboundsHdu,
-    gti: GtiHdu,
+    // ebounds: EboundsHdu,
+    // gti: GtiHdu,
     events01: EventsHdu,
     events02: EventsHdu,
     events03: EventsHdu,
@@ -33,15 +33,15 @@ impl EvtFile {
     pub fn from_fits_file(path: &str) -> Result<Self, fitsio::errors::Error> {
         let mut fptr = fitsio::FitsFile::open(path)?;
 
-        let ebounds = EboundsHdu::from_fptr(&mut fptr)?;
-        let gti = GtiHdu::from_fptr(&mut fptr)?;
+        // let ebounds = EboundsHdu::from_fptr(&mut fptr)?;
+        // let gti = GtiHdu::from_fptr(&mut fptr)?;
         let events01 = EventsHdu::from_fptr(&mut fptr, 1)?;
         let events02 = EventsHdu::from_fptr(&mut fptr, 2)?;
         let events03 = EventsHdu::from_fptr(&mut fptr, 3)?;
 
         Ok(Self {
-            ebounds,
-            gti,
+            // ebounds,
+            // gti,
             events01,
             events02,
             events03,

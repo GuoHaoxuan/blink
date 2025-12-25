@@ -3,7 +3,6 @@ use crate::types::Event;
 use crate::types::Svom;
 use blink_algorithms::snapshot_stepping::SearchConfig;
 use blink_algorithms::snapshot_stepping::search_new;
-use blink_core::traits::Event as _;
 use blink_core::types::Attitude;
 use blink_core::types::MissionElapsedTime;
 use blink_core::types::Position;

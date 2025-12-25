@@ -28,14 +28,14 @@ struct QuaternionHdu {
     q0: Vec<f32>,
     q1: Vec<f32>,
     q2: Vec<f32>,
-    q3: Vec<f32>,
-    wx: Vec<f32>,
-    wy: Vec<f32>,
-    wz: Vec<f32>,
-    slew_stat: Vec<u8>,
-    target_id: Vec<i32>,
-    quality: Vec<u8>,
-    att_ref: Vec<u8>,
+    // q3: Vec<f32>,
+    // wx: Vec<f32>,
+    // wy: Vec<f32>,
+    // wz: Vec<f32>,
+    // slew_stat: Vec<u8>,
+    // target_id: Vec<i32>,
+    // quality: Vec<u8>,
+    // att_ref: Vec<u8>,
 }
 
 impl QuaternionHdu {
@@ -46,28 +46,28 @@ impl QuaternionHdu {
         let q0 = quaternion.read_col::<f32>(fptr, "Q0")?;
         let q1 = quaternion.read_col::<f32>(fptr, "Q1")?;
         let q2 = quaternion.read_col::<f32>(fptr, "Q2")?;
-        let q3 = quaternion.read_col::<f32>(fptr, "Q3")?;
-        let wx = quaternion.read_col::<f32>(fptr, "wx")?;
-        let wy = quaternion.read_col::<f32>(fptr, "wy")?;
-        let wz = quaternion.read_col::<f32>(fptr, "wz")?;
-        let slew_stat = quaternion.read_col::<u8>(fptr, "slew_stat")?;
-        let target_id = quaternion.read_col::<i32>(fptr, "TargetID")?;
-        let quality = quaternion.read_col::<u8>(fptr, "Quality")?;
-        let att_ref = quaternion.read_col::<u8>(fptr, "AttRef")?;
+        // let q3 = quaternion.read_col::<f32>(fptr, "Q3")?;
+        // let wx = quaternion.read_col::<f32>(fptr, "wx")?;
+        // let wy = quaternion.read_col::<f32>(fptr, "wy")?;
+        // let wz = quaternion.read_col::<f32>(fptr, "wz")?;
+        // let slew_stat = quaternion.read_col::<u8>(fptr, "slew_stat")?;
+        // let target_id = quaternion.read_col::<i32>(fptr, "TargetID")?;
+        // let quality = quaternion.read_col::<u8>(fptr, "Quality")?;
+        // let att_ref = quaternion.read_col::<u8>(fptr, "AttRef")?;
 
         Ok(Self {
             time,
             q0,
             q1,
             q2,
-            q3,
-            wx,
-            wy,
-            wz,
-            slew_stat,
-            target_id,
-            quality,
-            att_ref,
+            // q3,
+            // wx,
+            // wy,
+            // wz,
+            // slew_stat,
+            // target_id,
+            // quality,
+            // att_ref,
         })
     }
 }
