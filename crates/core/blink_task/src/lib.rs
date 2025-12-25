@@ -9,14 +9,14 @@ pub fn process_day<C: Chunk>(day: NaiveDate, multi_progress: &MultiProgress) {
     let progress_bar = multi_progress.add(ProgressBar::new(24 + 1));
     progress_bar.set_style(
         indicatif::ProgressStyle::default_bar()
-            .template("  {spinner:.blue} [{bar:30.yellow/red}] {pos}/{len} {msg}")
+            .template("[{elapsed_precise}] [{wide_bar.cyan/blue}] {pos}/{len} ({eta}) {msg}")
             .unwrap()
             .progress_chars("#>-"),
     );
 
     for hour in 0..24 {
         let naive = day.and_hms_opt(hour, 0, 0).expect("invalid time");
-        progress_bar.set_message(format!("Hour {:02}:00", hour));
+        progress_bar.set_message(format!("Hour {:02}", hour));
         match C::from_epoch(&Utc.from_utc_datetime(&naive)) {
             Ok(chunk) => {
                 let mut sigs = chunk.search();

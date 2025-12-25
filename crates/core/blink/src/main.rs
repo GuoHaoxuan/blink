@@ -16,9 +16,9 @@ fn main() {
     let progress_bar = multi_progress.add(ProgressBar::new(days_since_launch as u64 + 1));
     progress_bar.set_style(
         indicatif::ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+            .template("[{elapsed_precise}] [{wide_bar.cyan/blue}] {pos}/{len} ({eta}) {msg}")
             .unwrap()
-            .progress_chars("#>-")
+            .progress_chars("#>-"),
     );
 
     for day_offset in 0..=days_since_launch {
