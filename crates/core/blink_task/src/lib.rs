@@ -1,11 +1,12 @@
 use blink_core::traits::Chunk;
 use chrono::prelude::*;
+use indicatif::ProgressIterator;
 
 pub fn process_day<C: Chunk>(day: NaiveDate) {
     let mut all_signals = Vec::new();
     let mut errors: Vec<blink_core::error::Error> = Vec::new();
 
-    for hour in 0..24 {
+    for hour in (0..24).progress() {
         let naive = day.and_hms_opt(hour, 0, 0).expect("invalid time");
         match C::from_epoch(&Utc.from_utc_datetime(&naive)) {
             Ok(chunk) => {

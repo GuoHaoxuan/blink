@@ -133,6 +133,7 @@ dependencies = [
  "blink_svom_grm",
  "chrono",
  "hostname",
+ "indicatif",
  "rusqlite",
  "serde_json",
  "uom",

@@ -2,13 +2,6 @@ use chrono::prelude::*;
 use indicatif::ProgressBar;
 
 fn main() {
-    let bar = ProgressBar::new(1000);
-    for _ in 0..1000 {
-        bar.inc(1);
-        // ...
-    }
-    bar.finish();
-
     let hxmt_he_launch_day = NaiveDate::from_ymd_opt(2017, 6, 22).unwrap();
     let today = Utc::now().naive_utc().date();
     let days_since_launch = (today - hxmt_he_launch_day).num_days();
