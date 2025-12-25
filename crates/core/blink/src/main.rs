@@ -1,31 +1,17 @@
-use chrono::prelude::*;
-use indicatif::{MultiProgress, ProgressBar};
-
 fn main() {
-    let hxmt_he_launch_day = NaiveDate::from_ymd_opt(2017, 6, 22).unwrap();
-    let today = Utc::now().naive_utc().date();
-    let days_since_launch = (today - hxmt_he_launch_day).num_days();
-    println!(
-        "Processing HXMT-HE data from launch day ({}) to today ({}), total {} days.",
-        hxmt_he_launch_day,
-        today,
-        days_since_launch + 1
-    );
-
-    let multi_progress = MultiProgress::new();
-    let progress_bar = multi_progress.add(ProgressBar::new(days_since_launch as u64 + 1));
-    progress_bar.set_style(
-        indicatif::ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
-            .unwrap()
-            .progress_chars("#>-"),
-    );
-
-    for day_offset in 0..=days_since_launch {
-        let day = hxmt_he_launch_day + chrono::Duration::days(day_offset);
-        progress_bar.set_message(format!("{}", day));
-        blink_task::process_day::<blink_hxmt_he::types::Chunk>(day, &multi_progress);
-        progress_bar.inc(1);
+    let args = std::env::args().collect::<Vec<String>>();
+    if args.len() != 4 {
+        eprintln!("Usage: blink_task <detector> <total_workers> <idx_worker>");
+        std::process::exit(1);
     }
-    progress_bar.finish();
+
+    if args[1] != "HXMT/HE" {
+        eprintln!("Unsupported detector: {}", args[1]);
+        std::process::exit(1);
+    }
+
+    blink_task::process_all(
+        args[2].parse::<usize>().expect("invalid total_workers"),
+        args[3].parse::<usize>().expect("invalid idx_worker"),
+    );
 }
