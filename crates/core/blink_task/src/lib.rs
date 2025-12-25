@@ -9,7 +9,7 @@ pub fn process_day<C: Chunk>(day: NaiveDate, multi_progress: &MultiProgress) {
     let progress_bar = multi_progress.add(ProgressBar::new(24 + 1));
     progress_bar.set_style(
         indicatif::ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] [{wide_bar.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+            .template("[{elapsed_precise}] [{bar:40.yellow/red}] {pos}/{len} ({eta}) {msg}")
             .unwrap()
             .progress_chars("#>-"),
     );
