@@ -1,18 +1,22 @@
 use blink_core::traits::Chunk;
 use chrono::prelude::*;
-use indicatif::ProgressIterator;
+use indicatif::{MultiProgress, ProgressBar};
 
-pub fn process_day<C: Chunk>(day: NaiveDate) {
+pub fn process_day<C: Chunk>(day: NaiveDate, multi_progress: &MultiProgress) {
     let mut all_signals = Vec::new();
     let mut errors: Vec<blink_core::error::Error> = Vec::new();
 
-    for hour in (0..24).progress_with_style(
+    let progress_bar = multi_progress.add(ProgressBar::new(24 + 1));
+    progress_bar.set_style(
         indicatif::ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
-        .unwrap()
-        .progress_chars("#>-")
-    ) {
+            .template("  {spinner:.blue} [{bar:30.yellow/red}] {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+
+    for hour in 0..24 {
         let naive = day.and_hms_opt(hour, 0, 0).expect("invalid time");
+        progress_bar.set_message(format!("Hour {:02}:00", hour));
         match C::from_epoch(&Utc.from_utc_datetime(&naive)) {
             Ok(chunk) => {
                 let mut sigs = chunk.search();
@@ -22,8 +26,10 @@ pub fn process_day<C: Chunk>(day: NaiveDate) {
                 errors.push(e);
             }
         }
+        progress_bar.inc(1);
     }
 
+    progress_bar.set_message("Writing output");
     // ensusre folder "data/HXMT-HE/year/month/" exists
     let year = day.year();
     let month = day.month();
@@ -40,4 +46,6 @@ pub fn process_day<C: Chunk>(day: NaiveDate) {
     std::fs::write(&output_file, json).expect("failed to write output file");
     let final_output_file = output_file.trim_end_matches(".tmp");
     std::fs::rename(&output_file, final_output_file).expect("failed to rename output file");
+    progress_bar.inc(1);
+    progress_bar.finish_and_clear(); // 使用 finish_and_clear() 以便完成后清除内层进度条
 }
