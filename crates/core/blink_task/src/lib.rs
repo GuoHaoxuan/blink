@@ -66,16 +66,18 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
     let month = day.month();
     let output_dir = format!("data/{}/{:04}/{:02}/", S::name(), year, month);
     std::fs::create_dir_all(&output_dir).expect("failed to create output directory");
+    let suffix = format!(".{}.tmp", nanoid::nanoid!(3));
     let output_file = format!(
-        "{}{:04}{:02}{:02}_signals.json.tmp",
+        "{}{:04}{:02}{:02}_signals.json{}",
         output_dir,
         year,
         month,
-        day.day()
+        day.day(),
+        suffix
     );
     let json = serde_json::to_string_pretty(&all_signals).expect("failed to serialize signals");
     std::fs::write(&output_file, json).expect("failed to write output file");
-    let final_output_file = output_file.trim_end_matches(".tmp");
+    let final_output_file = output_file.trim_end_matches(&suffix);
     std::fs::rename(&output_file, final_output_file).expect("failed to rename output file");
 
     for (hour, error) in errors {
