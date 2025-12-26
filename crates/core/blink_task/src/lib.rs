@@ -36,7 +36,7 @@ pub fn process_all<S: Satellite>(total_workers: usize, idx_worker: usize) {
 
 fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
     let mut all_signals = Vec::new();
-    let mut errors: Vec<blink_core::error::Error> = Vec::new();
+    let mut errors: Vec<(u32, blink_core::error::Error)> = Vec::new();
 
     let progress_bar = multi_progress.add(ProgressBar::new(24));
     progress_bar.set_style(
@@ -54,7 +54,7 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
                 all_signals.append(&mut sigs);
             }
             Err(e) => {
-                errors.push(e);
+                errors.push((hour, e));
             }
         }
         progress_bar.inc(1);
@@ -78,7 +78,7 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
     let final_output_file = output_file.trim_end_matches(".tmp");
     std::fs::rename(&output_file, final_output_file).expect("failed to rename output file");
 
-    for error in errors {
-        eprintln!("Error processing chunk for {}: {}", day, error);
+    for (hour, error) in errors {
+        eprintln!("Error {}T{:02}: {}", day, hour, error);
     }
 }
