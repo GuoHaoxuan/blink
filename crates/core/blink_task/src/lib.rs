@@ -27,14 +27,14 @@ pub fn process_all<S: Satellite>(total_workers: usize, idx_worker: usize) {
         let day = launch_day + chrono::Duration::days(day_offset);
         progress_bar.set_message(format!("{}", day));
         if (day_offset as usize) % total_workers == idx_worker {
-            process_day::<S::Chunk>(day, &multi_progress);
+            process_day::<S>(day, &multi_progress);
         }
         progress_bar.inc(1);
     }
     progress_bar.finish();
 }
 
-fn process_day<C: Chunk>(day: NaiveDate, multi_progress: &MultiProgress) {
+fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
     let mut all_signals = Vec::new();
     let mut errors: Vec<blink_core::error::Error> = Vec::new();
 
@@ -48,7 +48,7 @@ fn process_day<C: Chunk>(day: NaiveDate, multi_progress: &MultiProgress) {
 
     for hour in 0..24 {
         let naive = day.and_hms_opt(hour, 0, 0).expect("invalid time");
-        match C::from_epoch(&Utc.from_utc_datetime(&naive)) {
+        match S::Chunk::from_epoch(&Utc.from_utc_datetime(&naive)) {
             Ok(chunk) => {
                 let mut sigs = chunk.search();
                 all_signals.append(&mut sigs);
@@ -61,10 +61,10 @@ fn process_day<C: Chunk>(day: NaiveDate, multi_progress: &MultiProgress) {
     }
     progress_bar.finish_and_clear(); // 使用 finish_and_clear() 以便完成后清除内层进度条
 
-    // ensusre folder "data/HXMT-HE/year/month/" exists
+    // ensusre folder "data/SatelliteName/year/month/" exists
     let year = day.year();
     let month = day.month();
-    let output_dir = format!("data/HXMT-HE/{:04}/{:02}/", year, month);
+    let output_dir = format!("data/{}/{:04}/{:02}/", S::name(), year, month);
     std::fs::create_dir_all(&output_dir).expect("failed to create output directory");
     let output_file = format!(
         "{}{:04}{:02}{:02}_signals.json.tmp",
