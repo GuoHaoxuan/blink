@@ -105,7 +105,22 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
     std::fs::write(&temp_file, json).expect("failed to write output file");
     std::fs::rename(&temp_file, &output_file).expect("failed to rename output file");
 
-    for (hour, error) in errors {
-        eprintln!("Error {}T{:02}: {}", day, hour, error);
+    let error_file = format!(
+        "{}{:04}{:02}{:02}_errors.txt",
+        output_dir,
+        year,
+        month,
+        day.day(),
+    );
+    let error_file_temp = format!("{}{}", &error_file, &suffix);
+    if errors.is_empty() {
+        let _ = fs::remove_file(&error_file);
+    } else {
+        let mut error_contents = String::new();
+        for (hour, error) in &errors {
+            error_contents.push_str(&format!("Error {}T{:02}: {}\n", day, hour, error));
+        }
+        fs::write(&error_file_temp, error_contents).expect("failed to write error file");
+        fs::rename(&error_file_temp, &error_file).expect("failed to rename error file");
     }
 }
