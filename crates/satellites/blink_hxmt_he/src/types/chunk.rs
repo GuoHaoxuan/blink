@@ -42,7 +42,6 @@ impl blink_core::traits::Chunk for Chunk {
                 let datetime: DateTime<Utc> = last_modified.into();
                 Ok::<DateTime<Utc>, Error>(datetime)
             })
-            .inspect(|lm| println!("[DEBUG] File last modified: {:?}", lm))
             .collect::<Result<Vec<DateTime<Utc>>, Error>>()?;
 
         let last_modifieds2: Vec<DateTime<Utc>> = vec![
