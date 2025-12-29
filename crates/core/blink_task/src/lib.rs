@@ -64,33 +64,14 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
             S::Chunk::last_modified(&epoch).ok()
         })
         .max();
-    println!(
-        "Last modified for {} on {}: {:?}",
-        S::name(),
-        day,
-        last_modified
-    );
-    match last_modified {
-        Some(last_modified) => {
-            let last_processed =
-                fs::metadata(&output_file).and_then(|metadata| metadata.modified());
-            println!(
-                "Last processed for {} on {}: {:?}",
-                S::name(),
-                day,
-                last_processed
-            );
-            if let Ok(last_processed) = last_processed {
-                let last_processed: DateTime<Utc> = last_processed.into();
-                if last_processed >= last_modified {
-                    // println!("Data for {} on {} is up to date, skipping.", S::name(), day);
-                    return;
-                }
+    if let Some(last_modified) = last_modified {
+        let last_processed = fs::metadata(&output_file).and_then(|metadata| metadata.modified());
+        if let Ok(last_processed) = last_processed {
+            let last_processed: DateTime<Utc> = last_processed.into();
+            if last_processed >= last_modified {
+                // println!("Data for {} on {} is up to date, skipping.", S::name(), day);
+                return;
             }
-        }
-        None => {
-            // eprintln!("No data available for {} on {}", S::name(), day);
-            return;
         }
     }
 
