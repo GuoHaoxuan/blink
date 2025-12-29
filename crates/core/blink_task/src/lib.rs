@@ -63,6 +63,14 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
             let epoch = Utc.from_utc_datetime(&naive);
             S::Chunk::last_modified(&epoch).ok()
         })
+        .inspect(|last_modified| {
+            println!(
+                "Last modified for {} on {}: {:?}",
+                S::name(),
+                day,
+                last_modified
+            )
+        })
         .max();
     println!(
         "Last modified for {} on {}: {:?}",
