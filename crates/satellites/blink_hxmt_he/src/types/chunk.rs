@@ -33,6 +33,7 @@ impl blink_core::traits::Chunk for Chunk {
     }
 
     fn last_modified(epoch: &DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
+        println!("[DEBUG] Calculating last_modified for epoch: {:?}", epoch);
         let last_modifieds1: Vec<DateTime<Utc>> = get_all_filenames(*epoch)?
             .iter()
             .flatten()
@@ -41,6 +42,7 @@ impl blink_core::traits::Chunk for Chunk {
                 let datetime: DateTime<Utc> = last_modified.into();
                 Ok::<DateTime<Utc>, Error>(datetime)
             })
+            .inspect(|lm| println!("[DEBUG] File last modified: {:?}", lm))
             .collect::<Result<Vec<DateTime<Utc>>, Error>>()?;
 
         let last_modifieds2: Vec<DateTime<Utc>> = vec![
