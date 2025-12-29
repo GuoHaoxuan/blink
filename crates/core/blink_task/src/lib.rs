@@ -37,9 +37,14 @@ pub fn process_all<S: Satellite>(total_workers: usize, idx_worker: usize) {
 }
 
 fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
-    let mut all_signals = Vec::new();
-    let mut errors: Vec<(u32, blink_core::error::Error)> = Vec::new();
+    let spin_bar = multi_progress.add(ProgressBar::new(24));
+    spin_bar.set_style(
+        indicatif::ProgressStyle::default_spinner()
+            .template("{spinner} {msg}")
+            .unwrap(),
+    );
 
+    spin_bar.set_message("ensure folder exist");
     let year = day.year();
     let month = day.month();
     let output_dir = format!(
@@ -57,6 +62,7 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
         day.day(),
     );
 
+    spin_bar.set_message("check last modified");
     let last_modified = (0..24)
         .filter_map(|hour| {
             let naive = day.and_hms_opt(hour, 0, 0).expect("invalid time");
@@ -74,6 +80,8 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
         }
     }
 
+    spin_bar.finish_and_clear();
+
     let progress_bar = multi_progress.add(ProgressBar::new(24));
     progress_bar.set_style(
         indicatif::ProgressStyle::default_bar()
@@ -82,6 +90,8 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
             .progress_chars("#>-"),
     );
 
+    let mut all_signals = Vec::new();
+    let mut errors: Vec<(u32, blink_core::error::Error)> = Vec::new();
     for hour in 0..24 {
         let naive = day.and_hms_opt(hour, 0, 0).expect("invalid time");
         match S::Chunk::from_epoch(&Utc.from_utc_datetime(&naive)) {
@@ -97,6 +107,14 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
     }
     progress_bar.finish_and_clear(); // 使用 finish_and_clear() 以便完成后清除内层进度条
 
+    let spin_bar_writting = multi_progress.add(ProgressBar::new_spinner());
+    spin_bar_writting.set_style(
+        indicatif::ProgressStyle::default_spinner()
+            .template("{spinner} {msg}")
+            .unwrap(),
+    );
+    spin_bar_writting.set_message("writing output files");
+
     let suffix = format!(".{}.tmp", nanoid::nanoid!(3));
     let temp_file = format!("{}{}", &output_file, &suffix);
 
@@ -104,6 +122,7 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
     std::fs::write(&temp_file, json).expect("failed to write output file");
     std::fs::rename(&temp_file, &output_file).expect("failed to rename output file");
 
+    spin_bar_writting.set_message("writing error file");
     let error_file = format!(
         "{}{:04}{:02}{:02}_errors.txt",
         output_dir,
@@ -122,4 +141,6 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
         fs::write(&error_file_temp, error_contents).expect("failed to write error file");
         fs::rename(&error_file_temp, &error_file).expect("failed to rename error file");
     }
+
+    spin_bar_writting.finish_and_clear();
 }
