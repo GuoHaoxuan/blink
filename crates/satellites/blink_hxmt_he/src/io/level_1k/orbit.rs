@@ -20,18 +20,10 @@ impl OrbitFile {
     }
 
     pub fn last_modified(epoch: &DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
-        println!(
-            "[DEBUG] Getting last_modified for OrbitFile at epoch: {:?}",
-            epoch
-        );
         let path = Self::get_path(epoch)?;
-        println!("[DEBUG] OrbitFile path: {}", path);
         let metadata = std::fs::metadata(path)?;
-        println!("[DEBUG] OrbitFile metadata: {:?}", metadata);
         let modified_time = metadata.modified()?;
-        println!("[DEBUG] OrbitFile modified time: {:?}", modified_time);
         let datetime: DateTime<Utc> = modified_time.into();
-        println!("[DEBUG] OrbitFile last_modified datetime: {:?}", datetime);
         Ok(datetime)
     }
 

@@ -63,27 +63,12 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
             let epoch = Utc.from_utc_datetime(&naive);
             S::Chunk::last_modified(&epoch).ok()
         })
-        .inspect(|last_modified| {
-            println!(
-                "Last modified for {} on {}: {:?}",
-                S::name(),
-                day,
-                last_modified
-            )
-        })
         .max();
-    println!(
-        "Last modified for {} on {}: {:?}",
-        S::name(),
-        day,
-        last_modified
-    );
     if let Some(last_modified) = last_modified {
         let last_processed = fs::metadata(&output_file).and_then(|metadata| metadata.modified());
         if let Ok(last_processed) = last_processed {
             let last_processed: DateTime<Utc> = last_processed.into();
             if last_processed >= last_modified {
-                println!("Data for {} on {} is up to date, skipping.", S::name(), day);
                 return;
             }
         }

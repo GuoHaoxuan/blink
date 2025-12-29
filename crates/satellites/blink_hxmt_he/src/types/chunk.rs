@@ -33,7 +33,6 @@ impl blink_core::traits::Chunk for Chunk {
     }
 
     fn last_modified(epoch: &DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
-        println!("[DEBUG] Calculating last_modified for epoch: {:?}", epoch);
         let last_modifieds1: Vec<DateTime<Utc>> = get_all_filenames(*epoch)?
             .iter()
             .flatten()
@@ -50,17 +49,8 @@ impl blink_core::traits::Chunk for Chunk {
             AttFile::last_modified(epoch)?,
         ];
 
-        println!("[DEBUG] Last modifieds from files: {:?}", last_modifieds1);
-        println!(
-            "[DEBUG] Last modifieds from metadata: {:?}",
-            last_modifieds2
-        );
-
-        let last_modifieds: Vec<DateTime<Utc>> = last_modifieds1
-            .into_iter()
-            .chain(last_modifieds2)
-            .inspect(|lm| println!("[DEBUG] Last modified: {:?}", lm))
-            .collect();
+        let last_modifieds: Vec<DateTime<Utc>> =
+            last_modifieds1.into_iter().chain(last_modifieds2).collect();
 
         let max_last_modified = last_modifieds
             .into_iter()
