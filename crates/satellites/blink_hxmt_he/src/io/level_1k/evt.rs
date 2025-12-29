@@ -20,18 +20,10 @@ impl EventFile {
     }
 
     pub fn last_modified(epoch: &DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
-        println!(
-            "[DEBUG] Getting last_modified for EventFile at epoch: {:?}",
-            epoch
-        );
         let path = Self::get_path(epoch)?;
-        println!("[DEBUG] EventFile path: {}", path);
         let metadata = std::fs::metadata(path)?;
-        println!("[DEBUG] EventFile metadata obtained");
         let modified_time = metadata.modified()?;
-        println!("[DEBUG] EventFile modified time obtained");
         let datetime: DateTime<Utc> = modified_time.into();
-        println!("[DEBUG] EventFile last_modified datetime: {:?}", datetime);
         Ok(datetime)
     }
 

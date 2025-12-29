@@ -50,6 +50,12 @@ impl blink_core::traits::Chunk for Chunk {
             AttFile::last_modified(epoch)?,
         ];
 
+        println!("[DEBUG] Last modifieds from files: {:?}", last_modifieds1);
+        println!(
+            "[DEBUG] Last modifieds from metadata: {:?}",
+            last_modifieds2
+        );
+
         let last_modifieds: Vec<DateTime<Utc>> = last_modifieds1
             .into_iter()
             .chain(last_modifieds2)
