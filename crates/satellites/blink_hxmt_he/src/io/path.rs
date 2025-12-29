@@ -39,9 +39,12 @@ fn get_file(folder: &str, prefix: &str) -> Result<String, Error> {
 }
 
 pub fn get_path(epoch: &DateTime<Utc>, file_type: &str) -> Result<String, Error> {
-    if file_type != "Evt" && file_type != "Orbit" && file_type != "Att" {
-        panic!("Invalid file type: {}", file_type);
-    }
+    let suffix = match file_type {
+        "Evt" => "HE-Evt",
+        "Orbit" => "Orbit",
+        "Att" => "Att",
+        _ => panic!("Invalid file type: {}", file_type),
+    };
 
     let num = (*epoch - Utc.with_ymd_and_hms(2017, 6, 15, 0, 0, 0).unwrap()).num_days() + 1;
     let folder = format!(
@@ -53,12 +56,12 @@ pub fn get_path(epoch: &DateTime<Utc>, file_type: &str) -> Result<String, Error>
         num = num
     );
     let prefix = format!(
-        "HXMT_{:04}{:02}{:02}T{:02}_HE-{}_FFFFFF_V",
+        "HXMT_{:04}{:02}{:02}T{:02}_{}_FFFFFF_V",
         epoch.year(),
         epoch.month(),
         epoch.day(),
         epoch.hour(),
-        file_type
+        suffix
     );
     get_file(&folder, &prefix)
 }
