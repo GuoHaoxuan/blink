@@ -69,7 +69,7 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
         if let Ok(last_processed) = last_processed {
             let last_processed: DateTime<Utc> = last_processed.into();
             if last_processed >= last_modified {
-                // println!("Data for {} on {} is up to date, skipping.", S::name(), day);
+                println!("Data for {} on {} is up to date, skipping.", S::name(), day);
                 return;
             }
         }
