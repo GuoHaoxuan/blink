@@ -49,8 +49,11 @@ impl blink_core::traits::Chunk for Chunk {
             AttFile::last_modified(epoch)?,
         ];
 
-        let last_modifieds: Vec<DateTime<Utc>> =
-            last_modifieds1.into_iter().chain(last_modifieds2).collect();
+        let last_modifieds: Vec<DateTime<Utc>> = last_modifieds1
+            .into_iter()
+            .chain(last_modifieds2)
+            .inspect(|lm| println!("[DEBUG] Last modified: {:?}", lm))
+            .collect();
 
         let max_last_modified = last_modifieds
             .into_iter()
