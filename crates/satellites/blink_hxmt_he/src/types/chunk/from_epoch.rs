@@ -9,43 +9,6 @@ use crate::{
 use super::Chunk;
 use blink_core::{error::Error, types::MissionElapsedTime};
 use chrono::{TimeDelta, prelude::*};
-use std::{env, path::Path, sync::LazyLock};
-
-static HXMT_1K_DIR: LazyLock<String> = LazyLock::new(|| {
-    env::var("HXMT_1K_DIR").unwrap_or_else(|_| "/hxmt/work/HXMT-DATA/1K".to_string())
-});
-
-fn get_file(folder: &str, prefix: &str) -> Result<String, Error> {
-    let name = std::fs::read_dir(folder)?
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| path.is_file())
-        .filter_map(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str().map(String::from))
-        })
-        .filter(|name| name.starts_with(prefix))
-        .max_by(|a, b| {
-            let extract_version = |name: &str| {
-                name.strip_prefix(prefix)
-                    .and_then(|s| s.get(..1))
-                    .and_then(|s| s.parse::<u32>().ok())
-                    .unwrap_or(0)
-            };
-            extract_version(a).cmp(&extract_version(b))
-        })
-        .ok_or_else(|| {
-            Error::FileNotFound(format!(
-                "No files found matching pattern for detector {}",
-                prefix
-            ))
-        })?;
-    Ok(Path::new(&folder)
-        .join(name)
-        .into_os_string()
-        .into_string()
-        .unwrap())
-}
 
 pub(super) fn from_epoch(epoch: &DateTime<Utc>) -> Result<Chunk, Error> {
     let event_file = EventFile::from_epoch(epoch)?;
