@@ -1,14 +1,5 @@
-use crate::{
-    io::{
-        level_1b::{EngFile, SciFile, get_all_filenames},
-        level_1k::{AttFile, EventFile, OrbitFile},
-    },
-    types::Hxmt,
-};
-
-use super::Chunk;
-use blink_core::{error::Error, types::MissionElapsedTime};
-use chrono::{TimeDelta, prelude::*};
+use blink_core::error::Error;
+use chrono::prelude::*;
 use std::{env, path::Path, sync::LazyLock};
 
 static HXMT_1K_DIR: LazyLock<String> = LazyLock::new(|| {
@@ -47,32 +38,27 @@ fn get_file(folder: &str, prefix: &str) -> Result<String, Error> {
         .unwrap())
 }
 
-pub(super) fn from_epoch(epoch: &DateTime<Utc>) -> Result<Chunk, Error> {
-    let event_file = EventFile::from_epoch(epoch)?;
-    let orbit_file = OrbitFile::from_epoch(epoch)?;
-    let att_file = AttFile::from_epoch(epoch)?;
+pub fn get_path(epoch: &DateTime<Utc>, file_type: &str) -> Result<String, Error> {
+    if file_type != "Evt" && file_type != "Orbit" && file_type != "Att" {
+        panic!("Invalid file type: {}", file_type);
+    }
 
-    let [eng_files, sci_files] = get_all_filenames(*epoch)?;
-    let eng_files = [
-        EngFile::new(&eng_files[0])?,
-        EngFile::new(&eng_files[1])?,
-        EngFile::new(&eng_files[2])?,
-    ];
-    let sci_files = [
-        SciFile::new(&sci_files[0])?,
-        SciFile::new(&sci_files[1])?,
-        SciFile::new(&sci_files[2])?,
-    ];
-
-    Ok(Chunk {
-        event_file,
-        eng_files,
-        sci_files,
-        orbit_file,
-        att_file,
-        span: [
-            MissionElapsedTime::<Hxmt>::from(*epoch),
-            MissionElapsedTime::<Hxmt>::from(*epoch + TimeDelta::hours(1)),
-        ],
-    })
+    let num = (*epoch - Utc.with_ymd_and_hms(2017, 6, 15, 0, 0, 0).unwrap()).num_days() + 1;
+    let folder = format!(
+        "{HXMT_1K_DIR}/Y{year:04}{month:02}/{year:04}{month:02}{day:02}-{num:04}",
+        HXMT_1K_DIR = HXMT_1K_DIR.as_str(),
+        year = epoch.year(),
+        month = epoch.month(),
+        day = epoch.day(),
+        num = num
+    );
+    let prefix = format!(
+        "HXMT_{:04}{:02}{:02}T{:02}_HE-{}_FFFFFF_V",
+        epoch.year(),
+        epoch.month(),
+        epoch.day(),
+        epoch.hour(),
+        file_type
+    );
+    get_file(&folder, &prefix)
 }

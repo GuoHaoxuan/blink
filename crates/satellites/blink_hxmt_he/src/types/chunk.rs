@@ -1,7 +1,9 @@
-use crate::io::level_1b::{EngFile, SciFile};
+use crate::io::level_1b::{EngFile, SciFile, get_all_filenames};
 use crate::io::level_1k::{AttFile, EventFile, OrbitFile};
 use crate::types::{Event, Hxmt};
+use blink_core::error::Error;
 use blink_core::types::MissionElapsedTime;
+use chrono::prelude::*;
 
 mod check_saturation;
 mod from_epoch;
@@ -28,5 +30,33 @@ impl blink_core::traits::Chunk for Chunk {
 
     fn search(&self) -> Vec<blink_core::types::Signal<Self::E>> {
         search::search(self)
+    }
+
+    fn last_modified(epoch: &DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
+        let last_modifieds1: Vec<DateTime<Utc>> = get_all_filenames(*epoch)?
+            .iter()
+            .flatten()
+            .map(|filename| {
+                let last_modified = std::fs::metadata(filename)?.modified()?;
+                let datetime: DateTime<Utc> = last_modified.into();
+                Ok::<DateTime<Utc>, Error>(datetime)
+            })
+            .collect::<Result<Vec<DateTime<Utc>>, Error>>()?;
+
+        let last_modifieds2: Vec<DateTime<Utc>> = vec![
+            EventFile::last_modified(epoch)?,
+            OrbitFile::last_modified(epoch)?,
+            AttFile::last_modified(epoch)?,
+        ];
+
+        let last_modifieds: Vec<DateTime<Utc>> =
+            last_modifieds1.into_iter().chain(last_modifieds2).collect();
+
+        let max_last_modified = last_modifieds
+            .into_iter()
+            .max()
+            .ok_or_else(|| Error::FileNotFound("No files found".to_string()))?;
+
+        Ok(max_last_modified)
     }
 }

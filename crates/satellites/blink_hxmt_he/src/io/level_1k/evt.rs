@@ -1,5 +1,7 @@
+use super::super::path::get_path;
 use crate::types::{Detector, Event, Scintillator};
 use blink_core::{error::Error, types::MissionElapsedTime};
+use chrono::prelude::*;
 
 pub struct EventFile {
     // HDU 1: Events
@@ -13,7 +15,24 @@ pub struct EventFile {
 }
 
 impl EventFile {
-    pub fn new(filename: &str) -> Result<Self, Error> {
+    fn get_path(epoch: &DateTime<Utc>) -> Result<String, Error> {
+        get_path(epoch, "Evt")
+    }
+
+    pub fn last_modified(epoch: &DateTime<Utc>) -> Result<DateTime<Utc>, Error> {
+        let path = Self::get_path(epoch)?;
+        let metadata = std::fs::metadata(path)?;
+        let modified_time = metadata.modified()?;
+        let datetime: DateTime<Utc> = modified_time.into();
+        Ok(datetime)
+    }
+
+    pub fn from_epoch(epoch: &DateTime<Utc>) -> Result<Self, Error> {
+        let path = Self::get_path(epoch)?;
+        Self::new(&path)
+    }
+
+    fn new(filename: &str) -> Result<Self, Error> {
         let mut fptr = fitsio::FitsFile::open(filename)?;
 
         // HDU 1: Events

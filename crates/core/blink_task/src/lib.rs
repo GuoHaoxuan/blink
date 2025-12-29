@@ -1,3 +1,5 @@
+use std::fs;
+
 use blink_core::traits::{Chunk, Satellite};
 use chrono::prelude::*;
 use indicatif::{MultiProgress, ProgressBar};
@@ -38,6 +40,48 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
     let mut all_signals = Vec::new();
     let mut errors: Vec<(u32, blink_core::error::Error)> = Vec::new();
 
+    let year = day.year();
+    let month = day.month();
+    let output_dir = format!(
+        "data/{}/{:04}/{:02}/",
+        S::name().replace("/", "_"),
+        year,
+        month
+    );
+    std::fs::create_dir_all(&output_dir).expect("failed to create output directory");
+    let output_file = format!(
+        "{}{:04}{:02}{:02}_signals.json",
+        output_dir,
+        year,
+        month,
+        day.day(),
+    );
+
+    let last_modified = (0..24)
+        .filter_map(|hour| {
+            let naive = day.and_hms_opt(hour, 0, 0).expect("invalid time");
+            let epoch = Utc.from_utc_datetime(&naive);
+            S::Chunk::last_modified(&epoch).ok()
+        })
+        .max();
+    match last_modified {
+        Some(last_modified) => {
+            let last_processed =
+                fs::metadata(&output_file).and_then(|metadata| metadata.modified());
+            if let Ok(last_processed) = last_processed {
+                let last_processed: DateTime<Utc> = last_processed.into();
+                if last_processed >= last_modified {
+                    // println!("Data for {} on {} is up to date, skipping.", S::name(), day);
+                    return;
+                }
+            }
+        }
+        None => {
+            // eprintln!("No data available for {} on {}", S::name(), day);
+            return;
+        }
+    }
+
     let progress_bar = multi_progress.add(ProgressBar::new(24));
     progress_bar.set_style(
         indicatif::ProgressStyle::default_bar()
@@ -61,24 +105,12 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
     }
     progress_bar.finish_and_clear(); // 使用 finish_and_clear() 以便完成后清除内层进度条
 
-    // ensusre folder "data/SatelliteName/year/month/" exists
-    let year = day.year();
-    let month = day.month();
-    let output_dir = format!("data/{}/{:04}/{:02}/", S::name(), year, month);
-    std::fs::create_dir_all(&output_dir).expect("failed to create output directory");
     let suffix = format!(".{}.tmp", nanoid::nanoid!(3));
-    let output_file = format!(
-        "{}{:04}{:02}{:02}_signals.json{}",
-        output_dir,
-        year,
-        month,
-        day.day(),
-        suffix
-    );
+    let temp_file = format!("{}{}", &output_file, &suffix);
+
     let json = serde_json::to_string_pretty(&all_signals).expect("failed to serialize signals");
-    std::fs::write(&output_file, json).expect("failed to write output file");
-    let final_output_file = output_file.trim_end_matches(&suffix);
-    std::fs::rename(&output_file, final_output_file).expect("failed to rename output file");
+    std::fs::write(&temp_file, json).expect("failed to write output file");
+    std::fs::rename(&temp_file, &output_file).expect("failed to rename output file");
 
     for (hour, error) in errors {
         eprintln!("Error {}T{:02}: {}", day, hour, error);

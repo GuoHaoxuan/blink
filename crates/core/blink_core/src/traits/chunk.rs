@@ -10,4 +10,5 @@ pub trait Chunk {
     where
         Self: Sized;
     fn search(&self) -> Vec<Signal<Self::E>>;
+    fn last_modified(epoch: &DateTime<Utc>) -> Result<DateTime<Utc>, Error>;
 }
