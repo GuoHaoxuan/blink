@@ -5,7 +5,7 @@ members = [
     "crates/core/blink_algorithms",
     "crates/core/blink_core",
     "crates/core/blink_lightning",
-    "crates/core/blink_solar",
+    "crates/core/blink_solar", "crates/core/blink_summarize",
     "crates/core/blink_task",
     "crates/satellites/blink_fermi_gbm",
     "crates/satellites/blink_hxmt_he",

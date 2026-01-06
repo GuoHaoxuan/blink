@@ -4,20 +4,37 @@ use blink_core::traits::{Chunk, Satellite};
 use chrono::prelude::*;
 use indicatif::{MultiProgress, ProgressBar};
 
-pub fn process_all<S: Satellite>(total_workers: usize, idx_worker: usize) {
-    let launch_day = S::launch_day();
-    let today = Utc::now().naive_utc().date();
-    let days_since_launch = (today - launch_day).num_days();
+pub fn process<S, R, Map>(
+    start_date: Option<NaiveDate>,
+    end_date: Option<NaiveDate>,
+    map: Map,
+    total_workers: usize,
+    idx_worker: usize,
+) -> Vec<R>
+where
+    S: Satellite,
+    Map: Fn(NaiveDate, &MultiProgress) -> R,
+{
+    let start_date = match start_date {
+        Some(date) => date,
+        None => S::launch_day(),
+    };
+    let end_date = match end_date {
+        Some(date) => date,
+        None => Utc::now().naive_utc().date(),
+    };
+    let total_days = (end_date - start_date).num_days() + 1;
+
     println!(
-        "Processing {} data from launch day ({}) to today ({}), total {} days.",
+        "Processing {} data from {} to {}, total {} days.",
         S::name(),
-        launch_day,
-        today,
-        days_since_launch + 1
+        start_date,
+        end_date,
+        total_days
     );
 
     let multi_progress = MultiProgress::new();
-    let progress_bar = multi_progress.add(ProgressBar::new(days_since_launch as u64 + 1));
+    let progress_bar = multi_progress.add(ProgressBar::new(total_days as u64));
     progress_bar.set_style(
         indicatif::ProgressStyle::default_bar()
             .template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
@@ -25,15 +42,25 @@ pub fn process_all<S: Satellite>(total_workers: usize, idx_worker: usize) {
             .progress_chars("#>-"),
     );
 
-    for day_offset in 0..=days_since_launch {
-        let day = launch_day + chrono::Duration::days(day_offset);
+    let mut results = Vec::new();
+
+    for day_offset in 0..total_days {
+        let day = start_date + chrono::Duration::days(day_offset);
         progress_bar.set_message(format!("{}", day));
         if (day_offset as usize) % total_workers == idx_worker {
-            process_day::<S>(day, &multi_progress);
+            let result = map(day, &multi_progress);
+            results.push(result);
         }
         progress_bar.inc(1);
     }
+
     progress_bar.finish();
+
+    results
+}
+
+pub fn process_all<S: Satellite>(total_workers: usize, idx_worker: usize) {
+    process::<S, _, _>(None, None, process_day::<S>, total_workers, idx_worker);
 }
 
 fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {

@@ -110,6 +110,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "blink_summarize"
+version = "0.1.0"
+dependencies = [
+ "blink_core",
+ "blink_hxmt_he",
+ "blink_svom_grm",
+ "blink_task",
+ "chrono",
+ "indicatif",
+]
+
+[[package]]
 name = "blink_svom_grm"
 version = "0.1.0"
 dependencies = [
