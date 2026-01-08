@@ -6,17 +6,17 @@ use chrono::prelude::*;
 use indicatif::MultiProgress;
 
 macro_rules! load_all_signals {
-    ($($satellite:ident),*) => {
+    ($($instrument:ident),*) => {
         {
             let mut all_signals: Vec<UnifiedSignal> = Vec::new();
             $(
                 {
                     let signals: Vec<_> =
-                        process::<$satellite, _, _>(None, None, process_day::<$satellite>, 1, 0)
+                        process::<$instrument, _, _>(None, None, process_day::<$instrument>, 1, 0)
                             .into_iter()
                             .flatten()
                             .collect();
-                    println!("Total signals loaded ({}): {}", stringify!($satellite), signals.len());
+                    println!("Total signals loaded ({}): {}", stringify!($instrument), signals.len());
                     for signal in signals {
                         all_signals.push(signal);
                     }
