@@ -1,6 +1,6 @@
 use chrono::prelude::*;
 
-pub trait Satellite: Clone + Copy + PartialEq + Eq + PartialOrd + Ord {
+pub trait Instrument: Clone + Copy + PartialEq + Eq + PartialOrd + Ord {
     type Chunk: crate::traits::Chunk;
 
     fn ref_time() -> &'static DateTime<Utc>;

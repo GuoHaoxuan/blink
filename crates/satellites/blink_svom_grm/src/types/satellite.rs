@@ -1,4 +1,4 @@
-use blink_core::traits::Satellite;
+use blink_core::traits::Instrument;
 use chrono::prelude::*;
 use std::{str::FromStr, sync::OnceLock};
 
@@ -6,7 +6,7 @@ use std::{str::FromStr, sync::OnceLock};
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Svom;
 
-impl Satellite for Svom {
+impl Instrument for Svom {
     type Chunk = crate::types::Chunk;
 
     fn ref_time() -> &'static DateTime<Utc> {

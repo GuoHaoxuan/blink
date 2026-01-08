@@ -1,10 +1,10 @@
 use std::fs;
 
-use blink_core::traits::{Chunk, Satellite};
+use blink_core::traits::{Chunk, Instrument};
 use chrono::prelude::*;
 use indicatif::{MultiProgress, ProgressBar};
 
-pub fn process<S, R, Map>(
+pub fn process<I, R, Map>(
     start_date: Option<NaiveDate>,
     end_date: Option<NaiveDate>,
     map: Map,
@@ -12,12 +12,12 @@ pub fn process<S, R, Map>(
     idx_worker: usize,
 ) -> Vec<R>
 where
-    S: Satellite,
+    I: Instrument,
     Map: Fn(NaiveDate, &MultiProgress) -> R,
 {
     let start_date = match start_date {
         Some(date) => date,
-        None => S::launch_day(),
+        None => I::launch_day(),
     };
     let end_date = match end_date {
         Some(date) => date,
@@ -27,7 +27,7 @@ where
 
     println!(
         "Processing {} data from {} to {}, total {} days.",
-        S::name(),
+        I::name(),
         start_date,
         end_date,
         total_days
@@ -59,11 +59,11 @@ where
     results
 }
 
-pub fn process_all<S: Satellite>(total_workers: usize, idx_worker: usize) {
-    process::<S, _, _>(None, None, process_day::<S>, total_workers, idx_worker);
+pub fn process_all<I: Instrument>(total_workers: usize, idx_worker: usize) {
+    process::<I, _, _>(None, None, process_day::<I>, total_workers, idx_worker);
 }
 
-fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
+fn process_day<I: Instrument>(day: NaiveDate, multi_progress: &MultiProgress) {
     let spin_bar = multi_progress.add(ProgressBar::new(24));
     spin_bar.set_style(
         indicatif::ProgressStyle::default_spinner()
@@ -76,7 +76,7 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
     let month = day.month();
     let output_dir = format!(
         "data/{}/{:04}/{:02}/",
-        S::name().replace("/", "_"),
+        I::name().replace("/", "_"),
         year,
         month
     );
@@ -94,7 +94,7 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
         .filter_map(|hour| {
             let naive = day.and_hms_opt(hour, 0, 0).expect("invalid time");
             let epoch = Utc.from_utc_datetime(&naive);
-            S::Chunk::last_modified(&epoch).ok()
+            I::Chunk::last_modified(&epoch).ok()
         })
         .max();
     if let Some(last_modified) = last_modified {
@@ -121,7 +121,7 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
     let mut errors: Vec<(u32, blink_core::error::Error)> = Vec::new();
     for hour in 0..24 {
         let naive = day.and_hms_opt(hour, 0, 0).expect("invalid time");
-        match S::Chunk::from_epoch(&Utc.from_utc_datetime(&naive)) {
+        match I::Chunk::from_epoch(&Utc.from_utc_datetime(&naive)) {
             Ok(chunk) => {
                 let mut sigs = chunk.search().into_iter().map(|e| e.to_unified()).collect();
                 all_signals.append(&mut sigs);

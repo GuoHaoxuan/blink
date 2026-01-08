@@ -1,4 +1,4 @@
-use crate::{traits::Satellite, types::MissionElapsedTime};
+use crate::{traits::Instrument, types::MissionElapsedTime};
 use std::ops::Add;
 use std::ops::Sub;
 
@@ -10,7 +10,7 @@ pub trait Temporal:
     fn lerp_factor(self, start: Self, end: Self) -> f64;
 }
 
-impl<S: Satellite> Temporal for MissionElapsedTime<S> {
+impl<I: Instrument> Temporal for MissionElapsedTime<I> {
     type Duration = uom::si::f64::Time;
 
     fn lerp_factor(self, start: Self, end: Self) -> f64 {

@@ -1,13 +1,13 @@
 use std::{str::FromStr, sync::OnceLock};
 
-use blink_core::traits::Satellite;
+use blink_core::traits::Instrument;
 use chrono::prelude::*;
 
 /// Hard X-ray Modulation Telescope (HXMT)
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Hxmt;
 
-impl Satellite for Hxmt {
+impl Instrument for Hxmt {
     type Chunk = crate::types::Chunk;
 
     fn ref_time() -> &'static DateTime<Utc> {

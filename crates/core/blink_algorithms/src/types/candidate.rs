@@ -1,11 +1,11 @@
 use crate::poisson;
-use blink_core::{traits::Satellite, types::MissionElapsedTime};
+use blink_core::{traits::Instrument, types::MissionElapsedTime};
 use uom::si::f64::*;
 
 #[derive(Clone)]
-pub struct Candidate<S: Satellite> {
-    pub start: MissionElapsedTime<S>,
-    pub stop: MissionElapsedTime<S>,
+pub struct Candidate<I: Instrument> {
+    pub start: MissionElapsedTime<I>,
+    pub stop: MissionElapsedTime<I>,
     pub bin_size_min: Time,
     pub bin_size_max: Time,
     pub bin_size_best: Time,
@@ -14,13 +14,13 @@ pub struct Candidate<S: Satellite> {
     pub mean: f64,
 }
 
-impl<S: Satellite> Candidate<S> {
+impl<I: Instrument> Candidate<I> {
     pub fn new(
-        start: MissionElapsedTime<S>,
-        stop: MissionElapsedTime<S>,
+        start: MissionElapsedTime<I>,
+        stop: MissionElapsedTime<I>,
         count: u32,
         mean: f64,
-    ) -> Candidate<S> {
+    ) -> Candidate<I> {
         let bin_size = stop - start;
         Candidate {
             start,

@@ -1,4 +1,4 @@
-use crate::traits::Satellite;
+use crate::traits::Instrument;
 use chrono::{Duration, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -8,20 +8,20 @@ use uom::si::f64::*;
 use uom::si::time::second;
 
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize, Debug)]
-pub struct MissionElapsedTime<S: Satellite> {
+pub struct MissionElapsedTime<I: Instrument> {
     time: Time,
-    _phantom: PhantomData<S>,
+    _phantom: PhantomData<I>,
 }
 
-impl<S: Satellite> Eq for MissionElapsedTime<S> {}
+impl<I: Instrument> Eq for MissionElapsedTime<I> {}
 
-impl<S: Satellite> PartialOrd for MissionElapsedTime<S> {
+impl<I: Instrument> PartialOrd for MissionElapsedTime<I> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<S: Satellite> Ord for MissionElapsedTime<S> {
+impl<I: Instrument> Ord for MissionElapsedTime<I> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.time
             .partial_cmp(&other.time)
@@ -29,7 +29,7 @@ impl<S: Satellite> Ord for MissionElapsedTime<S> {
     }
 }
 
-impl<S: Satellite> MissionElapsedTime<S> {
+impl<I: Instrument> MissionElapsedTime<I> {
     pub fn new(met: f64) -> Self {
         Self {
             time: Time::new::<second>(met),
@@ -159,16 +159,16 @@ static LEAP_SECONDS: LazyLock<[DateTime<Utc>; 27]> = LazyLock::new(|| {
     ]
 });
 
-impl<S: Satellite> From<MissionElapsedTime<S>> for DateTime<Utc> {
-    fn from(val: MissionElapsedTime<S>) -> Self {
+impl<I: Instrument> From<MissionElapsedTime<I>> for DateTime<Utc> {
+    fn from(val: MissionElapsedTime<I>) -> Self {
         let seconds = val.time.get::<second>();
         let whole_seconds = seconds.trunc() as i64;
         let nanoseconds = ((seconds.fract() * 1_000_000_000.0) as i64).clamp(0, 999_999_999);
 
         let mut time =
-            *S::ref_time() + Duration::seconds(whole_seconds) + Duration::nanoseconds(nanoseconds);
+            *I::ref_time() + Duration::seconds(whole_seconds) + Duration::nanoseconds(nanoseconds);
         for leap_second in LEAP_SECONDS.iter() {
-            if *S::ref_time() < *leap_second && time > *leap_second {
+            if *I::ref_time() < *leap_second && time > *leap_second {
                 time -= Duration::seconds(1);
             }
         }
@@ -176,15 +176,15 @@ impl<S: Satellite> From<MissionElapsedTime<S>> for DateTime<Utc> {
     }
 }
 
-impl<S: Satellite> From<DateTime<Utc>> for MissionElapsedTime<S> {
+impl<I: Instrument> From<DateTime<Utc>> for MissionElapsedTime<I> {
     fn from(value: DateTime<Utc>) -> Self {
-        let duration = value - *S::ref_time();
+        let duration = value - *I::ref_time();
         let seconds = duration.num_seconds() as f64;
         let nanoseconds = duration.subsec_nanos() as f64 / 1_000_000_000.0;
 
         let mut time = seconds + nanoseconds;
         for leap_second in LEAP_SECONDS.iter() {
-            if *S::ref_time() < *leap_second && value > *leap_second {
+            if *I::ref_time() < *leap_second && value > *leap_second {
                 time += 1.0;
             }
         }
@@ -195,7 +195,7 @@ impl<S: Satellite> From<DateTime<Utc>> for MissionElapsedTime<S> {
     }
 }
 
-impl<S: Satellite> Sub for MissionElapsedTime<S> {
+impl<I: Instrument> Sub for MissionElapsedTime<I> {
     type Output = Time;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -203,7 +203,7 @@ impl<S: Satellite> Sub for MissionElapsedTime<S> {
     }
 }
 
-impl<S: Satellite> Sub<Time> for MissionElapsedTime<S> {
+impl<I: Instrument> Sub<Time> for MissionElapsedTime<I> {
     type Output = Self;
 
     fn sub(self, rhs: Time) -> Self::Output {
@@ -214,7 +214,7 @@ impl<S: Satellite> Sub<Time> for MissionElapsedTime<S> {
     }
 }
 
-impl<S: Satellite> Add<Time> for MissionElapsedTime<S> {
+impl<I: Instrument> Add<Time> for MissionElapsedTime<I> {
     type Output = Self;
 
     fn add(self, rhs: Time) -> Self::Output {

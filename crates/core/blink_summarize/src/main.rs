@@ -1,4 +1,4 @@
-use blink_core::{traits::Satellite, types::UnifiedSignal};
+use blink_core::{traits::Instrument, types::UnifiedSignal};
 use blink_hxmt_he::types::Hxmt;
 use blink_svom_grm::types::Svom;
 use blink_task::process;
@@ -37,7 +37,7 @@ fn main() {
     println!("{}", serde_json::to_string_pretty(&time).unwrap());
 }
 
-fn process_day<S: Satellite>(
+fn process_day<I: Instrument>(
     day: NaiveDate,
     _multi_progress: &MultiProgress,
 ) -> Vec<UnifiedSignal> {
@@ -45,7 +45,7 @@ fn process_day<S: Satellite>(
     let month = day.month();
     let output_dir = format!(
         "data/{}/{:04}/{:02}/",
-        S::name().replace("/", "_"),
+        I::name().replace("/", "_"),
         year,
         month
     );
