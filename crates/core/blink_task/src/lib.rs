@@ -123,7 +123,7 @@ fn process_day<S: Satellite>(day: NaiveDate, multi_progress: &MultiProgress) {
         let naive = day.and_hms_opt(hour, 0, 0).expect("invalid time");
         match S::Chunk::from_epoch(&Utc.from_utc_datetime(&naive)) {
             Ok(chunk) => {
-                let mut sigs = chunk.search();
+                let mut sigs = chunk.search().into_iter().map(|e| e.to_unified()).collect();
                 all_signals.append(&mut sigs);
             }
             Err(e) => {

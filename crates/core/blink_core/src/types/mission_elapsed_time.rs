@@ -1,13 +1,13 @@
 use crate::traits::Satellite;
 use chrono::{Duration, prelude::*};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::ops::{Add, Sub};
 use std::{marker::PhantomData, sync::LazyLock};
 use uom::si::f64::*;
 use uom::si::time::second;
 
-#[derive(Clone, Copy, PartialEq, Serialize, Debug)]
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize, Debug)]
 pub struct MissionElapsedTime<S: Satellite> {
     time: Time,
     _phantom: PhantomData<S>,

@@ -19,7 +19,7 @@ pub struct Chunk {
 }
 
 impl blink_core::traits::Chunk for Chunk {
-    type E = Event;
+    type Event = Event;
 
     fn from_epoch(epoch: &chrono::DateTime<chrono::Utc>) -> Result<Self, blink_core::error::Error>
     where
@@ -28,7 +28,7 @@ impl blink_core::traits::Chunk for Chunk {
         from_epoch::from_epoch(epoch)
     }
 
-    fn search(&self) -> Vec<blink_core::types::Signal<Self::E>> {
+    fn search(&self) -> Vec<blink_core::types::Signal<Self::Event>> {
         search::search(self)
     }
 
