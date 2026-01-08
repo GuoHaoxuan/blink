@@ -3,7 +3,7 @@ use crate::{
         AttFile, EvtFile, OrbFile,
         file::{find_att_by_time, find_evt_by_time, find_orb_by_time},
     },
-    types::instrument::Svom,
+    types::instrument::SvomGrm,
 };
 
 use super::Chunk;
@@ -19,8 +19,8 @@ pub(super) fn from_epoch(epoch: &DateTime<Utc>) -> Result<Chunk, Error> {
     let orb_file = OrbFile::from_fits_file(orb_filename.to_str().unwrap())?;
     Ok(Chunk {
         span: [
-            MissionElapsedTime::<Svom>::from(*epoch),
-            MissionElapsedTime::<Svom>::from(*epoch + TimeDelta::hours(1)),
+            MissionElapsedTime::<SvomGrm>::from(*epoch),
+            MissionElapsedTime::<SvomGrm>::from(*epoch + TimeDelta::hours(1)),
         ],
         att_file,
         evt_file,

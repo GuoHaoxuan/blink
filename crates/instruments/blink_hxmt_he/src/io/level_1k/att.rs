@@ -1,5 +1,5 @@
 use crate::io::path::get_path;
-use crate::types::Hxmt;
+use crate::types::HxmtHe;
 use blink_core::error::Error;
 use blink_core::types::{Attitude, MissionElapsedTime, TemporalState, Trajectory};
 use chrono::prelude::*;
@@ -44,7 +44,7 @@ impl AttFile {
     }
 }
 
-impl From<&AttFile> for Trajectory<MissionElapsedTime<Hxmt>, Attitude> {
+impl From<&AttFile> for Trajectory<MissionElapsedTime<HxmtHe>, Attitude> {
     fn from(att_file: &AttFile) -> Self {
         let points = att_file
             .time

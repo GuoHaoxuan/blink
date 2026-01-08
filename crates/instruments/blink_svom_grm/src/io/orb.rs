@@ -7,7 +7,7 @@ No.    Name      Ver    Type      Cards   Dimensions   Format
 
 use blink_core::types::{MissionElapsedTime, Position, TemporalState, Trajectory};
 
-use crate::types::Svom;
+use crate::types::SvomGrm;
 
 pub struct OrbFile {
     orb: OrbHdu,
@@ -84,7 +84,7 @@ impl OrbHdu {
     }
 }
 
-impl From<&OrbFile> for Trajectory<MissionElapsedTime<Svom>, Position> {
+impl From<&OrbFile> for Trajectory<MissionElapsedTime<SvomGrm>, Position> {
     fn from(orb_file: &OrbFile) -> Self {
         let points = orb_file
             .orb

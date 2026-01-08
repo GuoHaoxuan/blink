@@ -4,9 +4,9 @@ use std::{str::FromStr, sync::OnceLock};
 
 /// Space-based multi-band astronomical Variable Objects Monitor (SVOM)
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct Svom;
+pub struct SvomGrm;
 
-impl Instrument for Svom {
+impl Instrument for SvomGrm {
     type Chunk = crate::types::Chunk;
 
     fn ref_time() -> &'static DateTime<Utc> {

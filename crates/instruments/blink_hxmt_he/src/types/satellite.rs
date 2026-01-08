@@ -5,9 +5,9 @@ use chrono::prelude::*;
 
 /// Hard X-ray Modulation Telescope (HXMT)
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct Hxmt;
+pub struct HxmtHe;
 
-impl Instrument for Hxmt {
+impl Instrument for HxmtHe {
     type Chunk = crate::types::Chunk;
 
     fn ref_time() -> &'static DateTime<Utc> {
@@ -21,6 +21,6 @@ impl Instrument for Hxmt {
     }
 
     fn name() -> &'static str {
-        "HXMT/HE"
+        "Insight-HXMT/HE"
     }
 }

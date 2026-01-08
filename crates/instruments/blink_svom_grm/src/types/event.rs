@@ -1,11 +1,11 @@
 use blink_core::types::MissionElapsedTime;
 use serde::Serialize;
 
-use crate::types::instrument::Svom;
+use crate::types::instrument::SvomGrm;
 
 #[derive(Serialize, Debug, Clone)]
 pub struct Event {
-    pub time: MissionElapsedTime<Svom>,
+    pub time: MissionElapsedTime<SvomGrm>,
     pub channel: i16,
     pub detector_id: u8,
     pub gain_type: u8,
@@ -16,7 +16,7 @@ pub struct Event {
 }
 
 impl blink_core::traits::Event for Event {
-    type Instrument = Svom;
+    type Instrument = SvomGrm;
     type ChannelType = i16;
 
     fn time(&self) -> MissionElapsedTime<Self::Instrument> {

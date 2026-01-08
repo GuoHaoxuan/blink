@@ -1,6 +1,6 @@
 use crate::types::Chunk;
 use crate::types::Event;
-use crate::types::Svom;
+use crate::types::SvomGrm;
 use blink_algorithms::snapshot_stepping::SearchConfig;
 use blink_algorithms::snapshot_stepping::search_new;
 use blink_core::types::Attitude;
@@ -31,10 +31,12 @@ pub(super) fn search(chunk: &Chunk) -> Vec<Signal<Event>> {
         .into_iter()
         .filter_map(|candidate| {
             let peak = candidate.start + candidate.bin_size_best / 2.0;
-            let attitude = Trajectory::<MissionElapsedTime<Svom>, Attitude>::from(&chunk.att_file)
-                .interpolate(peak)?;
-            let position = Trajectory::<MissionElapsedTime<Svom>, Position>::from(&chunk.orb_file)
-                .interpolate(peak)?;
+            let attitude =
+                Trajectory::<MissionElapsedTime<SvomGrm>, Attitude>::from(&chunk.att_file)
+                    .interpolate(peak)?;
+            let position =
+                Trajectory::<MissionElapsedTime<SvomGrm>, Position>::from(&chunk.orb_file)
+                    .interpolate(peak)?;
             Some(Signal {
                 start: candidate.start,
                 stop: candidate.stop,

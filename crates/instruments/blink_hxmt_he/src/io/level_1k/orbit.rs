@@ -4,7 +4,7 @@ use blink_core::{
 };
 use chrono::prelude::*;
 
-use crate::{io::path::get_path, types::Hxmt};
+use crate::{io::path::get_path, types::HxmtHe};
 
 pub struct OrbitFile {
     // HDU 1: Orbit
@@ -51,7 +51,7 @@ impl OrbitFile {
     }
 }
 
-impl From<&OrbitFile> for Trajectory<MissionElapsedTime<Hxmt>, Position> {
+impl From<&OrbitFile> for Trajectory<MissionElapsedTime<HxmtHe>, Position> {
     fn from(orbit_file: &OrbitFile) -> Self {
         let points = orbit_file
             .time

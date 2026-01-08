@@ -4,4 +4,4 @@ pub mod instrument;
 
 pub use chunk::Chunk;
 pub use event::Event;
-pub use instrument::Svom;
+pub use instrument::SvomGrm;

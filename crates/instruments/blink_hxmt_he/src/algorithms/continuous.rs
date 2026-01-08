@@ -1,12 +1,12 @@
-use crate::types::Hxmt;
+use crate::types::HxmtHe;
 use blink_algorithms::types::Candidate;
 
 pub fn continuous(
-    triggers: Vec<Candidate<Hxmt>>,
+    triggers: Vec<Candidate<HxmtHe>>,
     interval: uom::si::f64::Time,
     duration: uom::si::f64::Time,
     count: i32,
-) -> Vec<Candidate<Hxmt>> {
+) -> Vec<Candidate<HxmtHe>> {
     if triggers.is_empty() {
         return triggers;
     }

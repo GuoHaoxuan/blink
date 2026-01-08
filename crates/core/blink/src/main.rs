@@ -1,5 +1,5 @@
-use blink_hxmt_he::types::Hxmt;
-use blink_svom_grm::types::Svom;
+use blink_hxmt_he::types::HxmtHe;
+use blink_svom_grm::types::SvomGrm;
 use blink_task::process_all;
 
 fn main() {
@@ -14,10 +14,10 @@ fn main() {
 
     match args[1].as_str() {
         "HXMT/HE" => {
-            process_all::<Hxmt>(total_workers, idx_worker);
+            process_all::<HxmtHe>(total_workers, idx_worker);
         }
         "SVOM/GRM" => {
-            process_all::<Svom>(total_workers, idx_worker);
+            process_all::<SvomGrm>(total_workers, idx_worker);
         }
         _ => {
             eprintln!("Unsupported detector: {}", args[1]);

@@ -3,7 +3,7 @@ use blink_core::types::MissionElapsedTime;
 use crate::io::file::{find_att_by_time, find_evt_by_time, find_orb_by_time};
 use crate::io::{AttFile, EvtFile, OrbFile};
 use crate::types::event::Event;
-use crate::types::instrument::Svom;
+use crate::types::instrument::SvomGrm;
 use blink_core::error::Error;
 use chrono::prelude::*;
 
@@ -11,7 +11,7 @@ mod from_epoch;
 mod search;
 
 pub struct Chunk {
-    pub span: [MissionElapsedTime<Svom>; 2],
+    pub span: [MissionElapsedTime<SvomGrm>; 2],
     pub att_file: AttFile,
     pub evt_file: EvtFile,
     pub orb_file: OrbFile,

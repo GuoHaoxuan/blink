@@ -7,7 +7,7 @@ No.    Name      Ver    Type      Cards   Dimensions   Format
 
 use blink_core::types::{Attitude, MissionElapsedTime, TemporalState, Trajectory};
 
-use crate::types::Svom;
+use crate::types::SvomGrm;
 
 pub struct AttFile {
     quaternion: QuaternionHdu,
@@ -72,7 +72,7 @@ impl QuaternionHdu {
     }
 }
 
-impl From<&AttFile> for Trajectory<MissionElapsedTime<Svom>, Attitude> {
+impl From<&AttFile> for Trajectory<MissionElapsedTime<SvomGrm>, Attitude> {
     fn from(att_file: &AttFile) -> Self {
         let points = att_file
             .quaternion

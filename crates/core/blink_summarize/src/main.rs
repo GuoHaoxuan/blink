@@ -1,6 +1,6 @@
 use blink_core::{traits::Instrument, types::UnifiedSignal};
-use blink_hxmt_he::types::Hxmt;
-use blink_svom_grm::types::Svom;
+use blink_hxmt_he::types::HxmtHe;
+use blink_svom_grm::types::SvomGrm;
 use blink_task::process;
 use chrono::prelude::*;
 use indicatif::MultiProgress;
@@ -28,7 +28,7 @@ macro_rules! load_all_signals {
 }
 
 fn main() {
-    let mut all_signals = load_all_signals!(Hxmt, Svom);
+    let mut all_signals = load_all_signals!(HxmtHe, SvomGrm);
     all_signals.sort_by(|a, b| a.start.cmp(&b.start));
 
     println!("Total unified signals loaded: {}", all_signals.len());

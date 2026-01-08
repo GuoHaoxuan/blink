@@ -3,7 +3,7 @@ use crate::{
         level_1b::{EngFile, SciFile, get_all_filenames},
         level_1k::{AttFile, EventFile, OrbitFile},
     },
-    types::Hxmt,
+    types::HxmtHe,
 };
 
 use super::Chunk;
@@ -34,8 +34,8 @@ pub(super) fn from_epoch(epoch: &DateTime<Utc>) -> Result<Chunk, Error> {
         orbit_file,
         att_file,
         span: [
-            MissionElapsedTime::<Hxmt>::from(*epoch),
-            MissionElapsedTime::<Hxmt>::from(*epoch + TimeDelta::hours(1)),
+            MissionElapsedTime::<HxmtHe>::from(*epoch),
+            MissionElapsedTime::<HxmtHe>::from(*epoch + TimeDelta::hours(1)),
         ],
     })
 }

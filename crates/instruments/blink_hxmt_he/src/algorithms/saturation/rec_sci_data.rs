@@ -1,6 +1,6 @@
 use super::{crc_check, find_stime};
 use crate::io::level_1b::{EngFile, SciFile};
-use crate::types::Hxmt;
+use crate::types::HxmtHe;
 use blink_core::types::MissionElapsedTime;
 
 enum Pack {
@@ -18,7 +18,7 @@ enum Pack {
 }
 
 pub fn rec_sci_data(
-    time: MissionElapsedTime<Hxmt>,
+    time: MissionElapsedTime<HxmtHe>,
     eng_data: &EngFile,
     sci_data: &SciFile,
 ) -> bool {

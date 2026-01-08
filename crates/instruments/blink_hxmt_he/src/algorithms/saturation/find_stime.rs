@@ -1,5 +1,5 @@
 use crate::io::level_1b::EngFile;
-use crate::types::Hxmt;
+use crate::types::HxmtHe;
 use blink_core::error::Error;
 use blink_core::types::MissionElapsedTime;
 
@@ -10,7 +10,7 @@ pub enum StimeType {
 
 pub fn find_stime(
     eng_file: &EngFile,
-    evt_time: MissionElapsedTime<Hxmt>,
+    evt_time: MissionElapsedTime<HxmtHe>,
 ) -> Result<(i32, u64, StimeType), Error> {
     // 给定时间点和对应的 1B 级工程数据文件名，从其中找出对应的 stime 值
     // 如果没有找到对应的时间点，则返回的 stime 值为 -1。

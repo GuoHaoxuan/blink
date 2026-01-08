@@ -1,5 +1,5 @@
 use crate::types::Detector;
-use crate::types::Hxmt;
+use crate::types::HxmtHe;
 use crate::types::Scintillator;
 use blink_core::traits::Event as EventTrait;
 use blink_core::types::MissionElapsedTime;
@@ -7,7 +7,7 @@ use serde::Serialize;
 
 #[derive(Serialize, Debug, Clone)]
 pub struct Event {
-    time: MissionElapsedTime<Hxmt>,
+    time: MissionElapsedTime<HxmtHe>,
     channel: u8,
     pub detector: Detector,
     pub is_am241: bool,
@@ -15,7 +15,7 @@ pub struct Event {
 }
 
 impl EventTrait for Event {
-    type Instrument = Hxmt;
+    type Instrument = HxmtHe;
     type ChannelType = u16;
 
     fn time(&self) -> MissionElapsedTime<Self::Instrument> {
@@ -45,7 +45,7 @@ impl EventTrait for Event {
 
 impl Event {
     pub fn new(
-        time: MissionElapsedTime<Hxmt>,
+        time: MissionElapsedTime<HxmtHe>,
         channel: u8,
         detector: Detector,
         is_am241: bool,
