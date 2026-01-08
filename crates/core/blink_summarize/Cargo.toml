@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 blink_core = { version = "0.1.0", path = "../blink_core" }
-blink_hxmt_he = { version = "0.1.0", path = "../../satellites/blink_hxmt_he" }
-blink_svom_grm = { version = "0.1.0", path = "../../satellites/blink_svom_grm" }
+blink_hxmt_he = { version = "0.1.0", path = "../../instruments/blink_hxmt_he" }
+blink_svom_grm = { version = "0.1.0", path = "../../instruments/blink_svom_grm" }
 blink_task = { version = "0.1.0", path = "../blink_task" }
 chrono = "0.4.42"
 indicatif = "0.18.3"
