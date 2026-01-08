@@ -9,8 +9,8 @@ use crate::{
 
 #[derive(Serialize, Deserialize)]
 pub struct Signal<E: Event> {
-    pub start: MissionElapsedTime<E::Satellite>,
-    pub stop: MissionElapsedTime<E::Satellite>,
+    pub start: MissionElapsedTime<E::Instrument>,
+    pub stop: MissionElapsedTime<E::Instrument>,
     pub bin_size_min: Time,
     pub bin_size_max: Time,
     pub bin_size_best: Time,
@@ -38,7 +38,7 @@ impl<E: Event> Signal<E> {
             false_positive_per_year: self.false_positive_per_year,
             attitude: self.attitude.clone(),
             position: self.position.clone(),
-            instrument: <E::Satellite as Instrument>::name().to_string(),
+            instrument: <E::Instrument as Instrument>::name().to_string(),
         }
     }
 }

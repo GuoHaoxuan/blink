@@ -1,7 +1,7 @@
 pub mod chunk;
 pub mod event;
-pub mod satellite;
+pub mod instrument;
 
 pub use chunk::Chunk;
 pub use event::Event;
-pub use satellite::Svom;
+pub use instrument::Svom;

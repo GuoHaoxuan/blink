@@ -61,11 +61,11 @@ pub fn poisson_isf(p: f64, lambda: f64) -> u32 {
 pub fn search_new<E: Event>(
     data: &[E],
     group_number: usize,
-    start: MissionElapsedTime<E::Satellite>,
-    stop: MissionElapsedTime<E::Satellite>,
+    start: MissionElapsedTime<E::Instrument>,
+    stop: MissionElapsedTime<E::Instrument>,
     config: SearchConfig,
-) -> Vec<Candidate<E::Satellite>> {
-    let mut result: Vec<Candidate<E::Satellite>> = Vec::new();
+) -> Vec<Candidate<E::Instrument>> {
+    let mut result: Vec<Candidate<E::Instrument>> = Vec::new();
     // let mut cache = vec![
     //     vec![None; CACHE_COUNT_MAX as usize];
     //     (CACHE_MEAN_MAX * CACHE_MEAN_HASH_FACTOR).ceil() as usize

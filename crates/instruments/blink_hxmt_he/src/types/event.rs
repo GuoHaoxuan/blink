@@ -15,10 +15,10 @@ pub struct Event {
 }
 
 impl EventTrait for Event {
-    type Satellite = Hxmt;
+    type Instrument = Hxmt;
     type ChannelType = u16;
 
-    fn time(&self) -> MissionElapsedTime<Self::Satellite> {
+    fn time(&self) -> MissionElapsedTime<Self::Instrument> {
         self.time
     }
 

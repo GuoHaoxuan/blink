@@ -3,7 +3,7 @@ use blink_core::types::MissionElapsedTime;
 use crate::io::file::{find_att_by_time, find_evt_by_time, find_orb_by_time};
 use crate::io::{AttFile, EvtFile, OrbFile};
 use crate::types::event::Event;
-use crate::types::satellite::Svom;
+use crate::types::instrument::Svom;
 use blink_core::error::Error;
 use chrono::prelude::*;
 

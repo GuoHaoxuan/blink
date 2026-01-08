@@ -4,11 +4,11 @@ use serde::Serialize;
 use std::fmt::Debug;
 
 pub trait Event: Serialize + Debug + Clone {
-    type Satellite: Instrument;
+    type Instrument: Instrument;
     type ChannelType;
     // type DetectorType;
 
-    fn time(&self) -> MissionElapsedTime<Self::Satellite>;
+    fn time(&self) -> MissionElapsedTime<Self::Instrument>;
     fn channel(&self) -> Self::ChannelType;
     // fn detector(&self) -> Self::DetectorType;
     fn group(&self) -> u8;

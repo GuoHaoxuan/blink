@@ -3,7 +3,7 @@ use crate::{
         AttFile, EvtFile, OrbFile,
         file::{find_att_by_time, find_evt_by_time, find_orb_by_time},
     },
-    types::satellite::Svom,
+    types::instrument::Svom,
 };
 
 use super::Chunk;
