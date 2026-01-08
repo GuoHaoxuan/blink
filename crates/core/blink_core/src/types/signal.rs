@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use uom::si::f64::*;
 
 use crate::{
-    traits::Event,
+    traits::{Event, Satellite},
     types::{Attitude, MissionElapsedTime, Position},
 };
 
@@ -38,6 +38,7 @@ impl<E: Event> Signal<E> {
             false_positive_per_year: self.false_positive_per_year,
             attitude: self.attitude.clone(),
             position: self.position.clone(),
+            instrument: <E::Satellite as Satellite>::name().to_string(),
         }
     }
 }
@@ -56,4 +57,5 @@ pub struct UnifiedSignal {
     pub false_positive_per_year: f64,
     pub attitude: Attitude,
     pub position: Position,
+    pub instrument: String,
 }
