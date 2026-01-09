@@ -16,7 +16,7 @@ macro_rules! load_all_signals {
                             .into_iter()
                             .flatten()
                             .collect();
-                    println!("Total signals loaded ({}): {}", stringify!($instrument), signals.len());
+                    println!("Total signals loaded ({}): {}", $instrument::name(), signals.len());
                     for signal in signals {
                         all_signals.push(signal);
                     }
