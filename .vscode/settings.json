@@ -12,6 +12,5 @@
         "TSTART",
         "TSTOP"
     ],
-    "git.ignoreLimitWarning": true,
-    "python.defaultInterpreterPath": "${workspaceFolder}/analysis/.venv/bin/python"
+    "git.ignoreLimitWarning": true
 }
