@@ -1,0 +1,7 @@
+[package]
+name = "blink_cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+blink_filter = { version = "0.1.0", path = "../blink_filter" }

@@ -1,14 +1,16 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/core/blink",
     "crates/core/blink_algorithms",
     "crates/core/blink_core",
     "crates/core/blink_lightning",
     "crates/core/blink_solar",
-    "crates/core/blink_summarize",
-    "crates/core/blink_task",
     "crates/instruments/blink_fermi_gbm",
     "crates/instruments/blink_hxmt_he",
     "crates/instruments/blink_svom_grm",
+    "crates/workflows/blink_cli",
+    "crates/workflows/blink_filter",
+    "crates/workflows/blink_load",
+    "crates/workflows/blink_search",
+    "crates/workflows/blink_workflow",
 ]
