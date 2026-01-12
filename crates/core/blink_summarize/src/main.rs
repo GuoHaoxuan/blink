@@ -28,7 +28,7 @@ macro_rules! load_all_signals {
 }
 
 fn main() {
-    let mut all_signals = load_all_signals!(HxmtHe, SvomGrm);
+    let mut all_signals = load_all_signals!(HxmtHe);
     all_signals.sort_by(|a, b| a.start.cmp(&b.start));
 
     println!("Total unified signals loaded: {}", all_signals.len());
