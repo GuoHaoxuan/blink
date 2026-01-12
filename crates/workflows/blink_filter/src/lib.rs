@@ -1,19 +1,33 @@
-use blink_core::types::TemporalState;
+use blink_core::types::{TemporalState, UnifiedSignal};
 use blink_hxmt_he::types::HxmtHe;
 use blink_lightning::database::get_lightnings;
 use blink_load::load_all;
 // use blink_svom_grm::types::SvomGrm;
-use chrono::{TimeDelta, prelude::*};
-// use indicatif::MultiProgress;
+use chrono::TimeDelta;
+use indicatif::{ProgressBar, ProgressIterator};
+use serde::Serialize;
 use uom::si::f64::*;
 
-pub fn run() {
-    let all_signals = load_all::<HxmtHe>();
+#[derive(Serialize)]
+struct Tgf {
+    signal: UnifiedSignal,
+    lightning_associated: bool,
+}
 
-    let mut all_signals = all_signals
+pub fn run() {
+    let signals = load_all::<HxmtHe>();
+    let progress = ProgressBar::new(signals.len() as u64);
+    progress.set_style(
+        indicatif::ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+
+    let tgfs = signals
         .into_iter()
-        .filter(|signal| signal.false_positive_per_year <= 1e0)
-        .filter(|signal| {
+        .progress_with(progress)
+        .map(|signal| {
             let peak_time = signal.peak_time();
             let lightnings = get_lightnings(
                 peak_time - TimeDelta::seconds(1),
@@ -31,21 +45,12 @@ pub fn run() {
                 )
             })
             .collect::<Vec<_>>();
-
-            !lightnings.is_empty() || signal.false_positive_per_year <= 1e-5
+            Tgf {
+                signal,
+                lightning_associated: !lightnings.is_empty(),
+            }
         })
         .collect::<Vec<_>>();
-    all_signals.sort_by(|a, b| a.start.cmp(&b.start));
-
-    println!("Total unified signals loaded: {}", all_signals.len());
-
-    for signal in all_signals.iter() {
-        println!(
-            "{} - {} | FPY: {:.2e} | Instrument: {}",
-            signal.start, signal.stop, signal.false_positive_per_year, signal.instrument
-        );
-    }
-
-    let time = Utc::now();
-    println!("{}", serde_json::to_string_pretty(&time).unwrap());
+    let json = serde_json::to_string_pretty(&tgfs).expect("failed to serialize to json");
+    std::fs::write("tgfs.json", json).expect("failed to write tgfs.json");
 }

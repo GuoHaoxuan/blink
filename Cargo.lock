@@ -86,6 +86,7 @@ dependencies = [
  "chrono",
  "indicatif",
  "nanoid",
+ "serde",
  "serde_json",
  "uom",
 ]
