@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
 use uom::si::f64::*;
 
@@ -58,4 +58,16 @@ pub struct UnifiedSignal {
     pub attitude: Attitude,
     pub position: Position,
     pub instrument: String,
+}
+
+impl UnifiedSignal {
+    pub fn peak_time(&self) -> DateTime<Utc> {
+        self.start
+            + TimeDelta::nanoseconds(self.delay.get::<uom::si::time::nanosecond>().round() as i64)
+            + TimeDelta::nanoseconds(
+                (self.bin_size_best / 2.0)
+                    .get::<uom::si::time::nanosecond>()
+                    .round() as i64,
+            )
+    }
 }

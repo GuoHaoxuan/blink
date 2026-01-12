@@ -8,7 +8,7 @@ use std::sync::Mutex;
 pub static LIGHTNING_CONNECTION: LazyLock<Mutex<Connection>> = LazyLock::new(|| {
     Mutex::new({
         let path = env::var("WWLLN_DB_PATH")
-            .unwrap_or_else(|_| String::from("/gecamfs/Exchange/GSDC/missions/AEfiles/WWLLN.db"));
+            .unwrap_or_else(|_| String::from("/Volumes/Graphite/WWLLN/WWLLN.db"));
         let conn =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
         // Set a longer busy timeout (e.g., 30 seconds = 30000 ms)
