@@ -11,19 +11,19 @@ use uom::si::f64::*;
 impl Lightning {
     pub fn is_associated(
         &self,
-        location: &TemporalState<DateTime<Utc>, Position>,
+        position: &TemporalState<DateTime<Utc>, Position>,
         time_tolerance: Duration,
         distance_tolerance: Length,
     ) -> bool {
         let dist = distance(
-            location.state.latitude,
-            location.state.longitude,
+            position.state.latitude,
+            position.state.longitude,
             self.lat,
             self.lon,
         );
         let time_of_arrival_value =
-            time_of_arrival(dist, location.state.altitude, *LIGHTNING_ALTITUDE);
-        let fixed_time = location.timestamp - time_of_arrival_value;
+            time_of_arrival(dist, position.state.altitude, *LIGHTNING_ALTITUDE);
+        let fixed_time = position.timestamp - time_of_arrival_value;
         let time_delta = self.time - fixed_time;
         time_delta.abs() <= time_tolerance && dist <= distance_tolerance
     }

@@ -1,6 +1,6 @@
 use blink_core::types::{TemporalState, UnifiedSignal};
 use blink_hxmt_he::types::HxmtHe;
-use blink_lightning::database::get_lightnings;
+use blink_lightning::{algorithms::coincidence_prob, database::get_lightnings};
 use blink_load::load_all;
 // use blink_svom_grm::types::SvomGrm;
 use chrono::TimeDelta;
@@ -9,9 +9,15 @@ use serde::Serialize;
 use uom::si::f64::*;
 
 #[derive(Serialize)]
+struct LightningInfo {
+    associated: bool,
+    coincidence_probability: f64,
+}
+
+#[derive(Serialize)]
 struct Tgf {
     signal: UnifiedSignal,
-    lightning_associated: bool,
+    lightning: LightningInfo,
 }
 
 pub fn run() {
@@ -29,6 +35,10 @@ pub fn run() {
         .progress_with(progress)
         .map(|signal| {
             let peak_time = signal.peak_time();
+            let position = TemporalState {
+                timestamp: peak_time,
+                state: signal.position.clone(),
+            };
             let lightnings = get_lightnings(
                 peak_time - TimeDelta::seconds(1),
                 peak_time + TimeDelta::seconds(1),
@@ -36,18 +46,24 @@ pub fn run() {
             .into_iter()
             .filter(|lightning| {
                 lightning.is_associated(
-                    &TemporalState {
-                        timestamp: peak_time,
-                        state: signal.position.clone(),
-                    },
+                    &position,
                     TimeDelta::milliseconds(5),
                     Length::new::<uom::si::length::kilometer>(800.0),
                 )
             })
             .collect::<Vec<_>>();
+
             Tgf {
                 signal,
-                lightning_associated: !lightnings.is_empty(),
+                lightning: LightningInfo {
+                    associated: !lightnings.is_empty(),
+                    coincidence_probability: coincidence_prob(
+                        &position,
+                        TimeDelta::milliseconds(5),
+                        Length::new::<uom::si::length::kilometer>(800.0),
+                        TimeDelta::minutes(2),
+                    ),
+                },
             }
         })
         .collect::<Vec<_>>();
