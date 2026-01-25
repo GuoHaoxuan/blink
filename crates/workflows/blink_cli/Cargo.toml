@@ -4,4 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+blink_core = { version = "0.1.0", path = "../../core/blink_core" }
 blink_filter = { version = "0.1.0", path = "../blink_filter" }
+blink_hxmt_he = { version = "0.1.0", path = "../../instruments/blink_hxmt_he" }
+chrono = "0.4.43"
+clap = { version = "4.5.54", features = ["derive"] }
