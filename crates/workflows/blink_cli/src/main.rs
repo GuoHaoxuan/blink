@@ -5,8 +5,8 @@ use chrono::prelude::*;
 use clap::Parser;
 
 fn main() {
-    let start = "2022-10-09T13:20:00.000Z".parse::<DateTime<Utc>>().unwrap();
-    let stop = "2022-10-09T13:22:00.000Z".parse::<DateTime<Utc>>().unwrap();
+    let start = "2022-10-09T13:15:00.000Z".parse::<DateTime<Utc>>().unwrap();
+    let stop = "2022-10-09T13:35:00.000Z".parse::<DateTime<Utc>>().unwrap();
     let chunk = Chunk::from_epoch(&start).unwrap();
     // check for every 0.1s
     let mut cursor = start;
