@@ -14,7 +14,7 @@ fn main() {
         let met: MissionElapsedTime<HxmtHe> = cursor.into();
         let saturated = chunk.check_saturation(met);
         println!("{saturated}");
-        let next = cursor + chrono::Duration::milliseconds(100);
+        let next = cursor + chrono::Duration::milliseconds(1);
         cursor = next;
     }
 }
