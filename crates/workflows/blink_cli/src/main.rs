@@ -28,26 +28,29 @@ fn main() {
 
     eprintln!("Loading files for {}...", epoch.format("%Y-%m-%dT%H"));
 
-    let sci_filenames = get_sci_filenames(epoch).unwrap_or_default();
-    let eng_filenames = get_eng_filenames(epoch).unwrap_or_default();
+    // 加载文件：返回 Vec<(box_name, path)>，支持部分 box 缺失
+    let sci_pairs = get_sci_filenames(epoch);
+    let eng_pairs = get_eng_filenames(epoch);
 
-    let sci_files: Vec<SciFile> = sci_filenames
+    // 构建 (box_name, SciFile, offset) 三元组
+    let boxes: Vec<(String, SciFile, f64)> = sci_pairs
         .iter()
-        .filter_map(|f| SciFile::new(f).ok())
+        .filter_map(|(box_name, sci_path)| {
+            let sci = SciFile::new(sci_path).ok()?;
+            let offset = eng_pairs
+                .iter()
+                .find(|(bn, _)| bn == box_name)
+                .and_then(|(_, eng_path)| read_stime_offset(eng_path).ok())
+                .unwrap_or(0.0);
+            Some((box_name.clone(), sci, offset))
+        })
         .collect();
 
-    let offsets: Vec<f64> = eng_filenames
-        .iter()
-        .filter_map(|f| read_stime_offset(f).ok())
-        .collect();
-
-    if offsets.len() != sci_files.len() {
-        eprintln!(
-            "WARNING: {} sci files but {} eng offsets",
-            sci_files.len(),
-            offsets.len()
-        );
-    }
+    eprintln!(
+        "  Found {} boxes: {:?}",
+        boxes.len(),
+        boxes.iter().map(|(n, _, _)| n.as_str()).collect::<Vec<_>>()
+    );
 
     if let Some(pos) = dump_times {
         // --dump-times mode: 输出所有事例 MET 和饱和区间
@@ -74,12 +77,10 @@ fn main() {
         println!("# half_window={:.1}", half_window);
 
         // 输出事例 MET（每Box一节）
-        for (i, sci) in sci_files.iter().enumerate() {
-            let offset = offsets.get(i).copied().unwrap_or(0.0);
-            let box_name = ["A", "B", "C"][i];
+        for (box_name, sci, offset) in &boxes {
             eprintln!("Box {} (offset={:.0}) ...", box_name, offset);
 
-            let all_met = reconstruct_met_times(sci, offset);
+            let all_met = reconstruct_met_times(sci, *offset);
             let n_total = all_met.len();
 
             // 过滤到窗口内
@@ -105,13 +106,11 @@ fn main() {
             }
         }
 
-        // 输出饱和区间（直接使用原始 MET 值，不做 MET→UTC 转换）
+        // 输出饱和区间
         println!("# saturation_intervals");
-        for (i, sci) in sci_files.iter().enumerate() {
-            let offset = offsets.get(i).copied().unwrap_or(0.0);
-            let box_name = ["A", "B", "C"][i];
+        for (box_name, sci, offset) in &boxes {
             let intervals =
-                blink_hxmt_he::algorithms::saturation::scan_saturation_intervals_raw(sci, offset);
+                blink_hxmt_he::algorithms::saturation::scan_saturation_intervals_raw(sci, *offset);
             for (start, stop) in &intervals {
                 if *stop >= met_min && *start <= met_max {
                     println!("SAT,{},{:.6},{:.6}", box_name, start, stop);
@@ -134,11 +133,8 @@ fn main() {
         let met_max = center_met + half_window;
 
         println!("box,pkt_idx,min_time,max_time,n_events");
-        for (i, sci) in sci_files.iter().enumerate() {
-            let offset = offsets.get(i).copied().unwrap_or(0.0);
-            let box_name = ["A", "B", "C"][i];
-
-            let packet_times = reconstruct_with_wrap_tracking(sci, offset);
+        for (box_name, sci, offset) in &boxes {
+            let packet_times = reconstruct_with_wrap_tracking(sci, *offset);
             for (pkt_idx, times) in packet_times.iter().enumerate() {
                 if times.is_empty() {
                     continue;
@@ -166,11 +162,9 @@ fn main() {
         }
         // 输出秒事例时间
         println!("# second_events");
-        for (i, sci) in sci_files.iter().enumerate() {
-            let offset = offsets.get(i).copied().unwrap_or(0.0);
-            let box_name = ["A", "B", "C"][i];
+        for (box_name, sci, offset) in &boxes {
             let sec_times =
-                blink_hxmt_he::algorithms::saturation::extract_second_event_times(sci, offset);
+                blink_hxmt_he::algorithms::saturation::extract_second_event_times(sci, *offset);
             for t in &sec_times {
                 if *t >= met_min && *t <= met_max {
                     println!("SEC,{},{:.6}", box_name, t);
@@ -181,10 +175,9 @@ fn main() {
         // 默认模式: 只输出饱和区间
         let mut all_intervals: Vec<(MissionElapsedTime<HxmtHe>, MissionElapsedTime<HxmtHe>)> =
             Vec::new();
-        for (i, sci) in sci_files.iter().enumerate() {
-            let offset = offsets.get(i).copied().unwrap_or(0.0);
-            eprintln!("Box {} (offset={:.0})", ["A", "B", "C"][i], offset);
-            let intervals = scan_saturation_intervals(sci, offset);
+        for (box_name, sci, offset) in &boxes {
+            eprintln!("Box {} (offset={:.0})", box_name, offset);
+            let intervals = scan_saturation_intervals(sci, *offset);
             eprintln!("  {} intervals", intervals.len());
             all_intervals.extend(intervals);
         }

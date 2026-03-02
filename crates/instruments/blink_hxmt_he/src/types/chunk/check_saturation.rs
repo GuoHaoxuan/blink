@@ -9,8 +9,8 @@ impl Chunk {
     /// 计算三个机箱的饱和时间段并合并（任一机箱饱和即算饱和）。
     pub fn get_saturation_intervals(&self) -> Vec<Interval> {
         let mut all_intervals: Vec<Interval> = Vec::new();
-        for (i, sci_file) in self.sci_files.iter().enumerate() {
-            all_intervals.extend(scan_saturation_intervals(sci_file, self.stime_offsets[i]));
+        for ((_, sci_file), (_, offset)) in self.sci_files.iter().zip(self.stime_offsets.iter()) {
+            all_intervals.extend(scan_saturation_intervals(sci_file, *offset));
         }
 
         // 按起始时间排序
