@@ -80,56 +80,42 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Opti
     path
 }
 
-pub fn get_all_filenames(time: DateTime<Utc>) -> Result<[[String; 3]; 2], Error> {
-    let types = ["eng", "sci"];
-    let serial_nums = ["A", "B", "C"];
+/// 获取指定小时的三个机箱的科学数据文件路径（A/B/C）。
+pub fn get_sci_filenames(time: DateTime<Utc>) -> Result<[String; 3], Error> {
+    get_filenames("sci", time)
+}
 
+/// 获取指定小时的三个机箱的工程数据文件路径（A/B/C）。
+pub fn get_eng_filenames(time: DateTime<Utc>) -> Result<[String; 3], Error> {
+    get_filenames("eng", time)
+}
+
+fn get_filenames(type_: &str, time: DateTime<Utc>) -> Result<[String; 3], Error> {
+    let serial_nums = ["A", "B", "C"];
     Ok([
-        [
-            find_filename(types[0], time, serial_nums[0]).ok_or_else(|| {
-                Error::FileNotFound(format!(
-                    "Failed to find eng file for {} with serial {}",
-                    time.format("%Y-%m-%d %H:%M:%S"),
-                    serial_nums[0]
-                ))
-            })?,
-            find_filename(types[0], time, serial_nums[1]).ok_or_else(|| {
-                Error::FileNotFound(format!(
-                    "Failed to find eng file for {} with serial {}",
-                    time.format("%Y-%m-%d %H:%M:%S"),
-                    serial_nums[1]
-                ))
-            })?,
-            find_filename(types[0], time, serial_nums[2]).ok_or_else(|| {
-                Error::FileNotFound(format!(
-                    "Failed to find eng file for {} with serial {}",
-                    time.format("%Y-%m-%d %H:%M:%S"),
-                    serial_nums[2]
-                ))
-            })?,
-        ],
-        [
-            find_filename(types[1], time, serial_nums[0]).ok_or_else(|| {
-                Error::FileNotFound(format!(
-                    "Failed to find sci file for {} with serial {}",
-                    time.format("%Y-%m-%d %H:%M:%S"),
-                    serial_nums[0]
-                ))
-            })?,
-            find_filename(types[1], time, serial_nums[1]).ok_or_else(|| {
-                Error::FileNotFound(format!(
-                    "Failed to find sci file for {} with serial {}",
-                    time.format("%Y-%m-%d %H:%M:%S"),
-                    serial_nums[1]
-                ))
-            })?,
-            find_filename(types[1], time, serial_nums[2]).ok_or_else(|| {
-                Error::FileNotFound(format!(
-                    "Failed to find sci file for {} with serial {}",
-                    time.format("%Y-%m-%d %H:%M:%S"),
-                    serial_nums[2]
-                ))
-            })?,
-        ],
+        find_filename(type_, time, serial_nums[0]).ok_or_else(|| {
+            Error::FileNotFound(format!(
+                "Failed to find {} file for {} with serial {}",
+                type_,
+                time.format("%Y-%m-%d %H:%M:%S"),
+                serial_nums[0]
+            ))
+        })?,
+        find_filename(type_, time, serial_nums[1]).ok_or_else(|| {
+            Error::FileNotFound(format!(
+                "Failed to find {} file for {} with serial {}",
+                type_,
+                time.format("%Y-%m-%d %H:%M:%S"),
+                serial_nums[1]
+            ))
+        })?,
+        find_filename(type_, time, serial_nums[2]).ok_or_else(|| {
+            Error::FileNotFound(format!(
+                "Failed to find {} file for {} with serial {}",
+                type_,
+                time.format("%Y-%m-%d %H:%M:%S"),
+                serial_nums[2]
+            ))
+        })?,
     ])
 }
