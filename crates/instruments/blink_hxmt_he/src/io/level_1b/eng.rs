@@ -1,26 +1,21 @@
 use blink_core::error::Error;
 
-pub struct EngFile {
-    // HDU 1: HE_Eng
-    // Only extract useful columns
-    pub time: Vec<i32>,
-    pub bus_time_bdc: Vec<[u8; 6]>,
-}
+/// 从工程数据文件中读取 stime→UTC 的固定偏移量。
+///
+/// 工程文件每秒一包，包中 `UTC_Last_Bdc` 和 `sTime_Last_Bdc` 列
+/// 给出精确的 UTC↔stime 映射。offset = UTC - stime，在整个小时内恒定。
+pub fn read_stime_offset(filename: &str) -> Result<f64, Error> {
+    let mut fptr = fitsio::FitsFile::open(filename)?;
+    let hdu = fptr.hdu("HE_Eng")?;
 
-impl EngFile {
-    pub fn new(filename: &str) -> Result<Self, Error> {
-        let mut fptr = fitsio::FitsFile::open(filename)?;
+    let utc: Vec<i64> = hdu.read_col(&mut fptr, "UTC_Last_Bdc")?;
+    let stime: Vec<i64> = hdu.read_col(&mut fptr, "sTime_Last_Bdc")?;
 
-        // HDU 1: HE_Eng
-        let eng = fptr.hdu("HE_Eng")?;
-        let time = eng.read_col::<i32>(&mut fptr, "Time")?;
-        let bus_time_bdc_raw: Vec<u8> = eng.read_col(&mut fptr, "BUS_Time_Bdc")?;
-        let mut bus_time_bdc = Vec::with_capacity(bus_time_bdc_raw.len() / 6);
-        for chunk in bus_time_bdc_raw.chunks_exact(6) {
-            let mut array = [0; 6];
-            array.copy_from_slice(chunk);
-            bus_time_bdc.push(array);
-        }
-        Ok(Self { time, bus_time_bdc })
+    if utc.is_empty() || stime.is_empty() {
+        return Err(Error::InvalidData("Empty eng data".into()));
     }
+
+    // offset = utc - stime, 取众数（理论上全部相同）
+    let offset = utc[0] - stime[0];
+    Ok(offset as f64)
 }
