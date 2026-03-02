@@ -26,11 +26,11 @@ NUM=$(python3 -c "from datetime import date; print((date(int('${YEAR}'),int('${M
 echo "=== Pulling HXMT/HE data for ${YYYYMMDD}T${HOUR} ==="
 echo "    1K num: ${NUM}"
 
-# ─── 1B 科学数据（3 个机箱: A=0642, B=0922, C=1686）───
+# ─── 1B 数据（sci: A=0642, B=0922, C=1686; eng: A=0766, B=1009, C=1781）───
 REMOTE_1B="/hxmtfs/data/Archive_tmp/1B/${YEAR}/${YYYYMMDD}"
 LOCAL_1B="${BASE_DIR}/data/1B/${YEAR}/${YYYYMMDD}"
 
-for CODE in 0642 0922 1686; do
+for CODE in 0642 0922 1686 0766 1009 1781; do
     LOCAL_DIR="${LOCAL_1B}/${CODE}"
     mkdir -p "$LOCAL_DIR"
 

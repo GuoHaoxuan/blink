@@ -80,42 +80,23 @@ pub fn find_filename(type_: &str, time: DateTime<Utc>, serial_num: &str) -> Opti
     path
 }
 
-/// 获取指定小时的三个机箱的科学数据文件路径（A/B/C）。
-pub fn get_sci_filenames(time: DateTime<Utc>) -> Result<[String; 3], Error> {
+/// 获取指定小时的科学数据文件路径（仅返回存在的 box）。
+pub fn get_sci_filenames(time: DateTime<Utc>) -> Vec<(String, String)> {
     get_filenames("sci", time)
 }
 
-/// 获取指定小时的三个机箱的工程数据文件路径（A/B/C）。
-pub fn get_eng_filenames(time: DateTime<Utc>) -> Result<[String; 3], Error> {
+/// 获取指定小时的工程数据文件路径（仅返回存在的 box）。
+pub fn get_eng_filenames(time: DateTime<Utc>) -> Vec<(String, String)> {
     get_filenames("eng", time)
 }
 
-fn get_filenames(type_: &str, time: DateTime<Utc>) -> Result<[String; 3], Error> {
+fn get_filenames(type_: &str, time: DateTime<Utc>) -> Vec<(String, String)> {
     let serial_nums = ["A", "B", "C"];
-    Ok([
-        find_filename(type_, time, serial_nums[0]).ok_or_else(|| {
-            Error::FileNotFound(format!(
-                "Failed to find {} file for {} with serial {}",
-                type_,
-                time.format("%Y-%m-%d %H:%M:%S"),
-                serial_nums[0]
-            ))
-        })?,
-        find_filename(type_, time, serial_nums[1]).ok_or_else(|| {
-            Error::FileNotFound(format!(
-                "Failed to find {} file for {} with serial {}",
-                type_,
-                time.format("%Y-%m-%d %H:%M:%S"),
-                serial_nums[1]
-            ))
-        })?,
-        find_filename(type_, time, serial_nums[2]).ok_or_else(|| {
-            Error::FileNotFound(format!(
-                "Failed to find {} file for {} with serial {}",
-                type_,
-                time.format("%Y-%m-%d %H:%M:%S"),
-                serial_nums[2]
-            ))
-        })?,
-    ])
+    let mut result = Vec::new();
+    for &sn in &serial_nums {
+        if let Some(path) = find_filename(type_, time, sn) {
+            result.push((sn.to_string(), path));
+        }
+    }
+    result
 }
