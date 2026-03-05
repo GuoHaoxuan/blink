@@ -1,6 +1,7 @@
 use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::algorithms::saturation::{
-    reconstruct_met_times, reconstruct_with_wrap_tracking, scan_saturation_intervals,
+    diagnose_packets, dump_event_details, reconstruct_met_times, reconstruct_with_wrap_tracking,
+    scan_saturation_intervals,
 };
 use blink_hxmt_he::io::level_1b::{
     SciFile, get_eng_filenames, get_sci_filenames, read_stime_offset,
@@ -19,6 +20,11 @@ fn main() {
 
     let dump_times = args.iter().position(|s| s == "--dump-times");
     let dump_packets = args.iter().position(|s| s == "--dump-packets");
+    let dump_hist = args.iter().position(|s| s == "--dump-hist");
+    let dump_diag = args.iter().position(|s| s == "--dump-diag");
+    let dump_events = args.iter().position(|s| s == "--dump-events");
+    let box_filter = args.iter().position(|s| s == "--box");
+    let filter_box = box_filter.and_then(|pos| args.get(pos + 1).cloned());
 
     let epoch = epoch_str.parse::<DateTime<Utc>>().unwrap_or_else(|_| {
         format!("{}:00:00Z", epoch_str)
@@ -52,7 +58,208 @@ fn main() {
         boxes.iter().map(|(n, _, _)| n.as_str()).collect::<Vec<_>>()
     );
 
-    if let Some(pos) = dump_times {
+    // Filter boxes if specified
+    let filtered_boxes: Vec<_> = if let Some(ref fb) = filter_box {
+        boxes.iter().filter(|(name, _, _)| name == fb).collect()
+    } else {
+        boxes.iter().collect()
+    };
+
+    if let Some(pos) = dump_diag {
+        // --dump-diag mode: 输出 per-packet 诊断信息
+        // 用法: --dump-diag <center_met> <half_window>
+        let center_met: f64 = args
+            .get(pos + 1)
+            .expect("Missing center_met")
+            .parse()
+            .expect("center_met must be a float");
+        let half_window: f64 = args
+            .get(pos + 2)
+            .map(|s| s.parse().unwrap_or(60.0))
+            .unwrap_or(60.0);
+        let met_min = center_met - half_window;
+        let met_max = center_met + half_window;
+
+        println!(
+            "box,pkt,n_evt,n_sec,n_sec_valid,n_err,n_out,n_drop,anchor,utc_tail,met_min,met_max"
+        );
+
+        for (box_name, sci, offset) in &boxes {
+            let diags = diagnose_packets(sci, *offset);
+            let mut total_out = 0u64;
+            let mut total_drop = 0u64;
+            let mut total_err = 0u64;
+            let mut total_sec = 0u64;
+            let mut total_sec_valid = 0u64;
+            let mut pkts_in_window = 0u64;
+            let mut pkts_no_anchor = 0u64;
+
+            for d in &diags {
+                // 只输出覆盖目标窗口的包
+                let pkt_met_min = d.met_min.unwrap_or(d.utc_tail);
+                let pkt_met_max = d.met_max.unwrap_or(d.utc_tail);
+                let in_window = pkt_met_max >= met_min && pkt_met_min <= met_max;
+                let utc_in_window = d.utc_tail >= met_min && d.utc_tail <= met_max;
+                if !in_window && !utc_in_window {
+                    continue;
+                }
+                pkts_in_window += 1;
+                total_out += d.n_output as u64;
+                total_drop += d.n_dropped as u64;
+                total_err += d.n_error as u64;
+                total_sec += d.n_second as u64;
+                total_sec_valid += d.n_second_valid as u64;
+                if !d.has_anchor {
+                    pkts_no_anchor += 1;
+                }
+                // 只输出有问题的包（CRC错误>0 或有丢弃）
+                if d.n_error > 0 || d.n_dropped > 0 {
+                    println!(
+                        "{},{},{},{},{},{},{},{},{},{:.3},{},{}",
+                        box_name,
+                        d.pkt_index,
+                        d.n_event,
+                        d.n_second,
+                        d.n_second_valid,
+                        d.n_error,
+                        d.n_output,
+                        d.n_dropped,
+                        if d.has_anchor { "Y" } else { "N" },
+                        d.utc_tail,
+                        d.met_min.map_or("-".to_string(), |v| format!("{:.3}", v)),
+                        d.met_max.map_or("-".to_string(), |v| format!("{:.3}", v)),
+                    );
+                }
+            }
+            eprintln!(
+                "Box {}: {} pkts in window, {} out, {} dropped, {} CRC errors, {}/{} seconds valid, {} pkts lost anchor",
+                box_name,
+                pkts_in_window,
+                total_out,
+                total_drop,
+                total_err,
+                total_sec_valid,
+                total_sec,
+                pkts_no_anchor
+            );
+        }
+    } else if let Some(pos) = dump_hist {
+        // --dump-hist mode: 在 Rust 端做 histogram，输出紧凑 CSV
+        // 用法: --dump-hist <center_met> <half_window> [bin_width]
+        let center_met: f64 = args
+            .get(pos + 1)
+            .expect("Missing center_met after --dump-hist")
+            .parse()
+            .expect("center_met must be a float");
+        let half_window: f64 = args
+            .get(pos + 2)
+            .map(|s| s.parse().unwrap_or(60.0))
+            .unwrap_or(60.0);
+        let bin_width: f64 = args
+            .get(pos + 3)
+            .map(|s| s.parse().unwrap_or(0.01))
+            .unwrap_or(0.01);
+
+        let met_min = center_met - half_window;
+        let met_max = center_met + half_window;
+        let n_bins = ((met_max - met_min) / bin_width).ceil() as usize;
+
+        eprintln!(
+            "Histogram: [{:.3}, {:.3}], bin_width={:.4}s, n_bins={}",
+            met_min, met_max, bin_width, n_bins
+        );
+
+        let mut hist = vec![0u64; n_bins];
+        let mut n_total = 0u64;
+
+        for (box_name, sci, offset) in &filtered_boxes {
+            let all_met = reconstruct_met_times(sci, *offset);
+            let n_box = all_met.len();
+            for t in &all_met {
+                if *t >= met_min && *t < met_max {
+                    let idx = ((*t - met_min) / bin_width) as usize;
+                    if idx < n_bins {
+                        hist[idx] += 1;
+                        n_total += 1;
+                    }
+                }
+            }
+            eprintln!(
+                "  Box {}: {}/{} events in window",
+                box_name,
+                n_box,
+                all_met.len()
+            );
+        }
+
+        eprintln!("  Total in hist: {}", n_total);
+
+        // 输出 header
+        println!("# center_met={:.6}", center_met);
+        println!("# half_window={:.1}", half_window);
+        println!("# bin_width={:.6}", bin_width);
+        println!("# n_bins={}", n_bins);
+        println!("# n_total={}", n_total);
+
+        // 输出 histogram
+        println!("# HIST");
+        for (i, count) in hist.iter().enumerate() {
+            let bin_start = met_min + i as f64 * bin_width;
+            println!("{:.6},{}", bin_start, count);
+        }
+
+        // 输出饱和区间
+        println!("# SAT");
+        for (box_name, sci, offset) in &filtered_boxes {
+            let intervals =
+                blink_hxmt_he::algorithms::saturation::scan_saturation_intervals_raw(sci, *offset);
+            for (start, stop) in &intervals {
+                if *stop >= met_min && *start <= met_max {
+                    println!("SAT,{},{:.6},{:.6}", box_name, start, stop);
+                }
+            }
+        }
+    } else if let Some(pos) = dump_events {
+        // --dump-events mode: 输出详细事例信息
+        let center_met: f64 = args
+            .get(pos + 1)
+            .expect("Missing center_met after --dump-events")
+            .parse()
+            .expect("center_met must be a float");
+        let half_window: f64 = args
+            .get(pos + 2)
+            .map(|s| s.parse().unwrap_or(1.0))
+            .unwrap_or(1.0);
+
+        let met_min = center_met - half_window;
+        let met_max = center_met + half_window;
+
+        eprintln!("Dumping events in [{:.3}, {:.3}]", met_min, met_max);
+
+        println!("# pkt,evt,is_second,ptime,channel,MET,r0,r1,r2,r3,r4,r5,r6,r7");
+        for (box_name, sci, offset) in &filtered_boxes {
+            let events = dump_event_details(sci, *offset, met_min, met_max);
+            for evt in &events {
+                println!(
+                    "{},{},{},{},{},{:.6},{},{},{},{},{},{},{},{}",
+                    box_name,
+                    evt.pkt_index,
+                    evt.evt_index,
+                    if evt.is_second { "SEC" } else { "EVT" },
+                    evt.channel,
+                    evt.met,
+                    evt.raw_bytes[0],
+                    evt.raw_bytes[1],
+                    evt.raw_bytes[2],
+                    evt.raw_bytes[3],
+                    evt.raw_bytes[4],
+                    evt.raw_bytes[5],
+                    evt.raw_bytes[6],
+                    evt.raw_bytes[7],
+                );
+            }
+        }
+    } else if let Some(pos) = dump_times {
         // --dump-times mode: 输出所有事例 MET 和饱和区间
         let center_met: f64 = args
             .get(pos + 1)
@@ -186,14 +393,13 @@ fn main() {
 
         let mut merged: Vec<(MissionElapsedTime<HxmtHe>, MissionElapsedTime<HxmtHe>)> = Vec::new();
         for interval in all_intervals {
-            if let Some(last) = merged.last_mut() {
-                if interval.0 <= last.1 {
+            if let Some(last) = merged.last_mut()
+                && interval.0 <= last.1 {
                     if interval.1 > last.1 {
                         last.1 = interval.1;
                     }
                     continue;
                 }
-            }
             merged.push(interval);
         }
 
