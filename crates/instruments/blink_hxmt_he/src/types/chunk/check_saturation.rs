@@ -19,14 +19,13 @@ impl Chunk {
         // 合并有重叠的区间（并集）
         let mut merged: Vec<Interval> = Vec::new();
         for interval in all_intervals {
-            if let Some(last) = merged.last_mut() {
-                if interval.0 <= last.1 {
+            if let Some(last) = merged.last_mut()
+                && interval.0 <= last.1 {
                     if interval.1 > last.1 {
                         last.1 = interval.1;
                     }
                     continue;
                 }
-            }
             merged.push(interval);
         }
 
