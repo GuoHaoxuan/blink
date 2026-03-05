@@ -1,4 +1,4 @@
-use crate::io::level_1b::{SciFile, get_sci_filenames, read_stime_offset};
+use crate::io::level_1b::{SciFile, get_sci_filenames};
 use crate::io::level_1k::{AttFile, EventFile, OrbitFile};
 use crate::types::{Event, HxmtHe};
 use blink_core::error::Error;

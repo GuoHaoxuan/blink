@@ -1,4 +1,3 @@
-use blink_core::error::Error;
 use chrono::prelude::*;
 use std::path::Path;
 use std::{env, sync::LazyLock};
