@@ -7,3 +7,5 @@ pub use rec_sci_data::reconstruct_met_times;
 pub use rec_sci_data::reconstruct_with_wrap_tracking;
 pub use rec_sci_data::scan_saturation_intervals;
 pub use rec_sci_data::scan_saturation_intervals_raw;
+pub use rec_sci_data::{EventDetail, dump_event_details};
+pub use rec_sci_data::{PacketDiag, diagnose_packets};
