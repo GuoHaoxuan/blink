@@ -23,11 +23,34 @@ struct PackInfo {
 }
 
 const PTIME_MOD: u64 = 1 << 19; // 524288
-const HALF_MOD: u64 = PTIME_MOD / 2;
+const _HALF_MOD: u64 = PTIME_MOD / 2;
+const WRAP_PERIOD: f64 = PTIME_MOD as f64 * 2e-6; // 1.048576s
 
 /// 1B→1K 经验时间校正 (秒)。
 /// 通过 GRB 200415A 和 GRB 221009A 交叉验证确定。
 const MET_CORRECTION: f64 = 4.0;
+
+/// Floor-based per-event wrap computation.
+///
+/// 独立计算每个事例的 ptime 回绕次数，不依赖事例顺序。
+/// 利用 utc_tail（包级 UTC 计数器）作为粗时间参考：
+///   raw_delta = ptime - anchor_ptime（可为负）
+///   raw_delta_seconds = raw_delta × 2μs
+///   N = max(0, floor((utc_tail - anchor - raw_delta_seconds) / 1.048576))
+///   total_ticks = N × PTIME_MOD + raw_delta
+///   MET = anchor + total_ticks × 2μs + MET_CORRECTION
+///
+/// 解决 FIFO 溢出后事例时序混乱导致的错误回绕检测。
+#[inline]
+fn compute_met(ptime: u64, anchor_ptime: u64, anchor: f64, utc_tail: f64) -> f64 {
+    let raw_delta = ptime as i64 - anchor_ptime as i64;
+    let raw_delta_seconds = raw_delta as f64 * 2e-6;
+    let n_wraps = ((utc_tail - anchor - raw_delta_seconds) / WRAP_PERIOD)
+        .floor()
+        .max(0.0) as i64;
+    let total_ticks = n_wraps * PTIME_MOD as i64 + raw_delta;
+    anchor + total_ticks as f64 * 2e-6 + MET_CORRECTION
+}
 
 /// 解析单个 CCSDS 包中所有事例
 fn parse_events(ccsds: &[u8]) -> Vec<Pack> {
@@ -73,22 +96,11 @@ fn get_utc_tail(ccsds: &[u8]) -> f64 {
         + (ccsds[881] as f64) * 16777216.0
 }
 
-/// 多锚点 + ptime 回绕追踪重建。
-///
-/// 核心逻辑：
-/// - 每个 Second 事例更新 MET 锚点:  met_anchor = stime + offset, anchor_ptime = ptime
-/// - 维护 wrap_count：当 ptime 相对前一个 ptime 发生回绕时递增
-/// - Event 的 MET = met_anchor + (wrap_count × PTIME_MOD + ptime - anchor_ptime) × 2μs + MET_CORRECTION
-///
-/// 关键改进：追踪 ptime 回绕（周期 ~1.05s），避免回绕后 MET 突然跳回的伪影。
 pub fn reconstruct_with_wrap_tracking(sci_data: &SciFile, offset: f64) -> Vec<Vec<f64>> {
     let mut result: Vec<Vec<f64>> = Vec::new();
 
-    // met_anchor: 最近一个有效 Second 事例的 MET（= stime + offset）
     let mut met_anchor: Option<f64> = None;
     let mut anchor_ptime: u64 = 0;
-    let mut prev_ptime: u64 = 0;
-    let mut wrap_count: i64 = 0;
 
     for ccsds in sci_data.ccsds.iter() {
         let utc_tail = get_utc_tail(ccsds);
@@ -99,36 +111,17 @@ pub fn reconstruct_with_wrap_tracking(sci_data: &SciFile, offset: f64) -> Vec<Ve
             match event {
                 Pack::Second { stime, ptime } => {
                     let met = *stime as f64 + offset;
-                    // 用 utc_tail 过滤坏的 Second 事例
                     if (met - utc_tail).abs() < 2.0 {
                         met_anchor = Some(met);
                         anchor_ptime = *ptime;
-                        prev_ptime = *ptime;
-                        wrap_count = 0;
                     }
                     if let Some(anchor) = met_anchor {
-                        // 检测回绕
-                        if *ptime < prev_ptime && (prev_ptime - *ptime) > HALF_MOD {
-                            wrap_count += 1;
-                        }
-                        prev_ptime = *ptime;
-
-                        let total_ticks =
-                            wrap_count * PTIME_MOD as i64 + *ptime as i64 - anchor_ptime as i64;
-                        times.push(anchor + total_ticks as f64 * 2e-6 + MET_CORRECTION);
+                        times.push(compute_met(*ptime, anchor_ptime, anchor, utc_tail));
                     }
                 }
                 Pack::Event { ptime, .. } => {
                     if let Some(anchor) = met_anchor {
-                        // 检测回绕
-                        if *ptime < prev_ptime && (prev_ptime - *ptime) > HALF_MOD {
-                            wrap_count += 1;
-                        }
-                        prev_ptime = *ptime;
-
-                        let total_ticks =
-                            wrap_count * PTIME_MOD as i64 + *ptime as i64 - anchor_ptime as i64;
-                        times.push(anchor + total_ticks as f64 * 2e-6 + MET_CORRECTION);
+                        times.push(compute_met(*ptime, anchor_ptime, anchor, utc_tail));
                     }
                 }
                 Pack::Error => {}
@@ -144,8 +137,6 @@ pub fn extract_second_event_times(sci_data: &SciFile, offset: f64) -> Vec<f64> {
     let mut second_times: Vec<f64> = Vec::new();
     let mut met_anchor: Option<f64> = None;
     let mut anchor_ptime: u64 = 0;
-    let mut prev_ptime: u64 = 0;
-    let mut wrap_count: i64 = 0;
 
     for ccsds in sci_data.ccsds.iter() {
         let utc_tail = get_utc_tail(ccsds);
@@ -157,27 +148,12 @@ pub fn extract_second_event_times(sci_data: &SciFile, offset: f64) -> Vec<f64> {
                     if (met - utc_tail).abs() < 2.0 {
                         met_anchor = Some(met);
                         anchor_ptime = *ptime;
-                        prev_ptime = *ptime;
-                        wrap_count = 0;
                     }
                     if let Some(anchor) = met_anchor {
-                        if *ptime < prev_ptime && (prev_ptime - *ptime) > HALF_MOD {
-                            wrap_count += 1;
-                        }
-                        prev_ptime = *ptime;
-                        let total_ticks =
-                            wrap_count * PTIME_MOD as i64 + *ptime as i64 - anchor_ptime as i64;
-                        second_times.push(anchor + total_ticks as f64 * 2e-6 + MET_CORRECTION);
+                        second_times.push(compute_met(*ptime, anchor_ptime, anchor, utc_tail));
                     }
                 }
-                Pack::Event { ptime, .. } => {
-                    if let Some(_anchor) = met_anchor {
-                        if *ptime < prev_ptime && (prev_ptime - *ptime) > HALF_MOD {
-                            wrap_count += 1;
-                        }
-                        prev_ptime = *ptime;
-                    }
-                }
+                Pack::Event { .. } => {}
                 Pack::Error => {}
             }
         }
@@ -243,6 +219,60 @@ pub fn scan_saturation_intervals_raw(sci_data: &SciFile, offset: f64) -> Vec<(f6
     scan_saturation_intervals_impl(sci_data, offset)
 }
 
+/// 调试：输出指定包范围内的 utc_tail 和 ptime 详情。
+pub fn dump_ptime_utc(sci_data: &SciFile, offset: f64, pkt_min: usize, pkt_max: usize) {
+    let mut met_anchor: Option<f64> = None;
+    let mut anchor_ptime: u64 = 0;
+
+    for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
+        let utc_tail = get_utc_tail(ccsds);
+        let events = parse_events(ccsds);
+
+        for (evt_idx, event) in events.iter().enumerate() {
+            match event {
+                Pack::Second { stime, ptime } => {
+                    let met = *stime as f64 + offset;
+                    if (met - utc_tail).abs() < 2.0 {
+                        met_anchor = Some(met);
+                        anchor_ptime = *ptime;
+                    }
+                    if pkt_idx >= pkt_min && pkt_idx <= pkt_max {
+                        if let Some(anchor) = met_anchor {
+                            let raw_delta = *ptime as i64 - anchor_ptime as i64;
+                            let raw_delta_s = raw_delta as f64 * 2e-6;
+                            let n_wraps = ((utc_tail - anchor - raw_delta_s) / WRAP_PERIOD)
+                                .floor()
+                                .max(0.0) as i64;
+                            println!(
+                                "pkt={},evt={},SEC,ptime={},n_wraps={},anchor_pt={},utc_tail={:.0},anchor_met={:.6},met={:.6}",
+                                pkt_idx, evt_idx, ptime, n_wraps, anchor_ptime, utc_tail,
+                                anchor, compute_met(*ptime, anchor_ptime, anchor, utc_tail)
+                            );
+                        }
+                    }
+                }
+                Pack::Event { ptime, .. } => {
+                    if let Some(anchor) = met_anchor {
+                        if pkt_idx >= pkt_min && pkt_idx <= pkt_max {
+                            let raw_delta = *ptime as i64 - anchor_ptime as i64;
+                            let raw_delta_s = raw_delta as f64 * 2e-6;
+                            let n_wraps = ((utc_tail - anchor - raw_delta_s) / WRAP_PERIOD)
+                                .floor()
+                                .max(0.0) as i64;
+                            println!(
+                                "pkt={},evt={},EVT,ptime={},n_wraps={},anchor_pt={},utc_tail={:.0},met={:.6}",
+                                pkt_idx, evt_idx, ptime, n_wraps, anchor_ptime, utc_tail,
+                                compute_met(*ptime, anchor_ptime, anchor, utc_tail)
+                            );
+                        }
+                    }
+                }
+                Pack::Error => {}
+            }
+        }
+    }
+}
+
 /// 单个事例的详细信息（用于 dump-events 调试）。
 pub struct EventDetail {
     pub pkt_index: usize,
@@ -264,8 +294,6 @@ pub fn dump_event_details(
 
     let mut met_anchor: Option<f64> = None;
     let mut anchor_ptime: u64 = 0;
-    let mut prev_ptime: u64 = 0;
-    let mut wrap_count: i64 = 0;
 
     for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
         let utc_tail = get_utc_tail(ccsds);
@@ -278,18 +306,9 @@ pub fn dump_event_details(
                     if (met - utc_tail).abs() < 2.0 {
                         met_anchor = Some(met);
                         anchor_ptime = *ptime;
-                        prev_ptime = *ptime;
-                        wrap_count = 0;
                     }
                     if let Some(anchor) = met_anchor {
-                        if *ptime < prev_ptime && (prev_ptime - *ptime) > HALF_MOD {
-                            wrap_count += 1;
-                        }
-                        prev_ptime = *ptime;
-
-                        let total_ticks =
-                            wrap_count * PTIME_MOD as i64 + *ptime as i64 - anchor_ptime as i64;
-                        let computed_met = anchor + total_ticks as f64 * 2e-6 + MET_CORRECTION;
+                        let computed_met = compute_met(*ptime, anchor_ptime, anchor, utc_tail);
                         if computed_met >= met_min && computed_met <= met_max {
                             result.push(EventDetail {
                                 pkt_index: pkt_idx,
@@ -297,7 +316,7 @@ pub fn dump_event_details(
                                 is_second: true,
                                 channel: 0,
                                 met: computed_met,
-                                raw_bytes: [0; 8], // Second 没有有意义的 raw_bytes
+                                raw_bytes: [0; 8],
                             });
                         }
                     }
@@ -308,14 +327,7 @@ pub fn dump_event_details(
                     raw_bytes,
                 } => {
                     if let Some(anchor) = met_anchor {
-                        if *ptime < prev_ptime && (prev_ptime - *ptime) > HALF_MOD {
-                            wrap_count += 1;
-                        }
-                        prev_ptime = *ptime;
-
-                        let total_ticks =
-                            wrap_count * PTIME_MOD as i64 + *ptime as i64 - anchor_ptime as i64;
-                        let computed_met = anchor + total_ticks as f64 * 2e-6 + MET_CORRECTION;
+                        let computed_met = compute_met(*ptime, anchor_ptime, anchor, utc_tail);
                         if computed_met >= met_min && computed_met <= met_max {
                             result.push(EventDetail {
                                 pkt_index: pkt_idx,
@@ -357,8 +369,6 @@ pub fn diagnose_packets(sci_data: &SciFile, offset: f64) -> Vec<PacketDiag> {
 
     let mut met_anchor: Option<f64> = None;
     let mut anchor_ptime: u64 = 0;
-    let mut prev_ptime: u64 = 0;
-    let mut wrap_count: i64 = 0;
 
     for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
         let utc_tail = get_utc_tail(ccsds);
@@ -382,19 +392,10 @@ pub fn diagnose_packets(sci_data: &SciFile, offset: f64) -> Vec<PacketDiag> {
                     if (met - utc_tail).abs() < 2.0 {
                         met_anchor = Some(met);
                         anchor_ptime = *ptime;
-                        prev_ptime = *ptime;
-                        wrap_count = 0;
                         n_second_valid += 1;
                     }
                     if let Some(anchor) = met_anchor {
-                        if *ptime < prev_ptime && (prev_ptime - *ptime) > HALF_MOD {
-                            wrap_count += 1;
-                        }
-                        prev_ptime = *ptime;
-
-                        let total_ticks =
-                            wrap_count * PTIME_MOD as i64 + *ptime as i64 - anchor_ptime as i64;
-                        let computed_met = anchor + total_ticks as f64 * 2e-6 + MET_CORRECTION;
+                        let computed_met = compute_met(*ptime, anchor_ptime, anchor, utc_tail);
                         n_output += 1;
                         pkt_met_min =
                             Some(pkt_met_min.map_or(computed_met, |v: f64| v.min(computed_met)));
@@ -407,14 +408,7 @@ pub fn diagnose_packets(sci_data: &SciFile, offset: f64) -> Vec<PacketDiag> {
                 Pack::Event { ptime, .. } => {
                     n_event += 1;
                     if let Some(anchor) = met_anchor {
-                        if *ptime < prev_ptime && (prev_ptime - *ptime) > HALF_MOD {
-                            wrap_count += 1;
-                        }
-                        prev_ptime = *ptime;
-
-                        let total_ticks =
-                            wrap_count * PTIME_MOD as i64 + *ptime as i64 - anchor_ptime as i64;
-                        let computed_met = anchor + total_ticks as f64 * 2e-6 + MET_CORRECTION;
+                        let computed_met = compute_met(*ptime, anchor_ptime, anchor, utc_tail);
                         n_output += 1;
                         pkt_met_min =
                             Some(pkt_met_min.map_or(computed_met, |v: f64| v.min(computed_met)));

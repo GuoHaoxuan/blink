@@ -1,7 +1,7 @@
 use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::algorithms::saturation::{
-    diagnose_packets, dump_event_details, reconstruct_met_times, reconstruct_with_wrap_tracking,
-    scan_saturation_intervals,
+    diagnose_packets, dump_event_details, dump_ptime_utc, reconstruct_met_times,
+    reconstruct_with_wrap_tracking, scan_saturation_intervals,
 };
 use blink_hxmt_he::io::level_1b::{
     SciFile, get_eng_filenames, get_sci_filenames, read_stime_offset,
@@ -23,6 +23,7 @@ fn main() {
     let dump_hist = args.iter().position(|s| s == "--dump-hist");
     let dump_diag = args.iter().position(|s| s == "--dump-diag");
     let dump_events = args.iter().position(|s| s == "--dump-events");
+    let dump_ptime = args.iter().position(|s| s == "--dump-ptime");
     let box_filter = args.iter().position(|s| s == "--box");
     let filter_box = box_filter.and_then(|pos| args.get(pos + 1).cloned());
 
@@ -65,7 +66,23 @@ fn main() {
         boxes.iter().collect()
     };
 
-    if let Some(pos) = dump_diag {
+    if let Some(pos) = dump_ptime {
+        let pkt_min: usize = args
+            .get(pos + 1)
+            .expect("Missing pkt_min")
+            .parse()
+            .expect("pkt_min must be integer");
+        let pkt_max: usize = args
+            .get(pos + 2)
+            .expect("Missing pkt_max")
+            .parse()
+            .expect("pkt_max must be integer");
+
+        for (box_name, sci, offset) in &filtered_boxes {
+            eprintln!("Box {} pkt {}..{}", box_name, pkt_min, pkt_max);
+            dump_ptime_utc(sci, *offset, pkt_min, pkt_max);
+        }
+    } else if let Some(pos) = dump_diag {
         // --dump-diag mode: 输出 per-packet 诊断信息
         // 用法: --dump-diag <center_met> <half_window>
         let center_met: f64 = args
