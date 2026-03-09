@@ -1,19 +1,30 @@
 """全局视图：整个小时的事件率 + 所有 FIFO Reset 饱和区间
 
 用法:
-    HXMT_1B_DIR=data/1B cargo run --release -- 2020-04-15T08 --dump-packets 261564488.564 1800 > dump_packets_full.csv
-    HXMT_1B_DIR=data/1B cargo run --release -- 2020-04-15T08 --detect-saturation > detect_sat.csv
-    python3 plot_saturation_overview.py
+    python3 plot_saturation_overview.py 200415a
+    python3 plot_saturation_overview.py 221009a
+    python3 plot_saturation_overview.py 260226a
 """
 
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 
+GRB_CONFIG = {
+    "200415a": {"center_met": 261564488.564, "label": "GRB 200415A"},
+    "221009a": {"center_met": 339945422.990, "label": "GRB 221009A"},
+    "260226a": {"center_met": 446726278.000, "label": "GRB 260226A"},
+}
+
+grb = sys.argv[1].lower() if len(sys.argv) > 1 else "200415a"
+cfg = GRB_CONFIG[grb]
+CENTER_MET = cfg["center_met"]
+
 # ===== 读取包位置 =====
 boxes = {}
-with open("dump_packets_full.csv") as f:
+with open(f"dump_packets_full_{grb}.csv") as f:
     for line in f:
         line = line.strip()
         if (
@@ -33,7 +44,7 @@ with open("dump_packets_full.csv") as f:
 
 # ===== 读取饱和区间 =====
 sat_by_box = {"A": [], "B": [], "C": []}
-with open("detect_sat.csv") as f:
+with open(f"detect_sat_{grb}.csv") as f:
     for line in f:
         line = line.strip()
         if line.startswith("box,") or line.startswith("#"):
@@ -46,8 +57,6 @@ with open("detect_sat.csv") as f:
         stop_met = float(parts[3])
         gap_s = float(parts[4])
         sat_by_box.setdefault(box_name, []).append((start_met, stop_met, gap_s))
-
-CENTER_MET = 261564488.564
 
 all_min = min(t[0] for pkts in boxes.values() for t in pkts)
 all_max = max(t[1] for pkts in boxes.values() for t in pkts)
@@ -108,8 +117,9 @@ for ax_idx, box_name in enumerate(["A", "B", "C"]):
     ax.legend(handles=legend_elements, fontsize=8, loc="upper right")
 
 axes[-1].set_xlabel("Time - burst (s)")
-axes[0].set_title("GRB 200415A — Event Rate + FIFO Reset Saturation (full hour)")
+axes[0].set_title(f"{cfg['label']} — Event Rate + FIFO Reset Saturation (full hour)")
 
 plt.tight_layout()
-plt.savefig("plot_saturation_overview.png", dpi=150)
-print("Saved: plot_saturation_overview.png")
+outfile = f"plot_saturation_overview_{grb}.png"
+plt.savefig(outfile, dpi=150)
+print(f"Saved: {outfile}")
