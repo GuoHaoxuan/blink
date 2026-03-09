@@ -48,13 +48,18 @@ with open(SAT_FILE) as f:
 # ── 1B events ──
 print("读取 1B ...")
 ev1b = {b: {"t": [], "ch": []} for b in box_cfg}
+view_met_min = burst_met + VIEW[0]
+view_met_max = burst_met + VIEW[1]
 with open(DUMP_FILE) as f:
     for line in f:
         if line.startswith("#") or not line.strip():
             continue
         p = line.split(",")
         if len(p) >= 6 and p[3] == "EVT" and p[0] in ev1b:
-            ev1b[p[0]]["t"].append(float(p[5]))
+            t = float(p[5])
+            if t < view_met_min or t > view_met_max:
+                continue
+            ev1b[p[0]]["t"].append(t)
             ev1b[p[0]]["ch"].append(int(p[4]))
 for b in box_cfg:
     ev1b[b]["t"] = np.array(ev1b[b]["t"])
