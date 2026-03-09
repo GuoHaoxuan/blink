@@ -1,12 +1,9 @@
 """为每个 FIFO Reset 饱和区间画一张放大图，展示附近的包和包内事例。
 
 用法:
-    python3 plot_each_saturation.py
-
-需要:
-    - detect_sat.csv (饱和区间列表)
-    - HXMT_1B_DIR 环境变量指向 1B 数据目录
-    - target/release/blink_cli 已编译
+    python3 plot_each_saturation.py 200415a
+    python3 plot_each_saturation.py 221009a [--max N]
+    python3 plot_each_saturation.py 260226a
 """
 
 import subprocess
@@ -15,15 +12,29 @@ import sys
 import matplotlib.pyplot as plt
 import numpy as np
 
+GRB_CONFIG = {
+    "200415a": {"obs_id": "2020-04-15T08", "label": "GRB 200415A"},
+    "221009a": {"obs_id": "2022-10-09T13", "label": "GRB 221009A"},
+    "260226a": {"obs_id": "2026-02-26T10", "label": "GRB 260226A"},
+}
+
+grb = sys.argv[1].lower() if len(sys.argv) > 1 else "200415a"
+cfg = GRB_CONFIG[grb]
+
+max_plots = None
+if "--max" in sys.argv:
+    idx = sys.argv.index("--max")
+    max_plots = int(sys.argv[idx + 1])
+
 BLINK_CLI = "./target/release/blink_cli"
-OBS_ID = "2020-04-15T08"
-DATA_DIR = os.environ.get("HXMT_1B_DIR", "/Users/skyair/Developer/ihep/blink/data/1B")
+OBS_ID = cfg["obs_id"]
+DATA_DIR = os.environ.get("HXMT_1B_DIR", "data/1B")
 
 colors = {"A": "#1f77b4", "B": "#ff7f0e", "C": "#2ca02c"}
 box_y = {"A": 0, "B": 1, "C": 2}
 
-sat_intervals = []
-with open("detect_sat.csv") as f:
+all_sat_intervals = []
+with open(f"detect_sat_{grb}.csv") as f:
     for line in f:
         line = line.strip()
         if line.startswith("box,") or line.startswith("#"):
@@ -31,7 +42,7 @@ with open("detect_sat.csv") as f:
         parts = line.split(",")
         if len(parts) < 7:
             continue
-        sat_intervals.append(
+        all_sat_intervals.append(
             {
                 "box": parts[0],
                 "type": parts[1],
@@ -43,9 +54,18 @@ with open("detect_sat.csv") as f:
             }
         )
 
-print(f"Found {len(sat_intervals)} saturation intervals")
+# 用于画图的子集（--max 限制画哪些图，但标注用完整列表）
+sat_intervals = list(all_sat_intervals)
+if max_plots and len(sat_intervals) > max_plots:
+    # 按 gap 大小排序，取最大的 N 个
+    sat_intervals.sort(key=lambda x: x["gap_s"], reverse=True)
+    sat_intervals = sat_intervals[:max_plots]
+    sat_intervals.sort(key=lambda x: x["start"])
 
-os.makedirs("sat_plots", exist_ok=True)
+print(f"Found {len(sat_intervals)} saturation intervals for {cfg['label']}")
+
+out_dir = f"sat_plots_{grb}"
+os.makedirs(out_dir, exist_ok=True)
 
 
 def run_cli(*extra_args):
@@ -97,7 +117,7 @@ def parse_events(text, target_box):
 for i, sat in enumerate(sat_intervals):
     center = (sat["start"] + sat["stop"]) / 2
     gap_ms = sat["gap_s"] * 1000
-    half_window = max(sat["gap_s"] * 8, 0.05)
+    half_window = min(max(sat["gap_s"] * 8, 0.05), 2.0)
 
     print(
         f"[{i + 1}/{len(sat_intervals)}] Box {sat['box']} gap={gap_ms:.1f}ms center={center:.3f} window=±{half_window:.3f}s"
@@ -126,7 +146,7 @@ for i, sat in enumerate(sat_intervals):
 
     nearby_sats = [
         s
-        for s in sat_intervals
+        for s in all_sat_intervals
         if s["box"] == sat["box"]
         and s is not sat
         and abs((s["start"] + s["stop"]) / 2 - center) < half_window
@@ -236,9 +256,9 @@ for i, sat in enumerate(sat_intervals):
         fontweight="bold",
     )
     plt.tight_layout()
-    fname = f"sat_plots/sat_{i + 1:02d}_box{sat['box']}_{gap_ms:.0f}ms.png"
+    fname = f"{out_dir}/sat_{i + 1:02d}_box{sat['box']}_{gap_ms:.0f}ms.png"
     plt.savefig(fname, dpi=150)
     plt.close()
     print(f"  Saved: {fname}")
 
-print(f"\nDone. {len(sat_intervals)} plots saved to sat_plots/")
+print(f"\nDone. {len(sat_intervals)} plots saved to {out_dir}/")

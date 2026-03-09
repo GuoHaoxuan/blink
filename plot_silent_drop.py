@@ -5,35 +5,55 @@
   Panel 2  Zoom ±(span+3ms)：聚焦可疑包，事件 tick 逐个可见
   Panel 3  包内事件间隔柱状图
 
-用法: HXMT_1B_DIR=data/1B python3 plot_silent_drop.py
+用法:
+    python3 plot_silent_drop.py 200415a
+    python3 plot_silent_drop.py 221009a
+    python3 plot_silent_drop.py 260226a
 """
 
 import subprocess
 import os
+import sys
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 
-BLINK_CLI = "./target/release/blink_cli"
-OBS_ID    = "2022-10-09T13"
-DATA_DIR  = os.environ.get("HXMT_1B_DIR", "/Users/skyair/Developer/ihep/blink/data/1B")
+GRB_CONFIG = {
+    "200415a": {"obs_id": "2020-04-15T08", "center": 261564488.564, "label": "GRB 200415A"},
+    "221009a": {"obs_id": "2022-10-09T13", "center": 339945422.990, "label": "GRB 221009A"},
+    "260226a": {"obs_id": "2026-02-26T10", "center": 446726278.000, "label": "GRB 260226A"},
+}
 
-# 用于第一步大范围查找目标包的参考中心
-SEARCH_CENTER = 339945304.0
+grb = sys.argv[1].lower() if len(sys.argv) > 1 else "200415a"
+cfg = GRB_CONFIG[grb]
+
+BLINK_CLI = "./target/release/blink_cli"
+OBS_ID = cfg["obs_id"]
+DATA_DIR = os.environ.get("HXMT_1B_DIR", "data/1B")
+SEARCH_CENTER = cfg["center"]
 
 LOG_P_THRESHOLD = -10.0  # log10(p) < -10 判为异常
 colors = {"A": "#1f77b4", "B": "#ff7f0e", "C": "#2ca02c"}
 
-# (box, pkt_idx, gap_evt_idx, gap_dt_us)
-# gap_evt_idx：可疑间隔在 时间排序后 的位置，即 sorted_events[gap_evt_idx] 到 sorted_events[gap_evt_idx+1]
-suspects = [
-    ("A", 38896, 107, 5764.0),
-    ("B", 39288, 107, 5886.0),
-    ("B", 39645,   0,  454.0),
-    ("C", 37420, 107, 3552.0),
-    ("C", 39011,   0, 1802.0),
-]
+# 从 analyze_silent_drop.py 生成的 JSON 文件读取 suspects
+suspects_file = f"silent_drop_suspects_{grb}.json"
+if not os.path.exists(suspects_file):
+    print(f"Error: {suspects_file} not found. Run analyze_silent_drop.py {grb} first.")
+    sys.exit(1)
 
-os.makedirs("silent_drop_plots", exist_ok=True)
+with open(suspects_file) as f:
+    all_suspects = json.load(f)
+
+# 转换为 (box, pkt_idx, gap_evt_idx, gap_dt_us) 元组
+suspects = [(s["box"], s["pkt_idx"], s["gap_evt_idx"], s["gap_dt_us"]) for s in all_suspects]
+print(f"Loaded {len(suspects)} suspects from {suspects_file}")
+
+if not suspects:
+    print("No suspects found, nothing to plot.")
+    sys.exit(0)
+
+out_dir = f"silent_drop_plots_{grb}"
+os.makedirs(out_dir, exist_ok=True)
 
 
 # ── CLI 封装 ────────────────────────────────────────────────────────────────
@@ -88,20 +108,12 @@ def fetch_events(center, half_window, box):
 
 def draw_panel(ax, packets, events, center, xlim, box, susp_idx,
                gap_start, gap_stop, zoom=False):
-    """
-    在一个 Axes 上画：
-      - 每个 CCSDS 包：y=0 的水平条（跨度 >20ms 的饱和包跳过，避免遮挡）
-      - 每个事件：y=-0.15 处的 | tick，颜色按所属包
-      - 可疑包和它的事件用红色
-      - gap 区域红色阴影 + 边界虚线 + 标注
-    """
     c = colors[box]
-    lw_norm = 5 if zoom else 3          # 正常包 bar 粗细
-    lw_susp = 8 if zoom else 5          # 可疑包 bar 粗细
-    tick_sz = 10 if zoom else 5         # 事件 tick 大小（markersize）
+    lw_norm = 5 if zoom else 3
+    lw_susp = 8 if zoom else 5
+    tick_sz = 10 if zoom else 5
     label_fs = 6 if zoom else 5
 
-    # ── 红色阴影标注 gap ──────────────────────────────────────────────────
     g0 = gap_start - center
     g1 = gap_stop  - center
     ax.axvspan(max(g0, xlim[0]), min(g1, xlim[1]),
@@ -115,12 +127,9 @@ def draw_panel(ax, packets, events, center, xlim, box, susp_idx,
                 ha="center", va="bottom", fontsize=9,
                 color="red", fontweight="bold")
 
-    # ── 包 bar ───────────────────────────────────────────────────────────
-    # 同时记录"实际画出了 bar 的包"，事件 tick 只画这些包的事件
     rendered_pkts: set[int] = set()
     for idx, t0_abs, t1_abs, n in packets:
         span = t1_abs - t0_abs
-        # 跨度过大（饱和巨包）且不是可疑包 → 跳过，bar 和 tick 都不画
         if idx != susp_idx and span > 0.020:
             continue
         t0 = t0_abs - center
@@ -145,7 +154,6 @@ def draw_panel(ax, packets, events, center, xlim, box, susp_idx,
                     ha="center", va="bottom", fontsize=label_fs,
                     color=col, alpha=0.9)
 
-    # ── 事件 tick：只画 bar 已渲染的包的事件 ──────────────────────────────
     for pid, met in events:
         if pid not in rendered_pkts:
             continue
@@ -157,7 +165,6 @@ def draw_panel(ax, packets, events, center, xlim, box, susp_idx,
                 markersize=tick_sz, markeredgewidth=1.2,
                 alpha=0.8, zorder=4)
 
-    # ── gap 端点特别标注（倒三角） ────────────────────────────────────────
     for met in (gap_start, gap_stop):
         x = met - center
         if xlim[0] <= x <= xlim[1]:
@@ -174,20 +181,17 @@ def draw_panel(ax, packets, events, center, xlim, box, susp_idx,
 
 for si, (box, pkt_idx, gap_evt_idx, dt_us_expect) in enumerate(suspects):
 
-    # 1. 大窗口找目标包的 MET 范围
     pkts_all = fetch_packets(SEARCH_CENTER, 1800, box)
     info = next((r for r in pkts_all if r[0] == pkt_idx), None)
     if info is None:
         print(f"[{si+1}] Box {box} pkt {pkt_idx}: not found, skip")
         continue
     _, pkt_min, pkt_max, _ = info
-    center = (pkt_min + pkt_max) / 2     # 图的时间原点
+    center = (pkt_min + pkt_max) / 2
 
-    # 2. 以 center 为中心拉取 ±0.5s 的包和事件
     packets = fetch_packets(center, 0.5, box)
     events  = fetch_events(center, 0.5, box)
 
-    # 3. 可疑包内事件（时间排序）
     susp_evts = sorted(met for pid, met in events if pid == pkt_idx)
     if len(susp_evts) < 2:
         print(f"[{si+1}] Box {box} pkt {pkt_idx}: too few events, skip")
@@ -198,22 +202,19 @@ for si, (box, pkt_idx, gap_evt_idx, dt_us_expect) in enumerate(suspects):
     gap_stop  = susp_evts[gap_i + 1]
     dt_us_actual = (gap_stop - gap_start) * 1e6
 
-    # 估算可疑包事件率（排除 gap 本身）
     normal_ivs = np.diff(susp_evts)
-    normal_ivs_filt = normal_ivs[normal_ivs < 1e-3]   # 排除 gap
+    normal_ivs_filt = normal_ivs[normal_ivs < 1e-3]
     lam = 1.0 / np.mean(normal_ivs_filt) if len(normal_ivs_filt) > 0 else 1.0
     log_p = -lam * (gap_stop - gap_start) / np.log(10)
 
     print(f"[{si+1}/{len(suspects)}] Box {box} pkt={pkt_idx}  "
           f"gap_evt={gap_evt_idx}  dt={dt_us_actual:.1f}μs  log10p={log_p:.1f}")
 
-    # 4. 画图
     fig, axes = plt.subplots(
         3, 1, figsize=(16, 10),
         gridspec_kw={"height_ratios": [1.2, 1.2, 1.5]},
     )
 
-    # Panel 1：Overview ±100ms
     half_ov = 0.100
     draw_panel(axes[0], packets, events, center,
                (-half_ov, half_ov), box, pkt_idx,
@@ -221,7 +222,6 @@ for si, (box, pkt_idx, gap_evt_idx, dt_us_expect) in enumerate(suspects):
     axes[0].set_xlabel(f"Time − {center:.3f}  (s)")
     axes[0].set_title("Overview  ±100 ms")
 
-    # Panel 2：Zoom — 以可疑包跨度为基准，两侧各留 3ms
     pkt_span = pkt_max - pkt_min
     half_zm  = pkt_span / 2 + 0.003
     draw_panel(axes[1], packets, events, center,
@@ -230,7 +230,6 @@ for si, (box, pkt_idx, gap_evt_idx, dt_us_expect) in enumerate(suspects):
     axes[1].set_xlabel(f"Time − {center:.3f}  (s)")
     axes[1].set_title(f"Zoom  ±{half_zm*1e3:.1f} ms  (event ticks visible)")
 
-    # Panel 3：包内事件间隔柱状图
     ax3 = axes[2]
     intervals = np.diff(susp_evts)
     bar_colors = []
@@ -263,13 +262,13 @@ for si, (box, pkt_idx, gap_evt_idx, dt_us_expect) in enumerate(suspects):
     ax3.grid(axis="y", alpha=0.3)
 
     fig.suptitle(
-        f"#{si+1}  Box {box}  pkt {pkt_idx}  —  Silent Drop suspect\n"
+        f"#{si+1}  Box {box}  pkt {pkt_idx}  —  Silent Drop suspect  ({cfg['label']})\n"
         f"gap between evt[{gap_i}] and evt[{gap_i+1}]:  "
         f"{dt_us_actual:.0f} μs,  log₁₀p = {log_p:.1f}",
         fontsize=12, fontweight="bold",
     )
     plt.tight_layout()
-    fname = f"silent_drop_plots/sd_{si+1:02d}_box{box}_pkt{pkt_idx}.png"
+    fname = f"{out_dir}/sd_{si+1:02d}_box{box}_pkt{pkt_idx}.png"
     plt.savefig(fname, dpi=150)
     plt.close()
     print(f"  → {fname}")
