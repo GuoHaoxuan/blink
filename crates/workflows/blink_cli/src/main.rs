@@ -1,7 +1,7 @@
 use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::algorithms::saturation::{
-    diagnose_packets, dump_event_details, dump_ptime_utc, reconstruct_met_times,
-    reconstruct_with_wrap_tracking, scan_saturation_intervals,
+    detect_fifo_reset_intervals, diagnose_packets, dump_event_details, dump_ptime_utc,
+    reconstruct_met_times, reconstruct_with_wrap_tracking, scan_saturation_intervals,
 };
 use blink_hxmt_he::io::level_1b::{
     SciFile, get_eng_filenames, get_sci_filenames, read_stime_offset,
@@ -24,6 +24,7 @@ fn main() {
     let dump_diag = args.iter().position(|s| s == "--dump-diag");
     let dump_events = args.iter().position(|s| s == "--dump-events");
     let dump_ptime = args.iter().position(|s| s == "--dump-ptime");
+    let detect_sat = args.iter().position(|s| s == "--detect-saturation");
     let box_filter = args.iter().position(|s| s == "--box");
     let filter_box = box_filter.and_then(|pos| args.get(pos + 1).cloned());
 
@@ -66,7 +67,25 @@ fn main() {
         boxes.iter().collect()
     };
 
-    if let Some(pos) = dump_ptime {
+    if let Some(_pos) = detect_sat {
+        println!("box,type,start_met,stop_met,gap_s,prev_pkt,next_pkt");
+        for (box_name, sci, offset) in &filtered_boxes {
+            let intervals = detect_fifo_reset_intervals(sci, *offset);
+            eprintln!("Box {}: {} FIFO reset intervals", box_name, intervals.len());
+            for iv in &intervals {
+                println!(
+                    "{},{:?},{:.6},{:.6},{:.6},{},{}",
+                    box_name,
+                    iv.saturation_type,
+                    iv.start_met,
+                    iv.stop_met,
+                    iv.gap_seconds,
+                    iv.prev_pkt_idx,
+                    iv.next_pkt_idx,
+                );
+            }
+        }
+    } else if let Some(pos) = dump_ptime {
         let pkt_min: usize = args
             .get(pos + 1)
             .expect("Missing pkt_min")
