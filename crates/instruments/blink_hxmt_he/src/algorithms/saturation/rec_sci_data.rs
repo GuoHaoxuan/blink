@@ -213,6 +213,29 @@ pub fn reconstruct_with_wrap_tracking(sci_data: &SciFile, offset: f64) -> Vec<Ve
     // cluster with neighbors.
     fix_wrap_boundary_dips(&mut result);
 
+    // ── Pass 4: Global sort for complex reordering ──
+    // In extreme saturation cases (e.g., GRB 221009A), FIFO resets cause complex
+    // multi-level packet reordering that Pass 2 cannot fully resolve. Sort all
+    // events globally by time to ensure monotonicity.
+    let needs_global_sort = result.iter().any(|pkt| {
+        if pkt.len() < 2 {
+            return false;
+        }
+        // Check if packet has any time reversals
+        pkt.windows(2).any(|w| w[0] > w[1])
+    });
+
+    if needs_global_sort {
+        if debug {
+            eprintln!("Global sort: detected time reversals, sorting all events");
+        }
+        for pkt in result.iter_mut() {
+            if pkt.len() > 1 {
+                pkt.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            }
+        }
+    }
+
     result
 }
 
@@ -314,15 +337,28 @@ fn fix_wrap_reversals(packets: &mut [Vec<f64>]) {
             );
         }
 
-        if gap > 0.3 || prev_pkt_max.is_nan() {
-            // Large gap before batch → misplaced after FIFO reset → shift down
+        // Decision criteria:
+        // 1. Large gap (> 0.3s) → definitely FIFO reset → shift
+        // 2. Small gap but reversal ≈ WRAP_PERIOD → likely FIFO reset in high-rate region → shift
+        // 3. Small gap and small reversal → file reorder → skip
+        let should_shift = gap > 0.3
+            || prev_pkt_max.is_nan()
+            || (reversal > WRAP_PERIOD * 0.8 && reversal < WRAP_PERIOD * 1.2);
+
+        if should_shift {
+            // Misplaced batch after FIFO reset → shift down
             if debug {
+                let reason = if gap > 0.3 || prev_pkt_max.is_nan() {
+                    format!("large gap={:.4}s", gap)
+                } else {
+                    format!("reversal≈WRAP={:.4}s, gap={:.4}s", reversal, gap)
+                };
                 eprintln!(
-                    "fix_wrap_reversals:   → SHIFTING pkts {}..={} by -{:.6} (gap={:.4}s)",
+                    "fix_wrap_reversals:   → SHIFTING pkts {}..={} by -{:.6} ({})",
                     first_shifted,
                     clean[ci].idx,
                     WRAP_PERIOD,
-                    gap
+                    reason
                 );
             }
             for idx in first_shifted..=clean[ci].idx {
@@ -335,8 +371,8 @@ fn fix_wrap_reversals(packets: &mut [Vec<f64>]) {
             }
         } else if debug {
             eprintln!(
-                "fix_wrap_reversals:   → SKIPPING (smooth continuation, gap={:.4}s)",
-                gap
+                "fix_wrap_reversals:   → SKIPPING (file reorder: reversal={:.4}s, gap={:.4}s)",
+                reversal, gap
             );
         }
     }
