@@ -39,14 +39,73 @@ const MET_CORRECTION: f64 = 4.0;
 /// the number of complete wraps, then picks the best candidate from
 /// n_est-1, n_est, n_est+1 by comparing to utc_tail.
 ///
+/// When `force_normal` is true, the normal (threshold) path is used even if
+/// `elapsed` is large. This is used during saturation when a SEC event was
+/// accepted via stime continuity — the anchor is fresh relative to the FIFO
+/// events even though `utc_tail` has advanced far beyond.
+///
 /// Immune to multi-detector ptime non-monotonicity (per-event independent).
 const WRAP_THRESHOLD: i64 = 10000; // ~20ms in ptime ticks
+
+/// Estimate the base wrap count for a packet using its median ptime.
+///
+/// The stale path's per-event best-of-3 is ambiguous when events are near
+/// (k + 0.5) × WRAP_PERIOD from utc_tail. The median ptime is typically
+/// far from any wrap boundary, making the estimation robust.
+///
+/// Returns the base wrap count `n_base` such that:
+///   met ≈ anchor + (raw_delta + n_base * PTIME_MOD) * 2e-6 + MET_CORRECTION
+/// for events with ptime near the packet's median.
 #[inline]
-fn compute_met_anchored(ptime: u64, anchor_ptime: u64, anchor: f64, utc_tail: f64) -> f64 {
+fn estimate_packet_wraps(
+    median_ptime: u64,
+    anchor_ptime: u64,
+    anchor: f64,
+    utc_tail: f64,
+) -> i64 {
+    let elapsed = utc_tail - anchor;
+    let raw_delta = median_ptime as i64 - anchor_ptime as i64;
+    let n_est = ((elapsed - raw_delta as f64 * 2e-6) / WRAP_PERIOD)
+        .round()
+        .max(0.0) as i64;
+
+    let mut best_n = n_est;
+    let mut best_err = f64::MAX;
+    for n in [n_est - 1, n_est, n_est + 1] {
+        if n < 0 {
+            continue;
+        }
+        let met = anchor + (raw_delta + n * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
+        let err = (met - MET_CORRECTION - utc_tail).abs();
+        if err < best_err {
+            best_err = err;
+            best_n = n;
+        }
+    }
+    best_n
+}
+
+/// SEC-anchored MET computation with multi-wrap support.
+///
+/// When `force_normal` is true, uses the threshold path (handles ±1 wrap).
+/// When false and elapsed is small (< 1.5 WRAP), also uses threshold path.
+/// When false and elapsed is large, uses per-event stale path (best-of-3).
+///
+/// For consistent intra-packet wrap assignment during FIFO congestion,
+/// prefer calling `estimate_packet_wraps` once for the packet's median
+/// ptime, then use `compute_met_with_base_wraps` for each event.
+#[inline]
+fn compute_met_anchored(
+    ptime: u64,
+    anchor_ptime: u64,
+    anchor: f64,
+    utc_tail: f64,
+    force_normal: bool,
+) -> f64 {
     let raw_delta = ptime as i64 - anchor_ptime as i64;
     let elapsed = utc_tail - anchor;
 
-    if elapsed < WRAP_PERIOD * 1.5 && elapsed > -0.5 {
+    if force_normal || (elapsed < WRAP_PERIOD * 1.5 && elapsed > -0.5) {
         // Normal case: anchor is fresh, at most 1 wrap
         let adjusted_delta = if raw_delta < -WRAP_THRESHOLD {
             raw_delta + PTIME_MOD as i64
@@ -77,6 +136,32 @@ fn compute_met_anchored(ptime: u64, anchor_ptime: u64, anchor: f64, utc_tail: f6
         }
         best_met
     }
+}
+
+/// Compute MET using a pre-determined base wrap count from the packet's
+/// median ptime. Handles the single possible intra-packet wrap via threshold.
+#[inline]
+fn compute_met_with_base_wraps(
+    ptime: u64,
+    anchor_ptime: u64,
+    anchor: f64,
+    n_base: i64,
+    median_ptime: u64,
+) -> f64 {
+    // raw_delta relative to anchor, same as stale path
+    let raw_delta = ptime as i64 - anchor_ptime as i64;
+    // delta relative to median ptime — determines if event is in the same
+    // wrap as the median or ±1 wrap
+    let delta_from_median = ptime as i64 - median_ptime as i64;
+    let wrap_adjust = if delta_from_median < -(PTIME_MOD as i64 / 2) {
+        1 // event ptime wrapped forward relative to median
+    } else if delta_from_median > (PTIME_MOD as i64 / 2) {
+        -1 // event ptime wrapped backward relative to median
+    } else {
+        0 // same wrap as median
+    };
+    let total = raw_delta + (n_base + wrap_adjust) * PTIME_MOD as i64;
+    anchor + total as f64 * 2e-6 + MET_CORRECTION
 }
 
 /// Floor-based per-event wrap computation (retained for diagnostics only).
@@ -143,42 +228,269 @@ fn get_utc_tail(ccsds: &[u8]) -> f64 {
 /// 前提条件：SEC 事件每秒出现一次，间距 < WRAP_PERIOD (1.048576s)，
 /// 因此相邻两个 SEC 锚点之间至多发生 1 次 wrap。
 pub fn reconstruct_with_wrap_tracking(sci_data: &SciFile, offset: f64) -> Vec<Vec<f64>> {
+    reconstruct_with_wrap_tracking_labeled(sci_data, offset, "")
+}
+
+pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, label: &str) -> Vec<Vec<f64>> {
     let mut result = Vec::with_capacity(sci_data.ccsds.len());
     let mut anchor: Option<f64> = None;
     let mut anchor_ptime: u64 = 0;
+    let mut anchor_pkt: usize = 0;
+    let mut last_accepted_stime: Option<u64> = None;
     let debug = std::env::var("DEBUG_WRAP").is_ok();
+
+    // Maximum number of packets since last anchor update to still consider
+    // it "recent" (i.e., use the normal path). ~35 packets ≈ 1 second of
+    // FIFO data at saturation event rates.
+    const ANCHOR_RECENT_PKT_LIMIT: usize = 35;
+
+    // ── FIFO congestion: median-ptime wrap tracking ──
+    //
+    // During FIFO congestion, utc_tail tracks real time while events are
+    // delayed. The stale path's utc_tail-based n_wraps estimation is
+    // biased (over-estimates by FIFO_delay / WRAP_PERIOD wraps).
+    //
+    // Fix: track ptime wraps between consecutive packets using each
+    // packet's median ptime. Within a congestion period, the FIFO is read
+    // sequentially, so consecutive packets have monotonically advancing
+    // ptimes. When the median ptime wraps (large negative delta), we
+    // increment a wrap counter.
+    //
+    // This gives the correct n_wraps without using utc_tail, eliminating
+    // the FIFO delay bias entirely.
+    //
+    // Reset on FIFO reset (utc_tail jump > 3s): after reset, events are
+    // fresh and the stale path's raw utc_tail is correct again.
+    //
+    // IMPORTANT: We always accumulate wrap counts when stale, but only
+    // USE them (replace stale path) when utc_tail has diverged far from
+    // the anchor (indicating extreme FIFO congestion). This prevents
+    // wrap tracking from interfering with moderate saturation (e.g.,
+    // 260226A, elapsed ~1-5s) where the stale path's utc_tail-based
+    // estimation is accurate enough. For extreme saturation (e.g.,
+    // 221009A, elapsed 100s+), utc_tail is far from event time and
+    // wrap tracking is essential.
+    //
+    // Elapsed threshold: 0.0 means always use wrap tracking when stale.
+    // This works because compute_met_with_base_wraps handles intra-packet
+    // wrap boundaries correctly, and the initialization from the anchor
+    // packet's median ptime ensures accurate inter-packet tracking.
+    const WRAP_TRACKING_ELAPSED_THRESHOLD: f64 = 0.0;
+    let mut congestion_wrap_count: i64 = 0;
+    let mut prev_median_ptime: Option<u64> = None;
+    let mut wrap_tracking_active = false;
+    let mut prev_utc_tail: f64 = 0.0;
+    // After a FIFO reset (UTC_JUMP), events are fresh (no FIFO delay).
+    // The stale path's utc_tail estimation is correct for them.
+    // Prevent wrap tracking from re-activating until a new SEC anchor
+    // is established, which properly resets congestion_wrap_count.
+    let mut fifo_reset_no_wt = false;
 
     for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
         let utc_tail = get_utc_tail(ccsds);
         let events = parse_events(ccsds);
         let mut times = Vec::with_capacity(events.len());
 
+        // Anchor is "recent" if set within the last few packets.
+        let mut anchor_is_recent =
+            anchor.is_some() && pkt_idx.saturating_sub(anchor_pkt) < ANCHOR_RECENT_PKT_LIMIT;
+
+        // Detect FIFO reset: utc_tail jumps forward significantly.
+        // After reset, events are fresh (no FIFO delay), so wrap tracking
+        // from the congestion period is invalid. Fall back to stale path.
+        let utc_jumped = prev_utc_tail > 0.0 && utc_tail - prev_utc_tail > 3.0;
+        if utc_jumped {
+            wrap_tracking_active = false;
+            prev_median_ptime = None;
+            congestion_wrap_count = 0;
+            fifo_reset_no_wt = true;
+            if debug {
+                eprintln!(
+                    "UTC_JUMP pkt={} prev_ut={:.0} ut={:.0} jump={:.0} → wrap tracking reset, fifo_reset_no_wt=true",
+                    pkt_idx, prev_utc_tail, utc_tail, utc_tail - prev_utc_tail
+                );
+            }
+        }
+
+        // Compute median ptime for wrap tracking
+        let median_pt = if anchor.is_some() {
+            let mut ptimes: Vec<u64> = events
+                .iter()
+                .filter_map(|e| match e {
+                    Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => Some(*ptime),
+                    _ => None,
+                })
+                .collect();
+            if ptimes.is_empty() {
+                None
+            } else {
+                ptimes.sort_unstable();
+                Some(ptimes[ptimes.len() / 2])
+            }
+        } else {
+            None
+        };
+
+        // Activate wrap tracking (accumulation) when anchor goes stale.
+        // Activate wrap tracking (accumulation) when anchor goes stale.
+        // congestion_wrap_count was reset to 0 when the anchor was set.
+        // prev_median_ptime was set to the anchor packet's median, so the
+        // first median comparison (current packet vs anchor packet) spans
+        // ALL recent packets and will detect any wraps that occurred.
+        if !wrap_tracking_active && !anchor_is_recent && prev_median_ptime.is_some() && !fifo_reset_no_wt {
+            wrap_tracking_active = true;
+            if debug {
+                eprintln!(
+                    "WRAP_INIT pkt={} congestion_wrap_count={} prev_med={:?}",
+                    pkt_idx, congestion_wrap_count, prev_median_ptime
+                );
+            }
+        }
+
+        // Always accumulate wrap counts when stale (even before USE threshold).
+        // Only detect forward wraps (WRAP_INC): during FIFO congestion, ptime
+        // advances monotonically (sequential FIFO reads), so backward wraps
+        // (large positive diff) never occur. A large positive diff at activation
+        // time is normal ptime advancement during the recent period when anchor
+        // ptime was near 0 — NOT a backward wrap.
+        if wrap_tracking_active && !anchor_is_recent {
+            if let (Some(med), Some(prev_med)) = (median_pt, prev_median_ptime) {
+                let diff = med as i64 - prev_med as i64;
+                if diff < -(PTIME_MOD as i64 / 2) {
+                    congestion_wrap_count += 1;
+                    if debug {
+                        eprintln!(
+                            "WRAP_INC pkt={} med={} prev_med={} diff={} → wraps={}",
+                            pkt_idx, med, prev_med, diff, congestion_wrap_count
+                        );
+                    }
+                }
+            }
+        }
+
+        // Only USE wrap tracking for time computation when utc_tail has
+        // diverged far enough from anchor (extreme FIFO congestion).
+        // For moderate saturation, the stale path is more reliable.
+        let elapsed_from_anchor = anchor.map_or(0.0, |a| utc_tail - a);
+        let use_wrap_tracking = wrap_tracking_active
+            && !anchor_is_recent
+            && elapsed_from_anchor > WRAP_TRACKING_ELAPSED_THRESHOLD;
+        // Only update prev_median_ptime when wrap tracking is active (to
+        // track inter-packet wraps) or when it hasn't been set yet.
+        // During the "recent" period, we KEEP the anchor packet's median
+        // so that the first wrap comparison at activation spans all recent
+        // packets and catches any wraps that occurred.
+        if wrap_tracking_active || prev_median_ptime.is_none() {
+            if let Some(med) = median_pt {
+                prev_median_ptime = Some(med);
+            }
+        }
+
+        // Pre-compute packet-level base wraps for the stale path.
+        // When the anchor is stale (not recent) and we're not using wrap
+        // tracking, determine n_base from the median ptime to avoid
+        // per-event wrap ambiguity.
+        let use_stale_path = anchor.is_some()
+            && !anchor_is_recent
+            && !use_wrap_tracking
+            && elapsed_from_anchor >= WRAP_PERIOD * 1.5;
+        let packet_base_wraps = if use_stale_path {
+            median_pt.map(|med| {
+                estimate_packet_wraps(med, anchor_ptime, anchor.unwrap(), utc_tail)
+            })
+        } else {
+            None
+        };
+
         for event in &events {
             match event {
                 Pack::Second { stime, ptime } => {
                     let met = *stime as f64 + offset;
-                    if (met - utc_tail).abs() < 2.0 {
+
+                    let normal_accept = (met - utc_tail).abs() < 2.0;
+                    let continuity_accept = last_accepted_stime.map_or(false, |prev| {
+                        *stime > prev && *stime <= prev + 60
+                    });
+
+                    if normal_accept || continuity_accept {
+                        if debug && continuity_accept && !normal_accept {
+                            eprintln!(
+                                "SEC_CONT pkt={} stime={} prev={} ut={:.0} anchor updated via continuity",
+                                pkt_idx, stime,
+                                last_accepted_stime.unwrap_or(0),
+                                utc_tail
+                            );
+                        }
                         anchor = Some(met);
                         anchor_ptime = *ptime;
+                        anchor_pkt = pkt_idx;
+                        last_accepted_stime = Some(*stime);
+                        anchor_is_recent = true;
+                        // Reset wrap tracking for new anchor.
+                        // Set prev_median_ptime to this packet's median so that
+                        // when wrap tracking activates (ANCHOR_RECENT_PKT_LIMIT
+                        // packets later), the first median comparison spans ALL
+                        // recent packets, correctly catching any wraps.
+                        congestion_wrap_count = 0;
+                        wrap_tracking_active = false;
+                        fifo_reset_no_wt = false;
+                        if let Some(med) = median_pt {
+                            prev_median_ptime = Some(med);
+                        }
                     }
+
                     if let Some(anc) = anchor {
-                        times.push(compute_met_anchored(
-                            *ptime,
-                            anchor_ptime,
-                            anc,
-                            utc_tail,
-                        ));
+                        if use_wrap_tracking && !anchor_is_recent {
+                            if let Some(med) = median_pt {
+                                times.push(compute_met_with_base_wraps(
+                                    *ptime, anchor_ptime, anc, congestion_wrap_count, med,
+                                ));
+                            } else {
+                                let raw_delta = *ptime as i64 - anchor_ptime as i64;
+                                let total = raw_delta + congestion_wrap_count * PTIME_MOD as i64;
+                                times.push(anc + total as f64 * 2e-6 + MET_CORRECTION);
+                            }
+                        } else if let (Some(n_base), Some(med)) = (packet_base_wraps, median_pt) {
+                            times.push(compute_met_with_base_wraps(
+                                *ptime, anchor_ptime, anc, n_base, med,
+                            ));
+                        } else {
+                            times.push(compute_met_anchored(
+                                *ptime,
+                                anchor_ptime,
+                                anc,
+                                utc_tail,
+                                anchor_is_recent,
+                            ));
+                        }
                     }
                 }
                 Pack::Event { ptime, .. } => {
                     if let Some(anc) = anchor {
-                        let met = compute_met_anchored(
-                            *ptime,
-                            anchor_ptime,
-                            anc,
-                            utc_tail,
-                        );
-                        times.push(met);
+                        if use_wrap_tracking && !anchor_is_recent {
+                            if let Some(med) = median_pt {
+                                times.push(compute_met_with_base_wraps(
+                                    *ptime, anchor_ptime, anc, congestion_wrap_count, med,
+                                ));
+                            } else {
+                                let raw_delta = *ptime as i64 - anchor_ptime as i64;
+                                let total = raw_delta + congestion_wrap_count * PTIME_MOD as i64;
+                                times.push(anc + total as f64 * 2e-6 + MET_CORRECTION);
+                            }
+                        } else if let (Some(n_base), Some(med)) = (packet_base_wraps, median_pt) {
+                            times.push(compute_met_with_base_wraps(
+                                *ptime, anchor_ptime, anc, n_base, med,
+                            ));
+                        } else {
+                            let met = compute_met_anchored(
+                                *ptime,
+                                anchor_ptime,
+                                anc,
+                                utc_tail,
+                                anchor_is_recent,
+                            );
+                            times.push(met);
+                        }
                     }
                 }
                 Pack::Error => {}
@@ -189,11 +501,13 @@ pub fn reconstruct_with_wrap_tracking(sci_data: &SciFile, offset: f64) -> Vec<Ve
             let t_max = times.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
             let elapsed = utc_tail - anchor.unwrap_or(0.0);
             eprintln!(
-                "PKT pkt={} ut={:.0} anc={:.3} anc_pt={} el={:.3} n={} tmin={:.6} tmax={:.6} span={:.4}",
-                pkt_idx, utc_tail, anchor.unwrap_or(0.0), anchor_ptime,
-                elapsed, times.len(), t_min, t_max, t_max - t_min
+                "PKT {} pkt={} ut={:.0} anc={:.3} anc_pt={} el={:.3} n={} tmin={:.6} tmax={:.6} span={:.4} recent={} wt={} wraps={}",
+                label, pkt_idx, utc_tail, anchor.unwrap_or(0.0), anchor_ptime,
+                elapsed, times.len(), t_min, t_max, t_max - t_min, anchor_is_recent, use_wrap_tracking, congestion_wrap_count
             );
         }
+
+        prev_utc_tail = utc_tail;
         result.push(times);
     }
 
@@ -215,23 +529,46 @@ pub fn reconstruct_with_wrap_tracking(sci_data: &SciFile, offset: f64) -> Vec<Ve
 
     // ── Pass 4: Global sort for complex reordering ──
     // In extreme saturation cases (e.g., GRB 221009A), FIFO resets cause complex
-    // multi-level packet reordering that Pass 2 cannot fully resolve. Sort all
-    // events globally by time to ensure monotonicity.
-    let needs_global_sort = result.iter().any(|pkt| {
-        if pkt.len() < 2 {
+    // multi-level packet reordering that Pass 2 cannot fully resolve. Flatten all
+    // events and sort globally by time to ensure monotonicity.
+    let needs_global_sort = result.iter().enumerate().any(|(i, pkt)| {
+        if i == 0 || pkt.is_empty() {
             return false;
         }
-        // Check if packet has any time reversals
-        pkt.windows(2).any(|w| w[0] > w[1])
+        // Check if this packet's first event is before previous packet's last event
+        if let Some(prev_pkt) = result.get(i - 1) {
+            if !prev_pkt.is_empty() && !pkt.is_empty() {
+                if pkt[0] < prev_pkt[prev_pkt.len() - 1] {
+                    return true;
+                }
+            }
+        }
+        // Also check for intra-packet reversals
+        if pkt.len() > 1 {
+            pkt.windows(2).any(|w| w[0] > w[1])
+        } else {
+            false
+        }
     });
 
     if needs_global_sort {
         if debug {
-            eprintln!("Global sort: detected time reversals, sorting all events");
+            eprintln!("Global sort: detected cross-packet time reversals, flattening and sorting all events");
         }
+        // Flatten all events into a single vector
+        let mut all_events: Vec<f64> = result.iter().flatten().copied().collect();
+        // Sort globally
+        all_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        // Redistribute events back into packets (maintain original packet count structure)
+        let mut event_idx = 0;
         for pkt in result.iter_mut() {
-            if pkt.len() > 1 {
-                pkt.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let pkt_len = pkt.len();
+            if pkt_len > 0 && event_idx < all_events.len() {
+                let end_idx = (event_idx + pkt_len).min(all_events.len());
+                pkt.clear();
+                pkt.extend_from_slice(&all_events[event_idx..end_idx]);
+                event_idx = end_idx;
             }
         }
     }
@@ -338,12 +675,12 @@ fn fix_wrap_reversals(packets: &mut [Vec<f64>]) {
         }
 
         // Decision criteria:
-        // 1. Large gap (> 0.3s) → definitely FIFO reset → shift
-        // 2. Small gap but reversal ≈ WRAP_PERIOD → likely FIFO reset in high-rate region → shift
-        // 3. Small gap and small reversal → file reorder → skip
-        let should_shift = gap > 0.3
-            || prev_pkt_max.is_nan()
-            || (reversal > WRAP_PERIOD * 0.8 && reversal < WRAP_PERIOD * 1.2);
+        // 1. Large gap (> 0.3s) → FIFO reset → shift
+        // 2. Small gap → file reorder → skip
+        // Note: do NOT shift based on reversal size alone. Even when
+        // reversal ≈ WRAP_PERIOD, a small gap means it's file reordering,
+        // not FIFO reset. Shifting incorrectly breaks 260226A.
+        let should_shift = gap > 0.3 || prev_pkt_max.is_nan();
 
         if should_shift {
             // Misplaced batch after FIFO reset → shift down
@@ -1046,7 +1383,7 @@ mod tests {
         let anchor_ptime = 500000u64;
         let utc_tail = 292.0; // fresh anchor
 
-        let met = compute_met_anchored(500100, anchor_ptime, anchor, utc_tail);
+        let met = compute_met_anchored(500100, anchor_ptime, anchor, utc_tail, false);
         let expected = 292.0 + 100.0 * 2e-6 + MET_CORRECTION;
         assert!((met - expected).abs() < 1e-9);
     }
@@ -1057,7 +1394,7 @@ mod tests {
         let anchor_ptime = 400000u64;
         let utc_tail = 293.0; // fresh, ~1s later
 
-        let met = compute_met_anchored(3000, anchor_ptime, anchor, utc_tail);
+        let met = compute_met_anchored(3000, anchor_ptime, anchor, utc_tail, false);
         let expected = 292.0 + (3000i64 - 400000 + PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
         assert!((met - expected).abs() < 1e-9, "expected {expected}, got {met}");
     }
@@ -1068,11 +1405,11 @@ mod tests {
         let anchor_ptime = 100000u64;
         let utc_tail = 292.0;
 
-        let met = compute_met_anchored(99950, anchor_ptime, anchor, utc_tail);
+        let met = compute_met_anchored(99950, anchor_ptime, anchor, utc_tail, false);
         let expected = 292.0 + (-50.0) * 2e-6 + MET_CORRECTION;
         assert!((met - expected).abs() < 1e-9);
 
-        let met2 = compute_met_anchored(99000, anchor_ptime, anchor, utc_tail);
+        let met2 = compute_met_anchored(99000, anchor_ptime, anchor, utc_tail, false);
         let expected2 = 292.0 + (-1000.0) * 2e-6 + MET_CORRECTION;
         assert!((met2 - expected2).abs() < 1e-9);
     }
@@ -1083,9 +1420,9 @@ mod tests {
         let anchor_ptime = 100u64;
         let utc_tail = 292.0;
 
-        let met1 = compute_met_anchored(200, anchor_ptime, anchor, utc_tail);
-        let met2 = compute_met_anchored(300, anchor_ptime, anchor, utc_tail);
-        let met3 = compute_met_anchored(400, anchor_ptime, anchor, utc_tail);
+        let met1 = compute_met_anchored(200, anchor_ptime, anchor, utc_tail, false);
+        let met2 = compute_met_anchored(300, anchor_ptime, anchor, utc_tail, false);
+        let met3 = compute_met_anchored(400, anchor_ptime, anchor, utc_tail, false);
         assert!(met2 > met1);
         assert!(met3 > met2);
         assert!((met2 - met1 - 100.0 * 2e-6).abs() < 1e-9);
@@ -1100,12 +1437,37 @@ mod tests {
         // ptime = (200000 + 1100000) % 524288 = 251424 (after 2 full wraps)
         let utc_tail = 294.0; // ~2s after anchor
 
-        let met = compute_met_anchored(251424, anchor_ptime, anchor, utc_tail);
+        let met = compute_met_anchored(251424, anchor_ptime, anchor, utc_tail, false);
         // Expected: anchor + 2.2s worth of ticks * 2μs + correction
         let expected = 292.0 + (251424i64 - 200000 + 2 * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
         assert!(
             (met - expected).abs() < 1e-6,
             "stale anchor multi-wrap: expected {expected}, got {met}"
+        );
+    }
+
+    #[test]
+    fn test_anchored_force_normal_during_saturation() {
+        // Simulates saturation: anchor was recently set via stime continuity,
+        // but utc_tail is far ahead (FIFO delay). force_normal=true should
+        // use the threshold path, ignoring the large elapsed.
+        let anchor = 292.0;
+        let anchor_ptime = 200000u64;
+        let utc_tail = 305.0; // 13s ahead — FIFO delay during saturation
+
+        // Event with ptime slightly ahead of anchor — should be placed at ~292.0
+        let met = compute_met_anchored(200500, anchor_ptime, anchor, utc_tail, true);
+        let expected = 292.0 + 500.0 * 2e-6 + MET_CORRECTION;
+        assert!(
+            (met - expected).abs() < 1e-9,
+            "force_normal: expected {expected}, got {met}"
+        );
+
+        // Without force_normal, the stale path would pick a much larger n_wraps
+        let met_stale = compute_met_anchored(200500, anchor_ptime, anchor, utc_tail, false);
+        assert!(
+            met_stale > met + 5.0,
+            "stale path should give much larger MET: stale={met_stale}, normal={met}"
         );
     }
 }
