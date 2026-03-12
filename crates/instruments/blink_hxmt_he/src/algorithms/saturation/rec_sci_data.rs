@@ -25,24 +25,61 @@ struct PackInfo {
 
 
 const PTIME_MOD: u64 = 1 << 19; // 524288
-const _HALF_MOD: u64 = PTIME_MOD / 2;
 const WRAP_PERIOD: f64 = PTIME_MOD as f64 * 2e-6; // 1.048576s
 
 /// 1B→1K 经验时间校正 (秒)。
 /// 通过 GRB 200415A 和 GRB 221009A 交叉验证确定。
 const MET_CORRECTION: f64 = 4.0;
 
-/// Floor-based per-event wrap computation.
+/// SEC-anchored MET computation with multi-wrap support.
 ///
-/// 独立计算每个事例的 ptime 回绕次数，不依赖事例顺序。
-/// 利用 utc_tail（包级 UTC 计数器）作为粗时间参考：
-///   raw_delta = ptime - anchor_ptime（可为负）
-///   raw_delta_seconds = raw_delta × 2μs
-///   N = max(0, floor((utc_tail - anchor - raw_delta_seconds) / 1.048576))
-///   total_ticks = N × PTIME_MOD + raw_delta
-///   MET = anchor + total_ticks × 2μs + MET_CORRECTION
+/// Uses SEC anchor's (met, ptime) as precise reference. For fresh anchors
+/// (< 1.5 WRAP_PERIOD old), determines wrap by threshold on ptime delta.
+/// For stale anchors (after FIFO reset gaps), uses utc_tail to estimate
+/// the number of complete wraps, then picks the best candidate from
+/// n_est-1, n_est, n_est+1 by comparing to utc_tail.
 ///
-/// 解决 FIFO 溢出后事例时序混乱导致的错误回绕检测。
+/// Immune to multi-detector ptime non-monotonicity (per-event independent).
+const WRAP_THRESHOLD: i64 = 10000; // ~20ms in ptime ticks
+#[inline]
+fn compute_met_anchored(ptime: u64, anchor_ptime: u64, anchor: f64, utc_tail: f64) -> f64 {
+    let raw_delta = ptime as i64 - anchor_ptime as i64;
+    let elapsed = utc_tail - anchor;
+
+    if elapsed < WRAP_PERIOD * 1.5 && elapsed > -0.5 {
+        // Normal case: anchor is fresh, at most 1 wrap
+        let adjusted_delta = if raw_delta < -WRAP_THRESHOLD {
+            raw_delta + PTIME_MOD as i64
+        } else if raw_delta > (PTIME_MOD as i64 - WRAP_THRESHOLD) {
+            raw_delta - PTIME_MOD as i64
+        } else {
+            raw_delta
+        };
+        anchor + adjusted_delta as f64 * 2e-6 + MET_CORRECTION
+    } else {
+        // Stale anchor (gap from FIFO reset): estimate wraps using utc_tail
+        let n_est = ((elapsed - raw_delta as f64 * 2e-6) / WRAP_PERIOD)
+            .round()
+            .max(0.0) as i64;
+
+        let mut best_met = f64::NAN;
+        let mut best_err = f64::MAX;
+        for n in [n_est - 1, n_est, n_est + 1] {
+            if n < 0 {
+                continue;
+            }
+            let met = anchor + (raw_delta + n * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
+            let err = (met - MET_CORRECTION - utc_tail).abs();
+            if err < best_err {
+                best_err = err;
+                best_met = met;
+            }
+        }
+        best_met
+    }
+}
+
+/// Floor-based per-event wrap computation (retained for diagnostics only).
 #[inline]
 fn compute_met(ptime: u64, anchor_ptime: u64, anchor: f64, utc_tail: f64) -> f64 {
     let raw_delta = ptime as i64 - anchor_ptime as i64;
@@ -51,33 +88,7 @@ fn compute_met(ptime: u64, anchor_ptime: u64, anchor: f64, utc_tail: f64) -> f64
         .floor()
         .max(0.0) as i64;
     let total_ticks = n_wraps * PTIME_MOD as i64 + raw_delta;
-    let met = anchor + total_ticks as f64 * 2e-6 + MET_CORRECTION;
-    if (met - 446726278.0).abs() < 0.005 {
-        eprintln!("DEBUG_MET: utc_tail={}, anchor={:.6}, raw_delta_s={:.6}, n_wraps={}, final_met={:.6}", utc_tail, anchor, raw_delta_seconds, n_wraps, met);
-    }
-    met
-}
-
-/// 基于高水位线进行单向滞后补偿的 MET 计算。
-/// 如果 utc_tail 发生滞后，原本稳定的 floor 计算会向下错退一个周期（1.048576s）。
-/// 此时算出的 t_val 将极不合理地早于最近验证过的真实时间水位线。
-/// 只有在这种“时空倒退”的铁证发生时（>0.8s），我们才赋予强制补偿，以消除污染。
-#[inline]
-fn compute_met_corrected(
-    ptime: u64,
-    anchor_ptime: u64,
-    anchor: f64,
-    utc_tail: f64,
-    max_met_seen: &mut f64,
-) -> f64 {
-    let mut t_val = compute_met(ptime, anchor_ptime, anchor, utc_tail);
-    if *max_met_seen > 0.0 && (*max_met_seen - t_val) > 0.8 {
-        t_val += 1.048576; // 修正滞后的 -1 周期错误
-    }
-    if t_val > *max_met_seen {
-        *max_met_seen = t_val;
-    }
-    t_val
+    anchor + total_ticks as f64 * 2e-6 + MET_CORRECTION
 }
 
 /// 解析单个 CCSDS 包中所有事例
@@ -124,14 +135,20 @@ fn get_utc_tail(ccsds: &[u8]) -> f64 {
         + (ccsds[881] as f64) * 16777216.0
 }
 
-/// 本函数用单遍扫描进行安全重建。
+/// SEC-anchored 时间重建。
+///
+/// 每个事件用最近 SEC 的 (met, ptime) 作为锚点，通过 ptime 差值阈值判定
+/// 是否发生了 wrap。不使用 utc_tail，不依赖 ptime 全局单调性。
+///
+/// 前提条件：SEC 事件每秒出现一次，间距 < WRAP_PERIOD (1.048576s)，
+/// 因此相邻两个 SEC 锚点之间至多发生 1 次 wrap。
 pub fn reconstruct_with_wrap_tracking(sci_data: &SciFile, offset: f64) -> Vec<Vec<f64>> {
     let mut result = Vec::with_capacity(sci_data.ccsds.len());
-    let mut met_anchor: Option<f64> = None;
+    let mut anchor: Option<f64> = None;
     let mut anchor_ptime: u64 = 0;
-    let mut max_met_seen: f64 = 0.0;
+    let debug = std::env::var("DEBUG_WRAP").is_ok();
 
-    for ccsds in sci_data.ccsds.iter() {
+    for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
         let utc_tail = get_utc_tail(ccsds);
         let events = parse_events(ccsds);
         let mut times = Vec::with_capacity(events.len());
@@ -140,84 +157,439 @@ pub fn reconstruct_with_wrap_tracking(sci_data: &SciFile, offset: f64) -> Vec<Ve
             match event {
                 Pack::Second { stime, ptime } => {
                     let met = *stime as f64 + offset;
-                    // 仅当秒信号与包尾 UTC 时差在合理范围内（2秒数据窗口）才认为是有效锚点
                     if (met - utc_tail).abs() < 2.0 {
-                        met_anchor = Some(met);
+                        anchor = Some(met);
                         anchor_ptime = *ptime;
-                        if met > max_met_seen {
-                            max_met_seen = met;
-                        }
                     }
-
-                    if let Some(anchor) = met_anchor {
-                        times.push(compute_met_corrected(
+                    if let Some(anc) = anchor {
+                        times.push(compute_met_anchored(
                             *ptime,
                             anchor_ptime,
-                            anchor,
+                            anc,
                             utc_tail,
-                            &mut max_met_seen,
                         ));
                     }
                 }
                 Pack::Event { ptime, .. } => {
-                    if let Some(anchor) = met_anchor {
-                        times.push(compute_met_corrected(
+                    if let Some(anc) = anchor {
+                        let met = compute_met_anchored(
                             *ptime,
                             anchor_ptime,
-                            anchor,
+                            anc,
                             utc_tail,
-                            &mut max_met_seen,
-                        ));
+                        );
+                        times.push(met);
                     }
                 }
                 Pack::Error => {}
             }
         }
+        if debug && !times.is_empty() {
+            let t_min = times.iter().cloned().fold(f64::INFINITY, f64::min);
+            let t_max = times.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let elapsed = utc_tail - anchor.unwrap_or(0.0);
+            eprintln!(
+                "PKT pkt={} ut={:.0} anc={:.3} anc_pt={} el={:.3} n={} tmin={:.6} tmax={:.6} span={:.4}",
+                pkt_idx, utc_tail, anchor.unwrap_or(0.0), anchor_ptime,
+                elapsed, times.len(), t_min, t_max, t_max - t_min
+            );
+        }
         result.push(times);
     }
+
+    // ── Pass 2: Fix FIFO-reset time reversals ──
+    // After FIFO resets, some packets get reordered in the file. A batch of
+    // packets may be placed at time T+X+WRAP_PERIOD when they should be at T+X.
+    // Signature: a batch at time A is followed by packets at time B where
+    // B < A - 0.5 (time reversal ≈ -WRAP_PERIOD). The batch before the reversal
+    // should be shifted by -WRAP_PERIOD.
+    fix_wrap_reversals(&mut result);
+
+    // ── Pass 3: Fix wrap-boundary dips ──
+    // Near ptime wrap boundaries, some events/packets get assigned one wrap too
+    // low. This manifests as: ...HIGH packets... LOW batch... HIGH packets...
+    // where the LOW batch is ~WRAP_PERIOD below neighbors. Shift them up.
+    // Also fix mixed-wrap packets (span ≈ WRAP_PERIOD) by aligning the minority
+    // cluster with neighbors.
+    fix_wrap_boundary_dips(&mut result);
+
     result
+}
+
+/// Detect and fix time reversals caused by FIFO-reset packet reordering.
+///
+/// When a batch of consecutive packets has times ~WRAP_PERIOD ahead of the
+/// following batch, shift the earlier batch by -WRAP_PERIOD. This fixes the
+/// case where stale anchors + biased utc_tail cause events to be placed
+/// one wrap period too late.
+fn fix_wrap_reversals(packets: &mut [Vec<f64>]) {
+    let debug = std::env::var("DEBUG_WRAP").is_ok();
+
+    if debug {
+        eprintln!("fix_wrap_reversals: called with {} packets", packets.len());
+    }
+
+    // Strategy: detect backward jumps ≈ -WRAP_PERIOD between clean packets,
+    // then walk backward to find the misplaced batch. Distinguish real
+    // misplacement from file reordering by checking whether the batch is
+    // preceded by a TIME GAP (FIFO reset → misplacement) or by smooth
+    // continuation (file reorder → no shift needed).
+
+    struct PktStat {
+        idx: usize,
+        mn: f64,
+        mx: f64,
+    }
+
+    let clean: Vec<PktStat> = (0..packets.len())
+        .filter_map(|i| {
+            if packets[i].is_empty() {
+                return None;
+            }
+            let mn = packets[i].iter().cloned().fold(f64::INFINITY, f64::min);
+            let mx = packets[i].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let span = mx - mn;
+            if span < 0.3 {
+                Some(PktStat { idx: i, mn, mx })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let mut fixed = vec![false; packets.len()];
+
+    for ci in 0..clean.len().saturating_sub(1) {
+        if fixed[clean[ci].idx] {
+            continue;
+        }
+        let reversal = clean[ci].mx - clean[ci + 1].mn;
+        if reversal < WRAP_PERIOD * 0.8 || reversal > WRAP_PERIOD * 1.2 {
+            continue;
+        }
+
+        // Found backward jump ≈ -WRAP between clean[ci] and clean[ci+1].
+        // Walk backward from clean[ci]: find all packets with
+        // mn > clean[ci+1].mn + 0.5*WRAP (i.e., at the elevated level).
+        let ref_mn = clean[ci + 1].mn;
+        let threshold = ref_mn + WRAP_PERIOD * 0.5;
+
+        let mut first_shifted = clean[ci].idx;
+        let mut prev_pkt_max = f64::NAN; // max of the packet just before the batch
+
+        for j in (0..clean[ci].idx).rev() {
+            if packets[j].is_empty() || fixed[j] {
+                continue;
+            }
+            let j_mn = packets[j].iter().cloned().fold(f64::INFINITY, f64::min);
+            let j_mx = packets[j].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let j_span = j_mx - j_mn;
+
+            if j_mn > threshold && j_span < WRAP_PERIOD * 0.5 {
+                first_shifted = j;
+            } else {
+                prev_pkt_max = j_mx;
+                break;
+            }
+        }
+
+        // Check: is there a gap between the previous packet and the batch?
+        // A misplaced batch follows a FIFO reset gap (> 0.5s).
+        // File-reordered packets have smooth continuation (gap < 0.1s).
+        let batch_mn = packets[first_shifted]
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
+        let gap = batch_mn - prev_pkt_max;
+
+        if debug {
+            eprintln!(
+                "fix_wrap_reversals: reversal={:.4}s at pkt {}->pkt {}, batch {}..={}, gap_before={:.4}s",
+                reversal,
+                clean[ci].idx,
+                clean[ci + 1].idx,
+                first_shifted,
+                clean[ci].idx,
+                gap
+            );
+        }
+
+        if gap > 0.3 || prev_pkt_max.is_nan() {
+            // Large gap before batch → misplaced after FIFO reset → shift down
+            if debug {
+                eprintln!(
+                    "fix_wrap_reversals:   → SHIFTING pkts {}..={} by -{:.6} (gap={:.4}s)",
+                    first_shifted,
+                    clean[ci].idx,
+                    WRAP_PERIOD,
+                    gap
+                );
+            }
+            for idx in first_shifted..=clean[ci].idx {
+                if !packets[idx].is_empty() {
+                    for t in packets[idx].iter_mut() {
+                        *t -= WRAP_PERIOD;
+                    }
+                    fixed[idx] = true;
+                }
+            }
+        } else if debug {
+            eprintln!(
+                "fix_wrap_reversals:   → SKIPPING (smooth continuation, gap={:.4}s)",
+                gap
+            );
+        }
+    }
+}
+
+/// Fix wrap-boundary dips: short batches at the wrong wrap level.
+///
+/// After FIFO resets, some packets near the ptime wrap boundary get assigned
+/// one wrap period too low. Pattern: HIGH...HIGH, LOW_batch, HIGH...HIGH
+/// where LOW_batch is ~WRAP_PERIOD below both neighbors. Also fixes mixed-wrap
+/// packets (span ≈ WRAP_PERIOD) by shifting the minority cluster.
+fn fix_wrap_boundary_dips(packets: &mut [Vec<f64>]) {
+    let debug = std::env::var("DEBUG_WRAP").is_ok();
+
+    if debug {
+        eprintln!("fix_wrap_boundary_dips: called with {} packets", packets.len());
+    }
+
+    // Step 1: Fix sandwiched "dip" batches FIRST.
+    // Find forward jumps ≈ WRAP_PERIOD between clean packets, then check
+    // if the low batch was preceded by a backward jump from the high level.
+    // Also shift LOW events within adjacent mixed-wrap packets.
+
+    struct PktStat {
+        idx: usize,
+        mn: f64,
+        mx: f64,
+    }
+
+    let clean: Vec<PktStat> = (0..packets.len())
+        .filter_map(|i| {
+            if packets[i].is_empty() {
+                return None;
+            }
+            let mn = packets[i].iter().cloned().fold(f64::INFINITY, f64::min);
+            let mx = packets[i].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let span = mx - mn;
+            if span < 0.3 {
+                Some(PktStat { idx: i, mn, mx })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let mut shifted = vec![false; packets.len()];
+
+    for ci in 0..clean.len().saturating_sub(1) {
+        if shifted[clean[ci].idx] {
+            continue;
+        }
+
+        // Look for forward jump ≈ WRAP_PERIOD: clean[ci] is LOW, clean[ci+1] is HIGH
+        let forward_jump = clean[ci + 1].mn - clean[ci].mx;
+        if forward_jump < WRAP_PERIOD * 0.8 || forward_jump > WRAP_PERIOD * 1.2 {
+            continue;
+        }
+
+        // Walk backward from clean[ci] to find the extent of the LOW batch
+        let high_level = clean[ci + 1].mn;
+        let low_threshold = high_level - WRAP_PERIOD * 0.5;
+
+        let mut first_low = clean[ci].idx;
+        let mut prev_high_max = f64::NAN;
+        let mut mixed_pkts_in_range: Vec<usize> = Vec::new();
+
+        for j in (0..clean[ci].idx).rev() {
+            if packets[j].is_empty() || shifted[j] {
+                continue;
+            }
+            let j_mn = packets[j].iter().cloned().fold(f64::INFINITY, f64::min);
+            let j_mx = packets[j].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let j_span = j_mx - j_mn;
+
+            // Skip mixed-wrap packets but remember them for later processing
+            if j_span > WRAP_PERIOD * 0.5 {
+                mixed_pkts_in_range.push(j);
+                continue;
+            }
+
+            if j_mx < low_threshold {
+                first_low = j;
+            } else if j_mn >= low_threshold {
+                // Found a HIGH packet before the batch → sandwiched!
+                prev_high_max = j_mx;
+                break;
+            } else {
+                break;
+            }
+        }
+
+        // Verify: the batch is preceded by HIGH level (backward jump from HIGH to LOW)
+        if prev_high_max.is_nan() {
+            continue;
+        }
+
+        let batch_mn = packets[first_low]
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
+        let backward_jump = prev_high_max - batch_mn;
+
+        if backward_jump < WRAP_PERIOD * 0.5 {
+            continue; // not a genuine wrap dip
+        }
+
+        if debug {
+            eprintln!(
+                "fix_wrap_boundary_dips: dip batch pkts {}..={}, backward_jump={:.4}s, forward_jump={:.4}s",
+                first_low, clean[ci].idx, backward_jump, forward_jump
+            );
+            eprintln!(
+                "fix_wrap_boundary_dips:   → SHIFTING pkts {}..={} UP by {:.6}",
+                first_low, clean[ci].idx, WRAP_PERIOD
+            );
+        }
+
+        // Shift all clean LOW packets in the batch
+        for idx in first_low..=clean[ci].idx {
+            if !packets[idx].is_empty() && !shifted[idx] {
+                for t in packets[idx].iter_mut() {
+                    *t += WRAP_PERIOD;
+                }
+                shifted[idx] = true;
+            }
+        }
+
+        // Also shift LOW events within adjacent mixed-wrap packets
+        for &mix_idx in &mixed_pkts_in_range {
+            if shifted[mix_idx] || packets[mix_idx].is_empty() {
+                continue;
+            }
+            let mix_mn = packets[mix_idx].iter().cloned().fold(f64::INFINITY, f64::min);
+            let midpoint = mix_mn + WRAP_PERIOD * 0.5;
+            if debug {
+                let n_low = packets[mix_idx].iter().filter(|&&t| t < midpoint).count();
+                eprintln!(
+                    "fix_wrap_boundary_dips:   → also shifting {} LOW events in mixed pkt {} UP",
+                    n_low, mix_idx
+                );
+            }
+            for t in packets[mix_idx].iter_mut() {
+                if *t < midpoint {
+                    *t += WRAP_PERIOD;
+                }
+            }
+            shifted[mix_idx] = true;
+        }
+    }
+
+    // Step 2: Fix remaining mixed-wrap packets (span ≈ WRAP_PERIOD).
+    // Split events into two clusters, shift the minority to match majority
+    // based on neighboring packet times.
+    for i in 0..packets.len() {
+        if shifted[i] || packets[i].len() < 2 {
+            continue;
+        }
+        let mn = packets[i].iter().cloned().fold(f64::INFINITY, f64::min);
+        let mx = packets[i].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let span = mx - mn;
+        if span < WRAP_PERIOD * 0.8 || span > WRAP_PERIOD * 1.2 {
+            continue;
+        }
+
+        // Split into low and high clusters
+        let midpoint = mn + WRAP_PERIOD * 0.5;
+        let n_low = packets[i].iter().filter(|&&t| t < midpoint).count();
+        let n_high = packets[i].iter().filter(|&&t| t >= midpoint).count();
+
+        if n_low == 0 || n_high == 0 {
+            continue;
+        }
+
+        // Determine which cluster to shift by looking at neighboring packets
+        let mut neighbor_high_count = 0usize;
+        let mut neighbor_low_count = 0usize;
+
+        // Check up to 5 neighbors on each side (skip mixed packets)
+        for &dir in &[-1i64, 1i64] {
+            for step in 1..=5usize {
+                let j = i as i64 + dir * step as i64;
+                if j < 0 || j >= packets.len() as i64 {
+                    break;
+                }
+                let j = j as usize;
+                if packets[j].is_empty() {
+                    continue;
+                }
+                let j_mn = packets[j].iter().cloned().fold(f64::INFINITY, f64::min);
+                let j_mx = packets[j].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                let j_span = j_mx - j_mn;
+                if j_span > WRAP_PERIOD * 0.5 {
+                    continue; // skip other mixed packets
+                }
+                if j_mn >= midpoint {
+                    neighbor_high_count += 1;
+                } else {
+                    neighbor_low_count += 1;
+                }
+                break; // only count nearest non-mixed neighbor per direction
+            }
+        }
+
+        if debug {
+            eprintln!(
+                "fix_wrap_boundary_dips: mixed pkt {}: n_low={}, n_high={}, neighbors: high={}, low={}",
+                i, n_low, n_high, neighbor_high_count, neighbor_low_count
+            );
+        }
+
+        // If neighbors are predominantly at the HIGH level, shift LOW cluster UP
+        if neighbor_high_count > neighbor_low_count {
+            if debug {
+                eprintln!(
+                    "fix_wrap_boundary_dips:   → shifting {} LOW events UP by {:.6}",
+                    n_low, WRAP_PERIOD
+                );
+            }
+            for t in packets[i].iter_mut() {
+                if *t < midpoint {
+                    *t += WRAP_PERIOD;
+                }
+            }
+        } else if neighbor_low_count > neighbor_high_count {
+            if debug {
+                eprintln!(
+                    "fix_wrap_boundary_dips:   → shifting {} HIGH events DOWN by {:.6}",
+                    n_high, WRAP_PERIOD
+                );
+            }
+            for t in packets[i].iter_mut() {
+                if *t >= midpoint {
+                    *t -= WRAP_PERIOD;
+                }
+            }
+        }
+    }
 }
 
 /// 提取所有秒事例（Second event）的重建 MET 时间。
 pub fn extract_second_event_times(sci_data: &SciFile, offset: f64) -> Vec<f64> {
     let mut second_times: Vec<f64> = Vec::new();
-    let mut met_anchor: Option<f64> = None;
-    let mut anchor_ptime: u64 = 0;
-    let mut prev_ptime: u64 = 0;
-    let mut wrap_count: i64 = 0;
 
     for ccsds in sci_data.ccsds.iter() {
         let utc_tail = get_utc_tail(ccsds);
         let events = parse_events(ccsds);
+
         for event in &events {
-            match event {
-                Pack::Second { stime, ptime } => {
-                    let met = *stime as f64 + offset;
-                    if (met - utc_tail).abs() < 2.0 {
-                        met_anchor = Some(met);
-                        anchor_ptime = *ptime;
-                        prev_ptime = *ptime;
-                        wrap_count = 0;
-                    }
-                    if let Some(anchor) = met_anchor {
-                        if *ptime < prev_ptime && (prev_ptime - *ptime) > 262144 {
-                            wrap_count += 1;
-                        }
-                        prev_ptime = *ptime;
-                        let total_ticks =
-                            wrap_count * PTIME_MOD as i64 + *ptime as i64 - anchor_ptime as i64;
-                        second_times.push(anchor + total_ticks as f64 * 2e-6 + 4.0);
-                    }
+            if let Pack::Second { stime, .. } = event {
+                let met = *stime as f64 + offset;
+                if (met - utc_tail).abs() < 2.0 {
+                    second_times.push(met + MET_CORRECTION);
                 }
-                Pack::Event { ptime, .. } => {
-                    if let Some(_anchor) = met_anchor {
-                        if *ptime < prev_ptime && (prev_ptime - *ptime) > 262144 {
-                            wrap_count += 1;
-                        }
-                        prev_ptime = *ptime;
-                    }
-                }
-                Pack::Error => {}
             }
         }
     }
@@ -445,34 +817,21 @@ pub fn dump_event_details(
     met_min: f64,
     met_max: f64,
 ) -> Vec<EventDetail> {
+    let packet_times = reconstruct_with_wrap_tracking(sci_data, offset);
     let mut result = Vec::new();
-    let mut met_anchor: Option<f64> = None;
-    let mut anchor_ptime: u64 = 0;
-    let mut max_met_seen: f64 = 0.0;
 
     for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
-        let utc_tail = get_utc_tail(ccsds);
         let events = parse_events(ccsds);
+        let times = &packet_times[pkt_idx];
 
+        // reconstruct_with_wrap_tracking 已经过滤了 Error，times 和非 Error 事件一一对应
+        let mut time_idx = 0;
         for (evt_idx, event) in events.iter().enumerate() {
             match event {
-                Pack::Second { stime, ptime } => {
-                    let met = *stime as f64 + offset;
-                    if (met - utc_tail).abs() < 2.0 {
-                        met_anchor = Some(met);
-                        anchor_ptime = *ptime;
-                        if met > max_met_seen {
-                            max_met_seen = met;
-                        }
-                    }
-                    if let Some(anchor) = met_anchor {
-                        let computed_met = compute_met_corrected(
-                            *ptime,
-                            anchor_ptime,
-                            anchor,
-                            utc_tail,
-                            &mut max_met_seen,
-                        );
+                Pack::Second { .. } => {
+                    if time_idx < times.len() {
+                        let computed_met = times[time_idx];
+                        time_idx += 1;
                         if computed_met >= met_min && computed_met <= met_max {
                             result.push(EventDetail {
                                 pkt_index: pkt_idx,
@@ -486,18 +845,13 @@ pub fn dump_event_details(
                     }
                 }
                 Pack::Event {
-                    ptime,
                     channel,
                     raw_bytes,
+                    ..
                 } => {
-                    if let Some(anchor) = met_anchor {
-                        let computed_met = compute_met_corrected(
-                            *ptime,
-                            anchor_ptime,
-                            anchor,
-                            utc_tail,
-                            &mut max_met_seen,
-                        );
+                    if time_idx < times.len() {
+                        let computed_met = times[time_idx];
+                        time_idx += 1;
                         if computed_met >= met_min && computed_met <= met_max {
                             result.push(EventDetail {
                                 pkt_index: pkt_idx,
@@ -535,68 +889,44 @@ pub struct PacketDiag {
 
 /// 对每个 CCSDS 包进行诊断，返回统计信息。
 pub fn diagnose_packets(sci_data: &SciFile, offset: f64) -> Vec<PacketDiag> {
+    let packet_times = reconstruct_with_wrap_tracking(sci_data, offset);
     let mut result = Vec::new();
-
-    let mut met_anchor: Option<f64> = None;
-    let mut anchor_ptime: u64 = 0;
-    let mut max_met_seen: f64 = 0.0;
+    let mut has_anchor = false;
 
     for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
         let utc_tail = get_utc_tail(ccsds);
         let events = parse_events(ccsds);
+        let times = &packet_times[pkt_idx];
 
         let mut n_event = 0usize;
         let mut n_second = 0usize;
         let mut n_error = 0usize;
         let mut n_second_valid = 0usize;
-        let mut n_output = 0usize;
-        let mut n_dropped = 0usize;
-        let mut pkt_met_min: Option<f64> = None;
-        let mut pkt_met_max: Option<f64> = None;
-        let had_anchor_before = met_anchor.is_some();
 
         for event in &events {
             match event {
-                Pack::Second { stime, ptime } => {
+                Pack::Second { stime, .. } => {
                     n_second += 1;
                     let met = *stime as f64 + offset;
                     if (met - utc_tail).abs() < 2.0 {
-                        met_anchor = Some(met);
-                        anchor_ptime = *ptime;
                         n_second_valid += 1;
-                        if met > max_met_seen {
-                            max_met_seen = met;
-                        }
-                    }
-                    if let Some(anchor) = met_anchor {
-                        let computed_met = compute_met_corrected(*ptime, anchor_ptime, anchor, utc_tail, &mut max_met_seen);
-                        n_output += 1;
-                        pkt_met_min =
-                            Some(pkt_met_min.map_or(computed_met, |v: f64| v.min(computed_met)));
-                        pkt_met_max =
-                            Some(pkt_met_max.map_or(computed_met, |v: f64| v.max(computed_met)));
-                    } else {
-                        n_dropped += 1;
+                        has_anchor = true;
                     }
                 }
-                Pack::Event { ptime, .. } => {
+                Pack::Event { .. } => {
                     n_event += 1;
-                    if let Some(anchor) = met_anchor {
-                        let computed_met = compute_met_corrected(*ptime, anchor_ptime, anchor, utc_tail, &mut max_met_seen);
-                        n_output += 1;
-                        pkt_met_min =
-                            Some(pkt_met_min.map_or(computed_met, |v: f64| v.min(computed_met)));
-                        pkt_met_max =
-                            Some(pkt_met_max.map_or(computed_met, |v: f64| v.max(computed_met)));
-                    } else {
-                        n_dropped += 1;
-                    }
                 }
                 Pack::Error => {
                     n_error += 1;
                 }
             }
         }
+
+        let n_output = times.len();
+        let n_dropped = (n_event + n_second).saturating_sub(n_output);
+
+        let pkt_met_min = times.iter().copied().reduce(f64::min);
+        let pkt_met_max = times.iter().copied().reduce(f64::max);
 
         result.push(PacketDiag {
             pkt_index: pkt_idx,
@@ -606,7 +936,7 @@ pub fn diagnose_packets(sci_data: &SciFile, offset: f64) -> Vec<PacketDiag> {
             n_second_valid,
             n_output,
             n_dropped,
-            has_anchor: met_anchor.is_some() || had_anchor_before,
+            has_anchor,
             utc_tail,
             met_min: pkt_met_min,
             met_max: pkt_met_max,
@@ -632,37 +962,114 @@ pub fn scan_saturation_intervals(
         .collect()
 }
 
+/// 诊断：对每个 CCSDS 包尝试 0~7 字节偏移，输出各偏移下的 CRC 通过数。
+/// 用于验证高错误率包是否因字节错位导致。
+pub fn check_byte_offsets(sci_data: &SciFile, pkt_min: usize, pkt_max: usize) {
+    println!("pkt,utc_tail,off0,off1,off2,off3,off4,off5,off6,off7");
+    for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
+        if pkt_idx < pkt_min || pkt_idx > pkt_max {
+            continue;
+        }
+        let utc_tail = get_utc_tail(ccsds);
+        let mut pass_counts = [0u32; 8];
+
+        for offset in 0..8usize {
+            let start = 6 + offset;
+            let end = 878; // payload ends at 878
+            if start >= end {
+                continue;
+            }
+            let payload = &ccsds[start..end];
+            for chunk in payload.chunks_exact(8) {
+                let mut row = [0u64; 8];
+                for (i, byte) in chunk.iter().enumerate() {
+                    row[i] = *byte as u64;
+                }
+                if crc_check(&row) == row[7] & 0x0F {
+                    pass_counts[offset] += 1;
+                }
+            }
+        }
+
+        println!(
+            "{},{:.0},{},{},{},{},{},{},{},{}",
+            pkt_idx, utc_tail,
+            pass_counts[0], pass_counts[1], pass_counts[2], pass_counts[3],
+            pass_counts[4], pass_counts[5], pass_counts[6], pass_counts[7],
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// 用户数值示例：
-    /// anchor_cur:  MET=292, ptime=216822
-    /// 若发生在饱和延迟期间，utc_tail 滞后，该测试将验证由于水位线机制它的周期被自动推后一周期。
     #[test]
-    fn test_compute_met_corrected_user_example() {
-        let anchor_ptime: u64 = 500000;
-        let ptime: u64 = 10000; // 时间发生物理回绕
-        let anchor_met: f64 = 292.0;
+    fn test_anchored_basic() {
+        let anchor = 292.0;
+        let anchor_ptime = 500000u64;
+        let utc_tail = 292.0; // fresh anchor
 
-        let mut max_met_seen = 296.4; // 之前正常积累的水位线
-        let utc_tail: f64 = 292.0;    // 本该是 293 却滞后的 utc_tail，会造成 floor 少一周期
-        
-        let result = compute_met_corrected(ptime, anchor_ptime, anchor_met, utc_tail, &mut max_met_seen);
+        let met = compute_met_anchored(500100, anchor_ptime, anchor, utc_tail);
+        let expected = 292.0 + 100.0 * 2e-6 + MET_CORRECTION;
+        assert!((met - expected).abs() < 1e-9);
+    }
 
-        // 如果没有修正，floor 算出 n=0，导致算出的 MET 为 292 - 0.98 + 4 = 295.02
-        // 但此时水位其实已经在 296.4。差别 > 0.8 ! 触发修正。
-        let expected = compute_met(ptime, anchor_ptime, anchor_met, 292.0) + 1.048576;
-        
+    #[test]
+    fn test_anchored_wrap() {
+        let anchor = 292.0;
+        let anchor_ptime = 400000u64;
+        let utc_tail = 293.0; // fresh, ~1s later
+
+        let met = compute_met_anchored(3000, anchor_ptime, anchor, utc_tail);
+        let expected = 292.0 + (3000i64 - 400000 + PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
+        assert!((met - expected).abs() < 1e-9, "expected {expected}, got {met}");
+    }
+
+    #[test]
+    fn test_anchored_multi_detector() {
+        let anchor = 292.0;
+        let anchor_ptime = 100000u64;
+        let utc_tail = 292.0;
+
+        let met = compute_met_anchored(99950, anchor_ptime, anchor, utc_tail);
+        let expected = 292.0 + (-50.0) * 2e-6 + MET_CORRECTION;
+        assert!((met - expected).abs() < 1e-9);
+
+        let met2 = compute_met_anchored(99000, anchor_ptime, anchor, utc_tail);
+        let expected2 = 292.0 + (-1000.0) * 2e-6 + MET_CORRECTION;
+        assert!((met2 - expected2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_anchored_consistency() {
+        let anchor = 292.0;
+        let anchor_ptime = 100u64;
+        let utc_tail = 292.0;
+
+        let met1 = compute_met_anchored(200, anchor_ptime, anchor, utc_tail);
+        let met2 = compute_met_anchored(300, anchor_ptime, anchor, utc_tail);
+        let met3 = compute_met_anchored(400, anchor_ptime, anchor, utc_tail);
+        assert!(met2 > met1);
+        assert!(met3 > met2);
+        assert!((met2 - met1 - 100.0 * 2e-6).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_anchored_stale_multi_wrap() {
+        // FIFO reset gap: anchor is 2+ wraps old
+        let anchor = 292.0;
+        let anchor_ptime = 200000u64;
+        // Event 2.2s later → 2 complete wraps
+        // ptime = (200000 + 1100000) % 524288 = 251424 (after 2 full wraps)
+        let utc_tail = 294.0; // ~2s after anchor
+
+        let met = compute_met_anchored(251424, anchor_ptime, anchor, utc_tail);
+        // Expected: anchor + 2.2s worth of ticks * 2μs + correction
+        let expected = 292.0 + (251424i64 - 200000 + 2 * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
         assert!(
-            (result - expected).abs() < 1e-6,
-            "expected {expected}, got {result}"
-        );
-        
-        // 验证水位线更新正确
-        assert!(
-            max_met_seen >= result,
-            "max_met_seen should be updated"
+            (met - expected).abs() < 1e-6,
+            "stale anchor multi-wrap: expected {expected}, got {met}"
         );
     }
 }
