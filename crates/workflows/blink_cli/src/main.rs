@@ -1,7 +1,7 @@
 use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::algorithms::saturation::{
     check_byte_offsets, detect_fifo_reset_intervals, diagnose_packets, dump_event_details,
-    dump_ptime_utc, reconstruct_met_times, reconstruct_with_wrap_tracking,
+    dump_ptime_utc, reconstruct_met_times, reconstruct_with_wrap_tracking, reconstruct_with_wrap_tracking_labeled,
     scan_saturation_intervals,
 };
 use blink_hxmt_he::io::level_1b::{
@@ -378,8 +378,8 @@ fn main() {
         let met_max = center_met + half_window;
 
         println!("box,pkt_idx,min_time,max_time,n_events");
-        for (box_name, sci, offset) in &boxes {
-            let packet_times = reconstruct_with_wrap_tracking(sci, *offset);
+        for (box_name, sci, offset) in &filtered_boxes {
+            let packet_times = reconstruct_with_wrap_tracking_labeled(sci, *offset, box_name);
             for (pkt_idx, times) in packet_times.iter().enumerate() {
                 if times.is_empty() {
                     continue;
