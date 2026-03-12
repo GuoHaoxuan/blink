@@ -280,6 +280,11 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
     let mut prev_median_ptime: Option<u64> = None;
     let mut wrap_tracking_active = false;
     let mut prev_utc_tail: f64 = 0.0;
+    // Phase correction: median-based wrap tracking counts rollovers of the
+    // median ptime, but the time computation uses anchor_ptime (SEC's ptime).
+    // When anchor_ptime and anchor_median are far apart (e.g., SEC ptime near
+    // 0 but median near PTIME_MOD), median rollovers overcount by 1.
+    let mut anchor_median_ptime: Option<u64> = None;
     // After a FIFO reset (UTC_JUMP), events are fresh (no FIFO delay).
     // The stale path's utc_tail estimation is correct for them.
     // Prevent wrap tracking from re-activating until a new SEC anchor
@@ -410,6 +415,36 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
             None
         };
 
+        // Phase correction for wrap tracking: congestion_wrap_count tracks
+        // median-ptime rollovers relative to anchor_median. But the time
+        // computation uses anchor_ptime. When these differ significantly
+        // (e.g., SEC ptime near 0, median near PTIME_MOD), the median
+        // rollover count overcounts (or undercounts).
+        //
+        // Correction: count how many extra wraps go from anchor_ptime to
+        // anchor_median vs. direct anchor_ptime to current_median.
+        let phase_correction: i64 = if use_wrap_tracking {
+            if let Some(anc_med) = anchor_median_ptime {
+                let delta = anc_med as i64 - anchor_ptime as i64;
+                if delta > PTIME_MOD as i64 / 2 {
+                    // anchor_median is far ahead of anchor_ptime (median high, ptime low)
+                    // median tracking overcounts by 1
+                    -1
+                } else if delta < -(PTIME_MOD as i64 / 2) {
+                    // anchor_median is far behind anchor_ptime (median low, ptime high)
+                    // median tracking undercounts by 1
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+        let corrected_wrap_count = congestion_wrap_count + phase_correction;
+
         for event in &events {
             match event {
                 Pack::Second { stime, ptime } => {
@@ -444,6 +479,7 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
                         fifo_reset_no_wt = false;
                         if let Some(med) = median_pt {
                             prev_median_ptime = Some(med);
+                            anchor_median_ptime = Some(med);
                         }
                     }
 
@@ -451,11 +487,11 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
                         if use_wrap_tracking && !anchor_is_recent {
                             if let Some(med) = median_pt {
                                 times.push(compute_met_with_base_wraps(
-                                    *ptime, anchor_ptime, anc, congestion_wrap_count, med,
+                                    *ptime, anchor_ptime, anc, corrected_wrap_count, med,
                                 ));
                             } else {
                                 let raw_delta = *ptime as i64 - anchor_ptime as i64;
-                                let total = raw_delta + congestion_wrap_count * PTIME_MOD as i64;
+                                let total = raw_delta + corrected_wrap_count * PTIME_MOD as i64;
                                 times.push(anc + total as f64 * 2e-6 + MET_CORRECTION);
                             }
                         } else if let (Some(n_base), Some(med)) = (packet_base_wraps, median_pt) {
@@ -478,11 +514,11 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
                         if use_wrap_tracking && !anchor_is_recent {
                             if let Some(med) = median_pt {
                                 times.push(compute_met_with_base_wraps(
-                                    *ptime, anchor_ptime, anc, congestion_wrap_count, med,
+                                    *ptime, anchor_ptime, anc, corrected_wrap_count, med,
                                 ));
                             } else {
                                 let raw_delta = *ptime as i64 - anchor_ptime as i64;
-                                let total = raw_delta + congestion_wrap_count * PTIME_MOD as i64;
+                                let total = raw_delta + corrected_wrap_count * PTIME_MOD as i64;
                                 times.push(anc + total as f64 * 2e-6 + MET_CORRECTION);
                             }
                         } else if let (Some(n_base), Some(med)) = (packet_base_wraps, median_pt) {
@@ -509,9 +545,9 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
             let t_max = times.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
             let elapsed = utc_tail - anchor.unwrap_or(0.0);
             eprintln!(
-                "PKT {} pkt={} ut={:.0} anc={:.3} anc_pt={} el={:.3} n={} tmin={:.6} tmax={:.6} span={:.4} recent={} wt={} wraps={}",
+                "PKT {} pkt={} ut={:.0} anc={:.3} anc_pt={} el={:.3} n={} tmin={:.6} tmax={:.6} span={:.4} recent={} wt={} wraps={} phase={} eff={}",
                 label, pkt_idx, utc_tail, anchor.unwrap_or(0.0), anchor_ptime,
-                elapsed, times.len(), t_min, t_max, t_max - t_min, anchor_is_recent, use_wrap_tracking, congestion_wrap_count
+                elapsed, times.len(), t_min, t_max, t_max - t_min, anchor_is_recent, use_wrap_tracking, congestion_wrap_count, phase_correction, corrected_wrap_count
             );
         }
 
