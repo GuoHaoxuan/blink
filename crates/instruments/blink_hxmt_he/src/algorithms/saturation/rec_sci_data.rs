@@ -312,8 +312,12 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
             }
         }
 
-        // Compute median ptime for wrap tracking
-        let median_pt = if anchor.is_some() {
+        // Compute median ptime for wrap tracking.
+        // Only trust the median if enough events pass CRC. Corrupted packets
+        // may have a few random CRC-passing events whose ptimes are garbage;
+        // using such a median would falsely trigger WRAP_INC.
+        const MIN_EVENTS_FOR_MEDIAN: usize = 50;
+        let (median_pt, n_valid_events) = if anchor.is_some() {
             let mut ptimes: Vec<u64> = events
                 .iter()
                 .filter_map(|e| match e {
@@ -321,14 +325,15 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
                     _ => None,
                 })
                 .collect();
+            let n = ptimes.len();
             if ptimes.is_empty() {
-                None
+                (None, 0)
             } else {
                 ptimes.sort_unstable();
-                Some(ptimes[ptimes.len() / 2])
+                (Some(ptimes[ptimes.len() / 2]), n)
             }
         } else {
-            None
+            (None, 0)
         };
 
         // Activate wrap tracking (accumulation) when anchor goes stale.
@@ -353,7 +358,9 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
         // (large positive diff) never occur. A large positive diff at activation
         // time is normal ptime advancement during the recent period when anchor
         // ptime was near 0 — NOT a backward wrap.
-        if wrap_tracking_active && !anchor_is_recent {
+        // Skip corrupted packets (< MIN_EVENTS_FOR_MEDIAN valid events) to
+        // avoid false WRAP_INC from unreliable median ptimes.
+        if wrap_tracking_active && !anchor_is_recent && n_valid_events >= MIN_EVENTS_FOR_MEDIAN {
             if let (Some(med), Some(prev_med)) = (median_pt, prev_median_ptime) {
                 let diff = med as i64 - prev_med as i64;
                 if diff < -(PTIME_MOD as i64 / 2) {
@@ -380,7 +387,8 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
         // During the "recent" period, we KEEP the anchor packet's median
         // so that the first wrap comparison at activation spans all recent
         // packets and catches any wraps that occurred.
-        if wrap_tracking_active || prev_median_ptime.is_none() {
+        // Skip corrupted packets to avoid poisoning the median reference.
+        if (wrap_tracking_active || prev_median_ptime.is_none()) && n_valid_events >= MIN_EVENTS_FOR_MEDIAN {
             if let Some(med) = median_pt {
                 prev_median_ptime = Some(med);
             }
