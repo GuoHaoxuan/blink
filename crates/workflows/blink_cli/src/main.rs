@@ -1,7 +1,8 @@
 use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::algorithms::saturation::{
-    detect_fifo_reset_intervals, diagnose_packets, dump_event_details, dump_ptime_utc,
-    reconstruct_met_times, reconstruct_with_wrap_tracking, scan_saturation_intervals,
+    check_byte_offsets, detect_fifo_reset_intervals, diagnose_packets, dump_event_details,
+    dump_ptime_utc, reconstruct_met_times, reconstruct_with_wrap_tracking,
+    scan_saturation_intervals,
 };
 use blink_hxmt_he::io::level_1b::{
     SciFile, get_eng_filenames, get_sci_filenames, read_stime_offset,
@@ -25,6 +26,7 @@ fn main() {
     let dump_events = args.iter().position(|s| s == "--dump-events");
     let dump_ptime = args.iter().position(|s| s == "--dump-ptime");
     let detect_sat = args.iter().position(|s| s == "--detect-saturation");
+    let check_offset = args.iter().position(|s| s == "--check-offset");
     let box_filter = args.iter().position(|s| s == "--box");
     let filter_box = box_filter.and_then(|pos| args.get(pos + 1).cloned());
 
@@ -413,6 +415,23 @@ fn main() {
                     println!("SEC,{},{:.6}", box_name, t);
                 }
             }
+        }
+    } else if let Some(pos) = check_offset {
+        // --check-offset mode: 对每个包尝试 0~7 字节偏移，检查 CRC 通过率
+        let pkt_min: usize = args
+            .get(pos + 1)
+            .expect("Missing pkt_min after --check-offset")
+            .parse()
+            .expect("pkt_min must be an integer");
+        let pkt_max: usize = args
+            .get(pos + 2)
+            .expect("Missing pkt_max after --check-offset")
+            .parse()
+            .expect("pkt_max must be an integer");
+
+        for (box_name, sci, _offset) in &filtered_boxes {
+            eprintln!("Box {} checking offsets for packets {}..{}", box_name, pkt_min, pkt_max);
+            check_byte_offsets(sci, pkt_min, pkt_max);
         }
     } else {
         // 默认模式: 只输出饱和区间

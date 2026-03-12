@@ -12,3 +12,4 @@ pub use rec_sci_data::scan_saturation_intervals;
 pub use rec_sci_data::scan_saturation_intervals_raw;
 pub use rec_sci_data::{diagnose_packets, PacketDiag};
 pub use rec_sci_data::{dump_event_details, EventDetail};
+pub use rec_sci_data::check_byte_offsets;

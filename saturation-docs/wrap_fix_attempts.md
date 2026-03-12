@@ -203,3 +203,66 @@ let n_wraps = if raw_delta < 0 && (-raw_delta) > HALF_MOD as i64 { 1 } else { 0 
 4. **双锚点回退**：对于 utc_tail 滞后的包（utc_tail == anchor），暂时回退使用上一个锚点来计算，避免 utc_tail - anchor = 0 的问题。
 
 5. **utc_tail 修正**：检测 utc_tail 滞后情况（utc_tail ≈ anchor），将 utc_tail 人为 +1 后再计算。
+
+---
+
+## 最终成功方案 (2026-03-12)
+
+**核心思路**：放弃对 `utc_tail` 绝对值的依赖，改用 SEC 锚点 + 阈值法 + 三遍后处理。
+
+### Pass 1: SEC-anchored 双路径重建
+
+每个事件用最近 SEC 的 `(met, ptime)` 作为锚点。根据 `elapsed = utc_tail - anchor` 选择路径：
+
+#### 正常路径 (elapsed < 1.5×WRAP)
+锚点新鲜，至多 1 次 wrap。用阈值法判定：
+```rust
+if raw_delta < -WRAP_THRESHOLD { raw_delta += PTIME_MOD }
+else if raw_delta > PTIME_MOD - WRAP_THRESHOLD { raw_delta -= PTIME_MOD }
+```
+
+**优势**：不依赖 utc_tail，免疫 utc_tail 滞后。
+
+#### 过期锚路径 (elapsed ≥ 1.5×WRAP)
+FIFO 复位后锚点过期。用 utc_tail 辅助估算 n_wraps，best-of-3 选距 utc_tail 最近的。
+
+**局限**：utc_tail 有偏（反映组装时间），导致部分包高估 +1 wrap。
+
+### Pass 2: fix_wrap_reversals
+
+检测反向跳跃 ≈ -WRAP_PERIOD，用 **gap 判据**区分真假倒退：
+- gap > 0.3s → FIFO 复位后真错位 → 整批下移 -WRAP_PERIOD
+- gap < 0.3s → 纯文件重排假倒退 → 跳过
+
+### Pass 3: fix_wrap_boundary_dips (新增)
+
+修正 ptime 回绕边界处的错位：
+
+**Step 1 — Dip batch 检测**：
+- 扫描正向跳跃 ≈ +WRAP_PERIOD
+- 反向查找被 HIGH 包"夹心"的 LOW 批次
+- 整批上移 +WRAP_PERIOD，同时修正相邻混合包的 LOW 事件
+
+**Step 2 — 混合包修正**：
+- 对 span ≈ WRAP_PERIOD 的包，按邻居层级判定多数/少数簇
+- 将少数簇对齐到多数簇 (±WRAP_PERIOD)
+
+### 验证结果
+
+| GRB | Pass 2 触发 | Pass 3 触发 | 逐秒 Δ% |
+|-----|-----------|-----------|---------|
+| 200415A | 无 | 无 | 0.0% |
+| 221009A | 有 (gap判据跳过) | 无 | 0.0% |
+| 260226A | 无 | 有 (34包) | 0.0% |
+
+**260226A 修正前后对比**：
+- Box A T+19: -5.7% → 0.0%
+- Box B T+21/T+24: -4.7%/-8.9% → 0.0%
+- Box C T+19/T+24: -5.6%/-8.4% → 0.0%
+
+**关键突破**：
+1. 正常路径免疫 utc_tail 滞后
+2. Gap 判据区分 FIFO 复位 vs 文件重排
+3. 三遍后处理分离不同错位模式，避免相互干扰
+
+详见 [time_reconstruction_algorithm.md](time_reconstruction_algorithm.md)。
