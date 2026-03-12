@@ -85,6 +85,45 @@ fn estimate_packet_wraps(
     best_n
 }
 
+/// Like `estimate_packet_wraps`, but allows negative wrap counts.
+///
+/// Used for backward SEC correction where events happen BEFORE the anchor
+/// (fresh SEC), so the wrap count relative to the anchor is negative.
+/// Also returns the confidence margin: how close the best candidate is
+/// to the decision boundary (0.0 = right on boundary, 0.5 = maximum
+/// confidence). Values below ~0.1 indicate ambiguous wrap count.
+#[inline]
+fn estimate_packet_wraps_signed(
+    median_ptime: u64,
+    anchor_ptime: u64,
+    anchor: f64,
+    utc_tail: f64,
+) -> (i64, f64) {
+    let elapsed = utc_tail - anchor;
+    let raw_delta = median_ptime as i64 - anchor_ptime as i64;
+    let n_est = ((elapsed - raw_delta as f64 * 2e-6) / WRAP_PERIOD)
+        .round() as i64; // No .max(0.0) — allow negative
+
+    let mut best_n = n_est;
+    let mut best_err = f64::MAX;
+    let mut second_err = f64::MAX;
+    for n in [n_est - 1, n_est, n_est + 1] {
+        let met = anchor + (raw_delta + n * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
+        let err = (met - MET_CORRECTION - utc_tail).abs();
+        if err < best_err {
+            second_err = best_err;
+            best_err = err;
+            best_n = n;
+        } else if err < second_err {
+            second_err = err;
+        }
+    }
+    // Confidence: how much better the best is vs second-best, normalized
+    // to [0, 0.5]. Near 0 = ambiguous, near 0.5 = certain.
+    let margin = (second_err - best_err) / (2.0 * WRAP_PERIOD);
+    (best_n, margin.min(0.5))
+}
+
 /// SEC-anchored MET computation with multi-wrap support.
 ///
 /// When `force_normal` is true, uses the threshold path (handles ±1 wrap).
@@ -164,6 +203,64 @@ fn compute_met_with_base_wraps(
     anchor + total as f64 * 2e-6 + MET_CORRECTION
 }
 
+/// Compute MET using a "backward" (future) SEC anchor.
+///
+/// After a FIFO reset, the first SEC may be stale (from FIFO contents
+/// before the reset). The second SEC is fresh and correct. Events between
+/// the two SECs are recomputed using the second SEC as anchor.
+///
+/// `approx_met` is the approximate MET from biased estimation, used to
+/// determine the correct wrap count when events span multiple wraps.
+#[inline]
+fn compute_met_backward(
+    ptime: u64,
+    future_anchor_ptime: u64,
+    future_anchor_met: f64,
+    approx_met: f64,
+) -> f64 {
+    let raw_delta = ptime as i64 - future_anchor_ptime as i64;
+    let raw_met = future_anchor_met + raw_delta as f64 * 2e-6 + MET_CORRECTION;
+    // Determine the correct wrap offset using the approximate MET
+    let k = ((raw_met - approx_met) / WRAP_PERIOD).round() as i64;
+    raw_met - k as f64 * WRAP_PERIOD
+}
+
+/// Compute MET using packet-level estimation with +0.5 utc_tail bias.
+///
+/// Fallback for post-FIFO-reset events when no future SEC is available
+/// (e.g., end of data). The +0.5 bias compensates for utc_tail being
+/// floor(event_time), making the target the midpoint of the 1-second
+/// utc_tail bin.
+#[inline]
+fn estimate_packet_wraps_biased(
+    median_ptime: u64,
+    anchor_ptime: u64,
+    anchor: f64,
+    utc_tail: f64,
+) -> i64 {
+    let elapsed = utc_tail + 0.5 - anchor;
+    let raw_delta = median_ptime as i64 - anchor_ptime as i64;
+    let n_est = ((elapsed - raw_delta as f64 * 2e-6) / WRAP_PERIOD)
+        .round()
+        .max(0.0) as i64;
+
+    let target = utc_tail + MET_CORRECTION + 0.5;
+    let mut best_n = n_est;
+    let mut best_err = f64::MAX;
+    for n in [n_est - 1, n_est, n_est + 1] {
+        if n < 0 {
+            continue;
+        }
+        let met = anchor + (raw_delta + n * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
+        let err = (met - target).abs();
+        if err < best_err {
+            best_err = err;
+            best_n = n;
+        }
+    }
+    best_n
+}
+
 /// Floor-based per-event wrap computation (retained for diagnostics only).
 #[inline]
 fn compute_met(ptime: u64, anchor_ptime: u64, anchor: f64, utc_tail: f64) -> f64 {
@@ -232,7 +329,7 @@ pub fn reconstruct_with_wrap_tracking(sci_data: &SciFile, offset: f64) -> Vec<Ve
 }
 
 pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, label: &str) -> Vec<Vec<f64>> {
-    let mut result = Vec::with_capacity(sci_data.ccsds.len());
+    let mut result: Vec<Vec<f64>> = Vec::with_capacity(sci_data.ccsds.len());
     let mut anchor: Option<f64> = None;
     let mut anchor_ptime: u64 = 0;
     let mut anchor_pkt: usize = 0;
@@ -290,6 +387,22 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
     // Prevent wrap tracking from re-activating until a new SEC anchor
     // is established, which properly resets congestion_wrap_count.
     let mut fifo_reset_no_wt = false;
+    // After FIFO reset, the first accepted SEC establishes an anchor that
+    // may be stale (the SEC event was in the FIFO before the reset). Events
+    // computed with this anchor may be ~1 WRAP_PERIOD off. We buffer these
+    // events and recompute them when a fresh SEC arrives (backward approach).
+    // In the meantime, we use +0.5 biased estimation as a reasonable
+    // approximation. The backward SEC replaces it once available.
+    let mut anchor_post_fifo_reset = false;
+    // Buffer of (pkt_idx, evt_idx, ptime, utc_tail) for events awaiting
+    // backward correction from a fresh SEC.
+    struct PendingEvent {
+        pkt_idx: usize,
+        evt_idx: usize,
+        ptime: u64,
+        utc_tail: f64,
+    }
+    let mut fifo_reset_pending: Vec<PendingEvent> = Vec::new();
 
     for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
         let utc_tail = get_utc_tail(ccsds);
@@ -309,6 +422,9 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
             prev_median_ptime = None;
             congestion_wrap_count = 0;
             fifo_reset_no_wt = true;
+            // New FIFO reset cycle — clear any pending buffer and reset.
+            anchor_post_fifo_reset = false;
+            fifo_reset_pending.clear();
             if debug {
                 eprintln!(
                     "UTC_JUMP pkt={} prev_ut={:.0} ut={:.0} jump={:.0} → wrap tracking reset, fifo_reset_no_wt=true",
@@ -407,9 +523,24 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
             && !anchor_is_recent
             && !use_wrap_tracking
             && elapsed_from_anchor >= WRAP_PERIOD * 1.5;
-        let packet_base_wraps = if use_stale_path {
+        let mut packet_base_wraps = if use_stale_path {
             median_pt.map(|med| {
                 estimate_packet_wraps(med, anchor_ptime, anchor.unwrap(), utc_tail)
+            })
+        } else if anchor_post_fifo_reset && anchor.is_some() && !use_wrap_tracking {
+            // Post-FIFO-reset: anchor may be stale by ~1s. The normal
+            // threshold path would give wrong n_wraps. Use +0.5 biased
+            // estimation which targets the midpoint of the utc_tail bin,
+            // compensating for utc_tail being floor(event_time).
+            median_pt.map(|med| {
+                let n = estimate_packet_wraps_biased(med, anchor_ptime, anchor.unwrap(), utc_tail);
+                if debug {
+                    eprintln!(
+                        "POST_RESET_BIAS pkt={} med={} anc_pt={} anc={:.3} ut={:.0} → n_base={}",
+                        pkt_idx, med, anchor_ptime, anchor.unwrap(), utc_tail, n
+                    );
+                }
+                n
             })
         } else {
             None
@@ -464,26 +595,178 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
                                 utc_tail
                             );
                         }
+
+                        // When a SEC arrives after the anchor has gone stale
+                        // (non-recent), the SEC is from new data, not from
+                        // the pre-reset FIFO buffer. Flush pending events
+                        // using this fresh SEC as backward anchor, then clear
+                        // the post-reset flag. Stale SECs arrive in the first
+                        // 1-2 packets (still "recent"), so this only triggers
+                        // for fresh SECs.
+                        if anchor_post_fifo_reset && !anchor_is_recent && !fifo_reset_pending.is_empty() {
+                            let fresh_met = met;
+                            let fresh_ptime = *ptime;
+                            // Group pending events by packet
+                            let mut pkt_groups: std::collections::BTreeMap<usize, Vec<usize>> =
+                                std::collections::BTreeMap::new();
+                            for (i, pe) in fifo_reset_pending.iter().enumerate() {
+                                pkt_groups.entry(pe.pkt_idx).or_default().push(i);
+                            }
+                            // Phase 1: compute backward MET for all packets,
+                            // classify as confident or ambiguous.
+                            const CONFIDENCE_THRESHOLD: f64 = 0.05;
+                            struct PktResult {
+                                n_base: i64,
+                                n_alt: i64, // alternative wrap count
+                                confident: bool,
+                                median: u64,
+                                representative_met: f64, // MET of first event
+                            }
+                            let mut pkt_results: std::collections::BTreeMap<usize, PktResult> =
+                                std::collections::BTreeMap::new();
+                            let mut n_confident = 0usize;
+                            let mut n_ambiguous = 0usize;
+                            for (&pi, indices) in &pkt_groups {
+                                let mut ptimes_v: Vec<u64> = indices.iter()
+                                    .map(|&i| fifo_reset_pending[i].ptime).collect();
+                                ptimes_v.sort_unstable();
+                                let med = ptimes_v[ptimes_v.len() / 2];
+                                let ut = fifo_reset_pending[indices[0]].utc_tail;
+                                let (n_base, margin) = estimate_packet_wraps_signed(
+                                    med, fresh_ptime, fresh_met, ut,
+                                );
+                                let confident = margin > CONFIDENCE_THRESHOLD;
+                                if debug && !confident {
+                                    let raw_d = med as i64 - fresh_ptime as i64;
+                                    let m_base = fresh_met + (raw_d + n_base * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
+                                    eprintln!(
+                                        "  AMBIGUOUS pi={} med={} ut={:.0} n_base={} margin={:.4} met_base={:.3}",
+                                        pi, med, ut, n_base, margin, m_base
+                                    );
+                                }
+                                // Alternative: shift by ±1 (toward the ambiguous side)
+                                let n_alt = if margin <= CONFIDENCE_THRESHOLD {
+                                    // Determine which direction is ambiguous
+                                    let raw_delta = med as i64 - fresh_ptime as i64;
+                                    let best_met = fresh_met + (raw_delta + n_base * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
+                                    let target = ut;
+                                    if best_met - MET_CORRECTION > target {
+                                        n_base - 1 // try lower
+                                    } else {
+                                        n_base + 1 // try higher
+                                    }
+                                } else {
+                                    n_base
+                                };
+                                // Use median ptime for representative MET (consistent with n_base)
+                                let raw_delta_med = med as i64 - fresh_ptime as i64;
+                                let repr_met = fresh_met + (raw_delta_med + n_base * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
+                                if confident { n_confident += 1; } else { n_ambiguous += 1; }
+                                pkt_results.insert(pi, PktResult {
+                                    n_base, n_alt, confident, median: med,
+                                    representative_met: repr_met,
+                                });
+                            }
+                            if debug {
+                                eprintln!(
+                                    "BACKWARD_FLUSH pkt={} total={} confident={} ambiguous={} fresh_met={} fresh_pt={}",
+                                    pkt_idx, fifo_reset_pending.len(), n_confident, n_ambiguous, fresh_met, fresh_ptime
+                                );
+                            }
+                            // Phase 2: resolve ambiguous packets using
+                            // cross-reference ("前后对照") between the biased
+                            // forward estimate (stale anchor) and the backward
+                            // estimate (fresh anchor). Since the two anchors
+                            // have different wrap boundaries (different ptime),
+                            // events ambiguous for one are often unambiguous
+                            // for the other.
+                            for (&pi, pr) in pkt_results.iter_mut() {
+                                if pr.confident {
+                                    continue;
+                                }
+                                let indices = &pkt_groups[&pi];
+                                // Get the existing biased MET (computed from stale anchor)
+                                let biased_met = if indices[0] < fifo_reset_pending.len() {
+                                    let pe = &fifo_reset_pending[indices[0]];
+                                    if pe.pkt_idx == pkt_idx {
+                                        times[pe.evt_idx]
+                                    } else {
+                                        result[pe.pkt_idx][pe.evt_idx]
+                                    }
+                                } else {
+                                    continue;
+                                };
+                                // Compute backward MET for both options
+                                let raw_delta = pr.median as i64 - fresh_ptime as i64;
+                                let met_base = fresh_met + (raw_delta + pr.n_base * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
+                                let met_alt = fresh_met + (raw_delta + pr.n_alt * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
+                                // Pick the backward option closest to the biased estimate
+                                let err_base = (met_base - biased_met).abs();
+                                let err_alt = (met_alt - biased_met).abs();
+                                if err_alt < err_base {
+                                    if debug {
+                                        eprintln!(
+                                            "  CROSSREF pi={} n_base={} → n_alt={} (biased={:.3} base={:.3} alt={:.3} err_b={:.3} err_a={:.3})",
+                                            pi, pr.n_base, pr.n_alt,
+                                            biased_met, met_base, met_alt,
+                                            err_base, err_alt,
+                                        );
+                                    }
+                                    pr.n_base = pr.n_alt;
+                                } else if debug {
+                                    eprintln!(
+                                        "  CROSSREF_KEEP pi={} n_base={} (biased={:.3} base={:.3} alt={:.3} err_b={:.3} err_a={:.3})",
+                                        pi, pr.n_base,
+                                        biased_met, met_base, met_alt,
+                                        err_base, err_alt,
+                                    );
+                                }
+                            }
+                            // Phase 3: apply corrections
+                            for (&pi, pr) in &pkt_results {
+                                let indices = &pkt_groups[&pi];
+                                for &idx in indices {
+                                    let pe = &fifo_reset_pending[idx];
+                                    let corrected = compute_met_with_base_wraps(
+                                        pe.ptime, fresh_ptime, fresh_met, pr.n_base, pr.median,
+                                    );
+                                    if pe.pkt_idx == pkt_idx {
+                                        times[pe.evt_idx] = corrected;
+                                    } else {
+                                        result[pe.pkt_idx][pe.evt_idx] = corrected;
+                                    }
+                                }
+                            }
+                            fifo_reset_pending.clear();
+                            anchor_post_fifo_reset = false;
+                        } else if anchor_post_fifo_reset && !anchor_is_recent {
+                            // Fresh SEC but no pending events — just clear
+                            anchor_post_fifo_reset = false;
+                        }
+
                         anchor = Some(met);
                         anchor_ptime = *ptime;
                         anchor_pkt = pkt_idx;
                         last_accepted_stime = Some(*stime);
                         anchor_is_recent = true;
-                        // Reset wrap tracking for new anchor.
-                        // Set prev_median_ptime to this packet's median so that
-                        // when wrap tracking activates (ANCHOR_RECENT_PKT_LIMIT
-                        // packets later), the first median comparison spans ALL
-                        // recent packets, correctly catching any wraps.
                         congestion_wrap_count = 0;
                         wrap_tracking_active = false;
+                        // After FIFO reset, mark anchor as potentially stale.
+                        // The flag stays set until a non-recent SEC arrives
+                        // (which indicates a fresh SEC after the stale ones).
+                        if fifo_reset_no_wt {
+                            anchor_post_fifo_reset = true;
+                        }
                         fifo_reset_no_wt = false;
                         if let Some(med) = median_pt {
                             prev_median_ptime = Some(med);
                             anchor_median_ptime = Some(med);
                         }
+                        packet_base_wraps = None;
                     }
 
                     if let Some(anc) = anchor {
+                        let evt_idx = times.len();
                         if use_wrap_tracking && !anchor_is_recent {
                             if let Some(med) = median_pt {
                                 times.push(compute_met_with_base_wraps(
@@ -507,10 +790,17 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
                                 anchor_is_recent,
                             ));
                         }
+                        // Buffer for backward correction from future fresh SEC
+                        if anchor_post_fifo_reset {
+                            fifo_reset_pending.push(PendingEvent {
+                                pkt_idx, evt_idx, ptime: *ptime, utc_tail,
+                            });
+                        }
                     }
                 }
                 Pack::Event { ptime, .. } => {
                     if let Some(anc) = anchor {
+                        let evt_idx = times.len();
                         if use_wrap_tracking && !anchor_is_recent {
                             if let Some(med) = median_pt {
                                 times.push(compute_met_with_base_wraps(
@@ -535,6 +825,12 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
                             );
                             times.push(met);
                         }
+                        // Buffer for backward correction from future fresh SEC
+                        if anchor_post_fifo_reset {
+                            fifo_reset_pending.push(PendingEvent {
+                                pkt_idx, evt_idx, ptime: *ptime, utc_tail,
+                            });
+                        }
                     }
                 }
                 Pack::Error => {}
@@ -553,6 +849,18 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
 
         prev_utc_tail = utc_tail;
         result.push(times);
+    }
+
+    // Remaining pending events have no future fresh SEC — keep their
+    // biased estimation times (the best we can do without a backward anchor).
+    if !fifo_reset_pending.is_empty() {
+        if debug {
+            eprintln!(
+                "POST_RESET_FALLBACK: {} events have no backward SEC, keeping biased estimation",
+                fifo_reset_pending.len()
+            );
+        }
+        fifo_reset_pending.clear();
     }
 
     // ── Pass 2: Fix FIFO-reset time reversals ──
