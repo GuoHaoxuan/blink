@@ -1,8 +1,9 @@
 use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::algorithms::saturation::{
     check_byte_offsets, detect_fifo_reset_intervals, diagnose_packets, dump_event_details,
-    dump_ptime_utc, reconstruct_met_times, reconstruct_with_wrap_tracking, reconstruct_with_wrap_tracking_labeled,
-    scan_saturation_intervals,
+    dump_ptime_utc, extract_packet_infos, reconstruct_gaps, reconstruct_met_times,
+    reconstruct_with_wrap_tracking, reconstruct_with_wrap_tracking_labeled,
+    scan_saturation_intervals, BoxReconstructionData,
 };
 use blink_hxmt_he::io::level_1b::{
     SciFile, get_eng_filenames, get_sci_filenames, read_stime_offset,
@@ -26,6 +27,7 @@ fn main() {
     let dump_events = args.iter().position(|s| s == "--dump-events");
     let dump_ptime = args.iter().position(|s| s == "--dump-ptime");
     let detect_sat = args.iter().position(|s| s == "--detect-saturation");
+    let reconstruct = args.iter().position(|s| s == "--reconstruct");
     let check_offset = args.iter().position(|s| s == "--check-offset");
     let box_filter = args.iter().position(|s| s == "--box");
     let filter_box = box_filter.and_then(|pos| args.get(pos + 1).cloned());
@@ -84,6 +86,127 @@ fn main() {
                     iv.gap_seconds,
                     iv.prev_pkt_idx,
                     iv.next_pkt_idx,
+                );
+            }
+        }
+    } else if let Some(pos) = reconstruct {
+        // --reconstruct <center_met> <half_window> [bin_width]
+        // 输出: box,bin_center,observed,reconstructed,filled
+        let center_met: f64 = args
+            .get(pos + 1)
+            .expect("Missing center_met after --reconstruct")
+            .parse()
+            .expect("center_met must be a float");
+        let half_window: f64 = args
+            .get(pos + 2)
+            .expect("Missing half_window after --reconstruct")
+            .parse()
+            .expect("half_window must be a float");
+        let bin_width: f64 = args
+            .get(pos + 3)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1.0);
+
+        let met_min = center_met - half_window;
+        let met_max = center_met + half_window;
+
+        // 步骤一：为所有 box 准备重建数据
+        eprintln!("Preparing reconstruction data...");
+        let mut box_data: Vec<(String, BoxReconstructionData)> = Vec::new();
+        for (box_name, sci, offset) in &boxes {
+            let events = reconstruct_met_times(sci, *offset);
+            let gaps = detect_fifo_reset_intervals(sci, *offset);
+            let packets = extract_packet_infos(sci, *offset);
+            eprintln!(
+                "  Box {}: {} events, {} gaps, {} packets",
+                box_name,
+                events.len(),
+                gaps.len(),
+                packets.len()
+            );
+            box_data.push((
+                box_name.clone(),
+                BoxReconstructionData {
+                    events,
+                    gaps,
+                    packets,
+                },
+            ));
+        }
+
+        // 步骤二：对每个 box 做重建（用其他 box 作为参考）
+        eprintln!("Reconstructing gaps...");
+        let mut all_filled: Vec<(String, Vec<f64>)> = Vec::new();
+        for i in 0..box_data.len() {
+            let refs: Vec<&BoxReconstructionData> = box_data
+                .iter()
+                .enumerate()
+                .filter(|&(j, _)| j != i)
+                .map(|(_, (_, d))| d)
+                .collect();
+            let results = reconstruct_gaps(&box_data[i].1, &refs);
+            let n_filled: usize = results.iter().map(|r| r.n_lost).sum();
+            let n_with_ref = results.iter().filter(|r| r.has_cross_ref).count();
+            eprintln!(
+                "  Box {}: {} gaps reconstructed, {} events filled ({} with cross-ref)",
+                box_data[i].0,
+                results.len(),
+                n_filled,
+                n_with_ref
+            );
+            let mut filled: Vec<f64> = results
+                .into_iter()
+                .flat_map(|r| r.filled_events)
+                .collect();
+            filled.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            all_filled.push((box_data[i].0.clone(), filled));
+        }
+
+        // 步骤三：输出 binned 光变曲线
+        println!("box,bin_center,observed,reconstructed,filled");
+        let bins: Vec<f64> = {
+            let mut v = Vec::new();
+            let mut t = met_min;
+            while t < met_max {
+                v.push(t);
+                t += bin_width;
+            }
+            v.push(met_max);
+            v
+        };
+
+        for (box_name, data) in &box_data {
+            let obs_events = &data.events;
+            let filled_events = all_filled
+                .iter()
+                .find(|(n, _)| n == box_name)
+                .map(|(_, f)| f.as_slice())
+                .unwrap_or(&[]);
+
+            // 如果指定了 --box，只输出该 box
+            if let Some(ref fb) = filter_box {
+                if box_name != fb {
+                    continue;
+                }
+            }
+
+            for w in bins.windows(2) {
+                let bin_lo = w[0];
+                let bin_hi = w[1];
+                let bin_center = (bin_lo + bin_hi) / 2.0;
+
+                let n_obs = obs_events.partition_point(|&t| t < bin_hi)
+                    - obs_events.partition_point(|&t| t < bin_lo);
+                let n_filled = filled_events.partition_point(|&t| t < bin_hi)
+                    - filled_events.partition_point(|&t| t < bin_lo);
+
+                let rate_obs = n_obs as f64 / bin_width;
+                let rate_total = (n_obs + n_filled) as f64 / bin_width;
+                let rate_filled = n_filled as f64 / bin_width;
+
+                println!(
+                    "{},{:.6},{:.1},{:.1},{:.1}",
+                    box_name, bin_center, rate_obs, rate_total, rate_filled,
                 );
             }
         }

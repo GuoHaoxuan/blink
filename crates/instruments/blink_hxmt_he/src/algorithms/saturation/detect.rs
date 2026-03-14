@@ -137,3 +137,267 @@ pub fn detect_fifo_reset_intervals(sci_data: &SciFile, offset: f64) -> Vec<Satur
 
     intervals
 }
+
+/// 每个包的时间摘要（公开版本，用于重建）
+#[derive(Debug, Clone)]
+pub struct PacketInfo {
+    pub pkt_idx: usize,
+    pub min_met: f64,
+    pub max_met: f64,
+    pub n_events: usize,
+}
+
+impl PacketInfo {
+    pub fn span(&self) -> f64 {
+        self.max_met - self.min_met
+    }
+}
+
+/// 从 SciFile 提取包时间摘要列表（按 min_met 排序）
+pub fn extract_packet_infos(sci_data: &SciFile, offset: f64) -> Vec<PacketInfo> {
+    let packet_times = reconstruct_with_wrap_tracking(sci_data, offset);
+    let mut infos: Vec<PacketInfo> = packet_times
+        .iter()
+        .enumerate()
+        .filter_map(|(pkt_idx, times)| {
+            if times.is_empty() {
+                return None;
+            }
+            let min_met = times.iter().cloned().reduce(f64::min).unwrap();
+            let max_met = times.iter().cloned().reduce(f64::max).unwrap();
+            Some(PacketInfo {
+                pkt_idx,
+                min_met,
+                max_met,
+                n_events: times.len(),
+            })
+        })
+        .collect();
+    infos.sort_by(|a, b| a.min_met.partial_cmp(&b.min_met).unwrap());
+    infos
+}
+
+/// 单个 box 的饱和重建数据
+#[derive(Debug)]
+pub struct BoxReconstructionData {
+    /// 原始事件 MET 时间（已排序）
+    pub events: Vec<f64>,
+    /// FIFO reset 区间
+    pub gaps: Vec<SaturationInterval>,
+    /// 包信息
+    pub packets: Vec<PacketInfo>,
+}
+
+/// 重建后的补全事件
+#[derive(Debug, Clone)]
+pub struct ReconstructedGap {
+    /// 对应的 gap 索引
+    pub gap_idx: usize,
+    /// 补全的事件 MET 时间
+    pub filled_events: Vec<f64>,
+    /// 估算的 R_true
+    pub r_true: f64,
+    /// N_lost
+    pub n_lost: usize,
+    /// 是否使用了交叉参考
+    pub has_cross_ref: bool,
+}
+
+const EVENTS_PER_PKT: f64 = 109.0;
+const SHAPE_BIN_WIDTH: f64 = 0.001; // 1ms
+
+/// 对单个 box 的 FIFO reset gap 进行光变曲线重建。
+///
+/// 算法：
+/// 1. 对每个 gap，用 post-reset 包 span 估算 R_true
+/// 2. N_lost = R_true × gap_duration
+/// 3. 用参考 box 的事件分布构建形状函数
+/// 4. 归一化到 N_lost 后分配事件
+pub fn reconstruct_gaps(
+    target: &BoxReconstructionData,
+    references: &[&BoxReconstructionData],
+) -> Vec<ReconstructedGap> {
+    let mut results = Vec::new();
+
+    for (gap_idx, gap) in target.gaps.iter().enumerate() {
+        let gap_start = gap.start_met;
+        let gap_stop = gap.stop_met;
+        let gap_dur = gap_stop - gap_start;
+        if gap_dur <= 0.0 {
+            continue;
+        }
+
+        // 步骤一：估算 R_true（从 post-reset 包的 span）
+        let r_true = estimate_r_true_for_gap(gap, &target.packets);
+        let n_lost = (r_true * gap_dur).round() as usize;
+        if n_lost == 0 {
+            continue;
+        }
+
+        // 步骤二：构建形状 bin
+        let n_sbins = ((gap_dur / SHAPE_BIN_WIDTH).ceil() as usize).max(1);
+        let actual_sbin = gap_dur / n_sbins as f64;
+        let mut shape = vec![0.0f64; n_sbins];
+
+        // 用参考 box 填充形状
+        let mut has_ref = false;
+        for ref_data in references {
+            // 参考 box 在 gap 内的事件
+            let ref_start = ref_data
+                .events
+                .partition_point(|&t| t < gap_start);
+            let ref_end = ref_data
+                .events
+                .partition_point(|&t| t <= gap_stop);
+            let ref_in_gap = &ref_data.events[ref_start..ref_end];
+            if ref_in_gap.len() < 5 {
+                continue;
+            }
+
+            // 标定比例因子 k = target_rate / ref_rate（gap 前后 0.5s）
+            let k = calibrate_ratio_sorted(
+                &target.events, &ref_data.events, gap_start, gap_stop, 0.5,
+            );
+
+            // 填充形状函数（只填参考 box 未饱和的 bin）
+            for (si, s) in shape.iter_mut().enumerate() {
+                if *s > 0.0 {
+                    continue; // 已被其他参考填充
+                }
+                let bin_lo = gap_start + si as f64 * actual_sbin;
+                let bin_hi = bin_lo + actual_sbin;
+                let bin_mid = (bin_lo + bin_hi) / 2.0;
+
+                // 检查参考 box 在此处是否饱和
+                if is_in_any_gap(bin_mid, &ref_data.gaps) {
+                    continue;
+                }
+
+                // 计算参考 box 在此 bin 内的事件数
+                let lo_idx = ref_data.events.partition_point(|&t| t < bin_lo);
+                let hi_idx = ref_data.events.partition_point(|&t| t < bin_hi);
+                let count = (hi_idx - lo_idx) as f64;
+                *s = count * k;
+                has_ref = true;
+            }
+        }
+
+        // 对空 bin 做线性插值
+        interpolate_empty_bins(&mut shape);
+
+        // 如果完全没有参考，均匀分配
+        if shape.iter().all(|&v| v <= 0.0) {
+            shape.iter_mut().for_each(|v| *v = 1.0);
+        }
+
+        // 步骤三：归一化到 N_lost 并分配事件
+        let total: f64 = shape.iter().sum();
+        if total <= 0.0 {
+            continue;
+        }
+
+        let mut filled_events = Vec::with_capacity(n_lost);
+        for (si, &s) in shape.iter().enumerate() {
+            let n_in_bin = (s / total * n_lost as f64).round() as usize;
+            if n_in_bin > 0 {
+                let bin_lo = gap_start + si as f64 * actual_sbin;
+                let bin_hi = bin_lo + actual_sbin;
+                let step = (bin_hi - bin_lo) / n_in_bin as f64;
+                for j in 0..n_in_bin {
+                    filled_events.push(bin_lo + (j as f64 + 0.5) * step);
+                }
+            }
+        }
+
+        results.push(ReconstructedGap {
+            gap_idx,
+            filled_events,
+            r_true,
+            n_lost,
+            has_cross_ref: has_ref,
+        });
+    }
+
+    results
+}
+
+fn estimate_r_true_for_gap(gap: &SaturationInterval, packets: &[PacketInfo]) -> f64 {
+    // 优先用 post-reset 包
+    if let Some(info) = packets.iter().find(|p| p.pkt_idx == gap.next_pkt_idx) {
+        let span = info.span();
+        if span > 1e-9 {
+            return EVENTS_PER_PKT / span;
+        }
+    }
+    // fallback: pre-reset 包
+    if let Some(info) = packets.iter().find(|p| p.pkt_idx == gap.prev_pkt_idx) {
+        let span = info.span();
+        if span > 1e-9 {
+            return EVENTS_PER_PKT / span;
+        }
+    }
+    15797.0
+}
+
+fn calibrate_ratio_sorted(
+    target_events: &[f64],
+    ref_events: &[f64],
+    gap_start: f64,
+    gap_stop: f64,
+    margin: f64,
+) -> f64 {
+    let count_in_range = |events: &[f64], lo: f64, hi: f64| -> usize {
+        let a = events.partition_point(|&t| t < lo);
+        let b = events.partition_point(|&t| t < hi);
+        b - a
+    };
+    let n_target = count_in_range(target_events, gap_start - margin, gap_start)
+        + count_in_range(target_events, gap_stop, gap_stop + margin);
+    let n_ref = count_in_range(ref_events, gap_start - margin, gap_start)
+        + count_in_range(ref_events, gap_stop, gap_stop + margin);
+    if n_ref > 10 {
+        n_target as f64 / n_ref as f64
+    } else {
+        1.0
+    }
+}
+
+fn is_in_any_gap(t: f64, gaps: &[SaturationInterval]) -> bool {
+    // 线性搜索（gap 数量通常在千量级，可接受）
+    gaps.iter().any(|g| t >= g.start_met && t <= g.stop_met)
+}
+
+fn interpolate_empty_bins(shape: &mut [f64]) {
+    let n = shape.len();
+    if n == 0 {
+        return;
+    }
+    // 找有值的 bin
+    let filled: Vec<(usize, f64)> = shape
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| **v > 0.0)
+        .map(|(i, v)| (i, *v))
+        .collect();
+    if filled.is_empty() || filled.len() == n {
+        return;
+    }
+    // 线性插值
+    for i in 0..n {
+        if shape[i] > 0.0 {
+            continue;
+        }
+        // 找左右最近的有值 bin
+        let left = filled.iter().rev().find(|&&(idx, _)| idx < i);
+        let right = filled.iter().find(|&&(idx, _)| idx > i);
+        shape[i] = match (left, right) {
+            (Some(&(li, lv)), Some(&(ri, rv))) => {
+                let frac = (i - li) as f64 / (ri - li) as f64;
+                lv + frac * (rv - lv)
+            }
+            (Some(&(_, lv)), None) => lv,
+            (None, Some(&(_, rv))) => rv,
+            (None, None) => 1.0,
+        };
+    }
+}

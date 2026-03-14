@@ -3,7 +3,10 @@ pub mod detect;
 pub mod rec_sci_data;
 
 pub use crc_check::crc_check;
-pub use detect::{detect_fifo_reset_intervals, SaturationInterval, SaturationType};
+pub use detect::{
+    detect_fifo_reset_intervals, extract_packet_infos, reconstruct_gaps, BoxReconstructionData,
+    PacketInfo, ReconstructedGap, SaturationInterval, SaturationType,
+};
 pub use rec_sci_data::dump_ptime_utc;
 pub use rec_sci_data::extract_second_event_times;
 pub use rec_sci_data::reconstruct_met_times;
