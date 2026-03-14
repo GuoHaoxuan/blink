@@ -91,11 +91,14 @@ for box in ["A", "B", "C"]:
         pkt_stats.append((pkt_idx, n, span, rate, intervals))
 
         if rate > MCU_READ_RATE:
-            lam = rate
+            # Use filtered intervals (< 1ms) for robust lambda estimate,
+            # so large gaps don't drag down the rate and cause missed detections
+            ivs_filt = intervals[intervals < 1e-3]
+            lam = 1.0 / np.mean(ivs_filt) if len(ivs_filt) > 0 else rate
             for j, dt in enumerate(intervals):
                 log_p = -lam * dt
                 if log_p < -23.0:  # p < 1e-10
-                    suspicious.append((pkt_idx, j, dt, rate, log_p))
+                    suspicious.append((pkt_idx, j, dt, lam, log_p))
 
     print(f"\n=== Box {box} ===")
     print(f"  Total packets: {len(pkt_stats)}")

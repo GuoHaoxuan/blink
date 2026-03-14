@@ -107,25 +107,27 @@ def fetch_events(center, half_window, box):
 # ── 绘图辅助 ────────────────────────────────────────────────────────────────
 
 def draw_panel(ax, packets, events, center, xlim, box, susp_idx,
-               gap_start, gap_stop, zoom=False):
+               gaps, zoom=False):
+    """gaps: list of (gap_start, gap_stop) tuples"""
     c = colors[box]
     lw_norm = 5 if zoom else 3
     lw_susp = 8 if zoom else 5
     tick_sz = 10 if zoom else 5
     label_fs = 6 if zoom else 5
 
-    g0 = gap_start - center
-    g1 = gap_stop  - center
-    ax.axvspan(max(g0, xlim[0]), min(g1, xlim[1]),
-               color="red", alpha=0.15, zorder=0)
-    ax.axvline(g0, color="red", lw=0.9, ls="--", alpha=0.7, zorder=1)
-    ax.axvline(g1, color="red", lw=0.9, ls="--", alpha=0.7, zorder=1)
-    dt_us = (gap_stop - gap_start) * 1e6
-    mid = (g0 + g1) / 2
-    if xlim[0] < mid < xlim[1]:
-        ax.text(mid, 0.10, f"{dt_us:.0f} μs",
-                ha="center", va="bottom", fontsize=9,
-                color="red", fontweight="bold")
+    for gap_start, gap_stop in gaps:
+        g0 = gap_start - center
+        g1 = gap_stop  - center
+        ax.axvspan(max(g0, xlim[0]), min(g1, xlim[1]),
+                   color="red", alpha=0.15, zorder=0)
+        ax.axvline(g0, color="red", lw=0.9, ls="--", alpha=0.7, zorder=1)
+        ax.axvline(g1, color="red", lw=0.9, ls="--", alpha=0.7, zorder=1)
+        dt_us = (gap_stop - gap_start) * 1e6
+        mid = (g0 + g1) / 2
+        if xlim[0] < mid < xlim[1]:
+            ax.text(mid, 0.10, f"{dt_us:.0f} μs",
+                    ha="center", va="bottom", fontsize=9,
+                    color="red", fontweight="bold")
 
     rendered_pkts: set[int] = set()
     for idx, t0_abs, t1_abs, n in packets:
@@ -165,11 +167,12 @@ def draw_panel(ax, packets, events, center, xlim, box, susp_idx,
                 markersize=tick_sz, markeredgewidth=1.2,
                 alpha=0.8, zorder=4)
 
-    for met in (gap_start, gap_stop):
-        x = met - center
-        if xlim[0] <= x <= xlim[1]:
-            ax.plot(x, -0.24, "v", color="red",
-                    markersize=8 if zoom else 5, zorder=5)
+    for gap_start, gap_stop in gaps:
+        for met in (gap_start, gap_stop):
+            x = met - center
+            if xlim[0] <= x <= xlim[1]:
+                ax.plot(x, -0.24, "v", color="red",
+                        markersize=8 if zoom else 5, zorder=5)
 
     ax.set_xlim(*xlim)
     ax.set_ylim(-0.38, 0.42)
@@ -177,14 +180,27 @@ def draw_panel(ax, packets, events, center, xlim, box, susp_idx,
     ax.grid(axis="x", alpha=0.3)
 
 
+# ── 按 (box, pkt_idx) 分组 ────────────────────────────────────────────────────
+
+from collections import OrderedDict
+
+grouped: OrderedDict[tuple[str, int], list[tuple[int, float]]] = OrderedDict()
+for box, pkt_idx, gap_evt_idx, dt_us_expect in suspects:
+    key = (box, pkt_idx)
+    if key not in grouped:
+        grouped[key] = []
+    grouped[key].append((gap_evt_idx, dt_us_expect))
+
+print(f"{len(suspects)} suspects → {len(grouped)} unique packets")
+
 # ── 主循环 ──────────────────────────────────────────────────────────────────
 
-for si, (box, pkt_idx, gap_evt_idx, dt_us_expect) in enumerate(suspects):
+for gi, ((box, pkt_idx), gap_list) in enumerate(grouped.items()):
 
     pkts_all = fetch_packets(SEARCH_CENTER, 1800, box)
     info = next((r for r in pkts_all if r[0] == pkt_idx), None)
     if info is None:
-        print(f"[{si+1}] Box {box} pkt {pkt_idx}: not found, skip")
+        print(f"[{gi+1}] Box {box} pkt {pkt_idx}: not found, skip")
         continue
     _, pkt_min, pkt_max, _ = info
     center = (pkt_min + pkt_max) / 2
@@ -194,21 +210,27 @@ for si, (box, pkt_idx, gap_evt_idx, dt_us_expect) in enumerate(suspects):
 
     susp_evts = sorted(met for pid, met in events if pid == pkt_idx)
     if len(susp_evts) < 2:
-        print(f"[{si+1}] Box {box} pkt {pkt_idx}: too few events, skip")
+        print(f"[{gi+1}] Box {box} pkt {pkt_idx}: too few events, skip")
         continue
-
-    gap_i = min(gap_evt_idx, len(susp_evts) - 2)
-    gap_start = susp_evts[gap_i]
-    gap_stop  = susp_evts[gap_i + 1]
-    dt_us_actual = (gap_stop - gap_start) * 1e6
 
     normal_ivs = np.diff(susp_evts)
     normal_ivs_filt = normal_ivs[normal_ivs < 1e-3]
     lam = 1.0 / np.mean(normal_ivs_filt) if len(normal_ivs_filt) > 0 else 1.0
-    log_p = -lam * (gap_stop - gap_start) / np.log(10)
 
-    print(f"[{si+1}/{len(suspects)}] Box {box} pkt={pkt_idx}  "
-          f"gap_evt={gap_evt_idx}  dt={dt_us_actual:.1f}μs  log10p={log_p:.1f}")
+    # Build all gaps for this packet
+    gaps = []
+    gap_descs = []
+    for gap_evt_idx, _ in gap_list:
+        gap_i = min(gap_evt_idx, len(susp_evts) - 2)
+        gap_start = susp_evts[gap_i]
+        gap_stop  = susp_evts[gap_i + 1]
+        dt_us_actual = (gap_stop - gap_start) * 1e6
+        log_p = -lam * (gap_stop - gap_start) / np.log(10)
+        gaps.append((gap_start, gap_stop))
+        gap_descs.append(f"evt[{gap_i}→{gap_i+1}] {dt_us_actual:.0f}μs p={log_p:.1f}")
+
+    desc_str = ", ".join(gap_descs)
+    print(f"[{gi+1}/{len(grouped)}] Box {box} pkt={pkt_idx}  {len(gaps)} gap(s): {desc_str}")
 
     fig, axes = plt.subplots(
         3, 1, figsize=(16, 10),
@@ -218,7 +240,7 @@ for si, (box, pkt_idx, gap_evt_idx, dt_us_expect) in enumerate(suspects):
     half_ov = 0.100
     draw_panel(axes[0], packets, events, center,
                (-half_ov, half_ov), box, pkt_idx,
-               gap_start, gap_stop, zoom=False)
+               gaps, zoom=False)
     axes[0].set_xlabel(f"Time − {center:.3f}  (s)")
     axes[0].set_title("Overview  ±100 ms")
 
@@ -226,7 +248,7 @@ for si, (box, pkt_idx, gap_evt_idx, dt_us_expect) in enumerate(suspects):
     half_zm  = pkt_span / 2 + 0.003
     draw_panel(axes[1], packets, events, center,
                (-half_zm, half_zm), box, pkt_idx,
-               gap_start, gap_stop, zoom=True)
+               gaps, zoom=True)
     axes[1].set_xlabel(f"Time − {center:.3f}  (s)")
     axes[1].set_title(f"Zoom  ±{half_zm*1e3:.1f} ms  (event ticks visible)")
 
@@ -261,14 +283,14 @@ for si, (box, pkt_idx, gap_evt_idx, dt_us_expect) in enumerate(suspects):
     )
     ax3.grid(axis="y", alpha=0.3)
 
+    title_gaps = "  |  ".join(gap_descs)
     fig.suptitle(
-        f"#{si+1}  Box {box}  pkt {pkt_idx}  —  Silent Drop suspect  ({cfg['label']})\n"
-        f"gap between evt[{gap_i}] and evt[{gap_i+1}]:  "
-        f"{dt_us_actual:.0f} μs,  log₁₀p = {log_p:.1f}",
-        fontsize=12, fontweight="bold",
+        f"#{gi+1}  Box {box}  pkt {pkt_idx}  —  Silent Drop suspect  ({cfg['label']})\n"
+        f"{len(gaps)} gap(s): {title_gaps}",
+        fontsize=11, fontweight="bold",
     )
     plt.tight_layout()
-    fname = f"{out_dir}/sd_{si+1:02d}_box{box}_pkt{pkt_idx}.png"
+    fname = f"{out_dir}/sd_{gi+1:02d}_box{box}_pkt{pkt_idx}.png"
     plt.savefig(fname, dpi=150)
     plt.close()
     print(f"  → {fname}")

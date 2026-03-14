@@ -117,7 +117,7 @@ def parse_events(text, target_box):
 for i, sat in enumerate(sat_intervals):
     center = (sat["start"] + sat["stop"]) / 2
     gap_ms = sat["gap_s"] * 1000
-    half_window = min(max(sat["gap_s"] * 8, 0.05), 2.0)
+    half_window = min(max(sat["gap_s"] * 10, 0.06), 2.5)
 
     print(
         f"[{i + 1}/{len(sat_intervals)}] Box {sat['box']} gap={gap_ms:.1f}ms center={center:.3f} window=±{half_window:.3f}s"
@@ -149,7 +149,8 @@ for i, sat in enumerate(sat_intervals):
         for s in all_sat_intervals
         if s["box"] == sat["box"]
         and s is not sat
-        and abs((s["start"] + s["stop"]) / 2 - center) < half_window
+        and s["stop"] > center - half_window
+        and s["start"] < center + half_window
     ]
 
     for ax_idx, (xlim_factor, subtitle) in enumerate(
