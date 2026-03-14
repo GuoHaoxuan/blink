@@ -99,17 +99,20 @@ fn estimate_packet_wraps_signed(
     anchor: f64,
     utc_tail: f64,
 ) -> (i64, f64) {
-    let elapsed = utc_tail - anchor;
+    // Use +0.5 bias: utc_tail = floor(onboard_time), so midpoint of the
+    // bin (utc_tail + 0.5) is a better estimate than the floor.
+    let elapsed = utc_tail + 0.5 - anchor;
     let raw_delta = median_ptime as i64 - anchor_ptime as i64;
     let n_est = ((elapsed - raw_delta as f64 * 2e-6) / WRAP_PERIOD)
         .round() as i64; // No .max(0.0) — allow negative
 
+    let target = utc_tail + MET_CORRECTION + 0.5;
     let mut best_n = n_est;
     let mut best_err = f64::MAX;
     let mut second_err = f64::MAX;
     for n in [n_est - 1, n_est, n_est + 1] {
         let met = anchor + (raw_delta + n * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-        let err = (met - MET_CORRECTION - utc_tail).abs();
+        let err = (met - target).abs();
         if err < best_err {
             second_err = best_err;
             best_err = err;
@@ -403,6 +406,25 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
         utc_tail: f64,
     }
     let mut fifo_reset_pending: Vec<PendingEvent> = Vec::new();
+    // When wrap tracking activates during FIFO reset recovery, record
+    // the starting packet. The backward flush will later compute the
+    // correct total wraps from the two SEC anchors (stale + fresh)
+    // and retroactively fix wrap tracking events.
+    let mut wrap_tracking_fifo_reset_start: Option<usize> = None;
+
+    // When a second UTC_JUMP occurs before the backward flush for the
+    // first has fired, we save the first cycle's state here instead
+    // of dropping it. The backward flush processes all stale batches
+    // when a fresh SEC finally arrives.
+    struct StaleBatch {
+        pending_events: Vec<PendingEvent>,
+        wt_start: Option<usize>,
+        wt_end_pkt: usize,
+        cwc_at_end: i64,
+        anchor_met: f64,
+        anchor_ptime: u64,
+    }
+    let mut stale_batches: Vec<StaleBatch> = Vec::new();
 
     for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
         let utc_tail = get_utc_tail(ccsds);
@@ -418,13 +440,38 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
         // from the congestion period is invalid. Fall back to stale path.
         let utc_jumped = prev_utc_tail > 0.0 && utc_tail - prev_utc_tail > 3.0;
         if utc_jumped {
+            // Save current FIFO reset cycle's state before clearing,
+            // so the backward flush can correct it when a fresh SEC
+            // finally arrives.
+            if !fifo_reset_pending.is_empty() || wrap_tracking_fifo_reset_start.is_some() {
+                if let Some(anc) = anchor {
+                    stale_batches.push(StaleBatch {
+                        pending_events: std::mem::take(&mut fifo_reset_pending),
+                        wt_start: wrap_tracking_fifo_reset_start.take(),
+                        wt_end_pkt: pkt_idx,
+                        cwc_at_end: congestion_wrap_count,
+                        anchor_met: anc,
+                        anchor_ptime,
+                    });
+                    if debug {
+                        let sb = stale_batches.last().unwrap();
+                        eprintln!(
+                            "UTC_JUMP pkt={}: saved stale batch #{}: {} pending, wt_start={:?}, wt_end={}, cwc={}, anc={:.3} anc_pt={}",
+                            pkt_idx, stale_batches.len(), sb.pending_events.len(),
+                            sb.wt_start, sb.wt_end_pkt, sb.cwc_at_end, sb.anchor_met, sb.anchor_ptime
+                        );
+                    }
+                } else {
+                    // No anchor — can't save; just clear.
+                    fifo_reset_pending.clear();
+                    wrap_tracking_fifo_reset_start = None;
+                }
+            }
             wrap_tracking_active = false;
             prev_median_ptime = None;
             congestion_wrap_count = 0;
             fifo_reset_no_wt = true;
-            // New FIFO reset cycle — clear any pending buffer and reset.
             anchor_post_fifo_reset = false;
-            fifo_reset_pending.clear();
             if debug {
                 eprintln!(
                     "UTC_JUMP pkt={} prev_ut={:.0} ut={:.0} jump={:.0} → wrap tracking reset, fifo_reset_no_wt=true",
@@ -465,6 +512,21 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
         // ALL recent packets and will detect any wraps that occurred.
         if !wrap_tracking_active && !anchor_is_recent && prev_median_ptime.is_some() && !fifo_reset_no_wt {
             wrap_tracking_active = true;
+            // If wrap tracking activates while backward correction is pending,
+            // stop buffering new events (wrap tracking computes correct METs
+            // directly). Keep the existing pending buffer so the backward
+            // flush can still correct POST_RESET_BIAS events when a fresh
+            // SEC arrives.
+            if anchor_post_fifo_reset {
+                wrap_tracking_fifo_reset_start = Some(pkt_idx);
+                if debug {
+                    eprintln!(
+                        "WRAP_INIT pkt={} wrap tracking active, stop buffering ({} pending events kept for backward flush)",
+                        pkt_idx, fifo_reset_pending.len()
+                    );
+                }
+                anchor_post_fifo_reset = false;
+            }
             if debug {
                 eprintln!(
                     "WRAP_INIT pkt={} congestion_wrap_count={} prev_med={:?}",
@@ -603,9 +665,100 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
                         // the post-reset flag. Stale SECs arrive in the first
                         // 1-2 packets (still "recent"), so this only triggers
                         // for fresh SECs.
-                        if anchor_post_fifo_reset && !anchor_is_recent && !fifo_reset_pending.is_empty() {
+                        if (!fifo_reset_pending.is_empty() || !stale_batches.is_empty()) && !anchor_is_recent {
                             let fresh_met = met;
                             let fresh_ptime = *ptime;
+
+                            // ── Process stale batches from earlier FIFO resets ──
+                            for sb in stale_batches.drain(..) {
+                                // Phase S1-S3: recompute pending events using fresh SEC
+                                if !sb.pending_events.is_empty() {
+                                    let mut sb_pkt_groups: std::collections::BTreeMap<usize, Vec<usize>> =
+                                        std::collections::BTreeMap::new();
+                                    for (i, pe) in sb.pending_events.iter().enumerate() {
+                                        sb_pkt_groups.entry(pe.pkt_idx).or_default().push(i);
+                                    }
+                                    let mut sb_pkt_results: std::collections::BTreeMap<usize, (i64, u64)> =
+                                        std::collections::BTreeMap::new();
+                                    for (&pi, indices) in &sb_pkt_groups {
+                                        let mut ptimes_v: Vec<u64> = indices.iter()
+                                            .map(|&i| sb.pending_events[i].ptime).collect();
+                                        ptimes_v.sort_unstable();
+                                        let med = ptimes_v[ptimes_v.len() / 2];
+                                        let ut = sb.pending_events[indices[0]].utc_tail;
+                                        let (n_base, _margin) = estimate_packet_wraps_signed(
+                                            med, fresh_ptime, fresh_met, ut,
+                                        );
+                                        sb_pkt_results.insert(pi, (n_base, med));
+                                    }
+                                    if debug {
+                                        eprintln!(
+                                            "STALE_BATCH_FLUSH pkt={}: {} pending events in {} pkts, anc={:.3} anc_pt={}",
+                                            pkt_idx, sb.pending_events.len(), sb_pkt_groups.len(),
+                                            sb.anchor_met, sb.anchor_ptime,
+                                        );
+                                    }
+                                    // Apply corrections
+                                    for (&pi, &(n_base, med)) in &sb_pkt_results {
+                                        let indices = &sb_pkt_groups[&pi];
+                                        for &idx in indices {
+                                            let pe = &sb.pending_events[idx];
+                                            let corrected = compute_met_with_base_wraps(
+                                                pe.ptime, fresh_ptime, fresh_met, n_base, med,
+                                            );
+                                            result[pe.pkt_idx][pe.evt_idx] = corrected;
+                                        }
+                                    }
+                                }
+                                // Phase S4: correct wrap tracking events from stale batch
+                                if let Some(wt_start) = sb.wt_start {
+                                    let total_wraps = ((fresh_met - sb.anchor_met) / 2e-6
+                                        - (fresh_ptime as i64 - sb.anchor_ptime as i64) as f64)
+                                        / PTIME_MOD as f64;
+                                    let total_wraps = total_wraps.round() as i64;
+                                    let delta = total_wraps - sb.cwc_at_end;
+                                    if delta != 0 {
+                                        let shift = delta as f64 * WRAP_PERIOD;
+                                        if debug {
+                                            eprintln!(
+                                                "STALE_BATCH wt correction: wt_start={} → wt_end={}, total_wraps={} cwc={} delta={} shift={:.6}",
+                                                wt_start, sb.wt_end_pkt, total_wraps, sb.cwc_at_end, delta, shift
+                                            );
+                                        }
+                                        for pi in wt_start..sb.wt_end_pkt {
+                                            for t in result[pi].iter_mut() {
+                                                *t += shift;
+                                            }
+                                        }
+                                    }
+                                    // Phase S5: boundary continuity between pending and wt
+                                    if !sb.pending_events.is_empty() && !result[wt_start].is_empty() {
+                                        let first_wt_met = result[wt_start][0];
+                                        // Find last pending packet
+                                        let last_pend_pkt = sb.pending_events.iter()
+                                            .map(|pe| pe.pkt_idx).max().unwrap();
+                                        if !result[last_pend_pkt].is_empty() {
+                                            let last_pend_met = *result[last_pend_pkt].last().unwrap();
+                                            let gap = first_wt_met - last_pend_met;
+                                            let n_shift = (gap / WRAP_PERIOD).round() as i64;
+                                            let residual = (gap - n_shift as f64 * WRAP_PERIOD).abs();
+                                            if n_shift.abs() == 1 && residual < 0.3 {
+                                                let corr = n_shift as f64 * WRAP_PERIOD;
+                                                if debug {
+                                                    eprintln!(
+                                                        "STALE_BATCH boundary fix: last_pend={:.3} first_wt={:.3} gap={:.3} n_shift={} corr={:.6}",
+                                                        last_pend_met, first_wt_met, gap, n_shift, corr,
+                                                    );
+                                                }
+                                                for pe in &sb.pending_events {
+                                                    result[pe.pkt_idx][pe.evt_idx] += corr;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // ── End stale batch processing ──
                             // Group pending events by packet
                             let mut pkt_groups: std::collections::BTreeMap<usize, Vec<usize>> =
                                 std::collections::BTreeMap::new();
@@ -736,6 +889,102 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
                                         result[pe.pkt_idx][pe.evt_idx] = corrected;
                                     }
                                 }
+                            }
+                            // Phase 4: retroactive wrap tracking correction.
+                            // When wrap tracking activated during FIFO reset
+                            // recovery, it used congestion_wrap_count=0. The
+                            // backward flush knows the correct n_base for the
+                            // last pending packet. Convert to stale-anchor
+                            // equivalent and adjust wrap tracking events.
+                            if let Some(wt_start) = wrap_tracking_fifo_reset_start {
+                                // Compute total wraps between the two SEC anchors
+                                // directly, avoiding the error-prone utc_tail-based
+                                // estimates. This is exact because both SECs are
+                                // ground truth.
+                                let anc = anchor.unwrap();
+                                let total_wraps = ((fresh_met - anc) / 2e-6
+                                    - (fresh_ptime as i64 - anchor_ptime as i64) as f64)
+                                    / PTIME_MOD as f64;
+                                let total_wraps = total_wraps.round() as i64;
+                                // congestion_wrap_count tracks rollovers detected
+                                // since the stale SEC reset it to 0. The correct
+                                // total should match total_wraps.
+                                let delta = total_wraps - congestion_wrap_count;
+                                if delta != 0 {
+                                    let shift = delta as f64 * WRAP_PERIOD;
+                                    if debug {
+                                        eprintln!(
+                                            "BACKWARD_FLUSH retroactive wt correction: wt_start={} → pkt={}, total_wraps={} cwc={} delta={} shift={:.6}",
+                                            wt_start, pkt_idx, total_wraps, congestion_wrap_count, delta, shift
+                                        );
+                                    }
+                                    for pi in wt_start..pkt_idx {
+                                        for t in result[pi].iter_mut() {
+                                            *t += shift;
+                                        }
+                                    }
+                                    // Also fix events already pushed for the current packet
+                                    // (events before the SEC in this packet used wrap tracking)
+                                    for t in times.iter_mut() {
+                                        *t += shift;
+                                    }
+                                    congestion_wrap_count += delta;
+                                }
+                                // Phase 5: boundary continuity check.
+                                // The backward flush may assign wrong n_base
+                                // to pending packets (off by ±1) because
+                                // utc_tail is ~1s ahead of actual event time
+                                // after FIFO reset. Check if the last pending
+                                // packet's MET is consistent with the first
+                                // wrap tracking packet's (already corrected)
+                                // MET. If there's a ~WRAP_PERIOD gap, shift
+                                // all pending events.
+                                // Get the first wrap tracking event MET.
+                                // If wt_start == pkt_idx, the current packet
+                                // hasn't been pushed to result yet; use times.
+                                let first_wt_times = if wt_start < pkt_idx {
+                                    result[wt_start].as_slice()
+                                } else {
+                                    times.as_slice()
+                                };
+                                if !first_wt_times.is_empty() {
+                                    let first_wt_met = first_wt_times[0];
+                                    // Find last pending packet's representative MET
+                                    if let Some((&last_pi, _)) = pkt_results.iter().next_back() {
+                                        if !result[last_pi].is_empty() {
+                                            let last_pend_met = *result[last_pi].last().unwrap();
+                                            let gap = first_wt_met - last_pend_met;
+                                            // Generalized: find integer N such that
+                                            // gap - N*WRAP ≈ 0 (pending N wraps off)
+                                            let n_shift = (gap / WRAP_PERIOD).round() as i64;
+                                            let residual = (gap - n_shift as f64 * WRAP_PERIOD).abs();
+                                            // Only correct ±1 WRAP; larger shifts are
+                                            // likely genuine FIFO reset gaps, not errors.
+                                            if n_shift.abs() == 1 && residual < 0.3 {
+                                                let corr = n_shift as f64 * WRAP_PERIOD;
+                                                if debug {
+                                                    eprintln!(
+                                                        "BACKWARD_FLUSH boundary fix: last_pend={:.3} first_wt={:.3} gap={:.3} n_shift={} corr={:.6}",
+                                                        last_pend_met, first_wt_met, gap, n_shift, corr,
+                                                    );
+                                                }
+                                                for (&pi, _) in &pkt_results {
+                                                    for t in result[pi].iter_mut() {
+                                                        *t += corr;
+                                                    }
+                                                }
+                                                // Also fix pending events in the current packet
+                                                // (pkt_idx == the SEC packet)
+                                                if pkt_results.contains_key(&pkt_idx) {
+                                                    for t in times.iter_mut() {
+                                                        *t += corr;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                wrap_tracking_fifo_reset_start = None;
                             }
                             fifo_reset_pending.clear();
                             anchor_post_fifo_reset = false;
