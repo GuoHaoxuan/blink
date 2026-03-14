@@ -425,6 +425,9 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
         anchor_ptime: u64,
     }
     let mut stale_batches: Vec<StaleBatch> = Vec::new();
+    // Track packets corrected by backward flush so the global sort
+    // doesn't undo their corrections.
+    let mut backward_flushed: Vec<bool> = vec![false; sci_data.ccsds.len()];
 
     for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
         let utc_tail = get_utc_tail(ccsds);
@@ -619,13 +622,14 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
         let phase_correction: i64 = if use_wrap_tracking {
             if let Some(anc_med) = anchor_median_ptime {
                 let delta = anc_med as i64 - anchor_ptime as i64;
-                if delta > PTIME_MOD as i64 / 2 {
-                    // anchor_median is far ahead of anchor_ptime (median high, ptime low)
-                    // median tracking overcounts by 1
+                // Use 70% threshold (367002) instead of 50% (262144).
+                // At 50%, Box C falsely triggers (delta=269502=51.4%)
+                // when anchor and median are just slightly over half
+                // apart but no actual wrap boundary crossing occurred.
+                let phase_thresh = PTIME_MOD as i64 * 7 / 10;
+                if delta > phase_thresh {
                     -1
-                } else if delta < -(PTIME_MOD as i64 / 2) {
-                    // anchor_median is far behind anchor_ptime (median low, ptime high)
-                    // median tracking undercounts by 1
+                } else if delta < -phase_thresh {
                     1
                 } else {
                     0
@@ -890,6 +894,16 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
                                     }
                                 }
                             }
+                            // Mark backward-flushed packets so the global
+                            // sort won't undo the correction.
+                            for &pi in pkt_results.keys() {
+                                if pi < backward_flushed.len() {
+                                    backward_flushed[pi] = true;
+                                }
+                            }
+                            if pkt_idx < backward_flushed.len() {
+                                backward_flushed[pkt_idx] = true;
+                            }
                             // Phase 4: retroactive wrap tracking correction.
                             // When wrap tracking activated during FIFO reset
                             // recovery, it used congestion_wrap_count=0. The
@@ -1140,37 +1154,54 @@ pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, l
         if let Some(prev_pkt) = result.get(i - 1) {
             if !prev_pkt.is_empty() && !pkt.is_empty() {
                 if pkt[0] < prev_pkt[prev_pkt.len() - 1] {
+                    // Skip reversals at backward-flushed boundaries:
+                    // pending (fresh SEC) vs wrap tracking (stale anchor)
+                    // reversals are expected and should not trigger a sort.
+                    let bf_prev = i > 0 && backward_flushed.get(i - 1).copied().unwrap_or(false);
+                    let bf_curr = backward_flushed.get(i).copied().unwrap_or(false);
+                    if bf_prev || bf_curr {
+                        return false;
+                    }
                     return true;
                 }
             }
         }
-        // Also check for intra-packet reversals
-        if pkt.len() > 1 {
-            pkt.windows(2).any(|w| w[0] > w[1])
-        } else {
-            false
-        }
+        // Intra-packet reversals are handled by Pass 3 (mixed packet
+        // logic) and should not trigger a global sort.
+        false
     });
 
     if needs_global_sort {
         if debug {
-            eprintln!("Global sort: detected cross-packet time reversals, flattening and sorting all events");
+            eprintln!("Global sort: sorting non-backward-flushed segments");
         }
-        // Flatten all events into a single vector
-        let mut all_events: Vec<f64> = result.iter().flatten().copied().collect();
-        // Sort globally
-        all_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-        // Redistribute events back into packets (maintain original packet count structure)
-        let mut event_idx = 0;
-        for pkt in result.iter_mut() {
-            let pkt_len = pkt.len();
-            if pkt_len > 0 && event_idx < all_events.len() {
-                let end_idx = (event_idx + pkt_len).min(all_events.len());
-                pkt.clear();
-                pkt.extend_from_slice(&all_events[event_idx..end_idx]);
-                event_idx = end_idx;
+        // Sort each contiguous segment of non-backward-flushed packets
+        // independently, preserving backward-flushed packet METs.
+        let n = result.len();
+        let mut seg_start = 0;
+        while seg_start < n {
+            if seg_start < backward_flushed.len() && backward_flushed[seg_start] {
+                seg_start += 1;
+                continue;
             }
+            let mut seg_end = seg_start + 1;
+            while seg_end < n && !(seg_end < backward_flushed.len() && backward_flushed[seg_end]) {
+                seg_end += 1;
+            }
+            let mut seg_events: Vec<f64> = result[seg_start..seg_end]
+                .iter().flatten().copied().collect();
+            seg_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let mut event_idx = 0;
+            for pkt in result[seg_start..seg_end].iter_mut() {
+                let pkt_len = pkt.len();
+                if pkt_len > 0 && event_idx < seg_events.len() {
+                    let end_idx = (event_idx + pkt_len).min(seg_events.len());
+                    pkt.clear();
+                    pkt.extend_from_slice(&seg_events[event_idx..end_idx]);
+                    event_idx = end_idx;
+                }
+            }
+            seg_start = seg_end;
         }
     }
 
