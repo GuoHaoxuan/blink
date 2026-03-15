@@ -170,9 +170,11 @@ fn main() {
             .map(|(name, data)| (name.clone(), data.events.clone()))
             .collect();
 
-        // 步骤二：先对所有 box 补静默丢数（交叉参考用原始事件流）
-        eprintln!("Step 1: Reconstructing silent drops...");
+        // 步骤二：两种补全独立进行，都只用原始事件做交叉参考
+        eprintln!("Reconstructing (silent drops + FIFO reset gaps, independent)...");
         let mut all_sd_filled: Vec<(String, Vec<f64>)> = Vec::new();
+        let mut all_filled: Vec<(String, Vec<f64>)> = Vec::new();
+
         for i in 0..box_data.len() {
             let refs: Vec<&BoxReconstructionData> = box_data
                 .iter()
@@ -181,55 +183,36 @@ fn main() {
                 .map(|(_, (_, d))| d)
                 .collect();
 
+            // 静默丢数重建（用原始事件做参考）
             let drops = detect_silent_drops(&box_data[i].1);
             let sd_results = reconstruct_silent_drops(&box_data[i].1, &drops, &refs);
             let n_sd_filled: usize = sd_results.iter().map(|r| r.n_lost).sum();
             let n_sd_ref = sd_results.iter().filter(|r| r.has_cross_ref).count();
-
             let mut sd_events: Vec<f64> = sd_results
                 .into_iter()
                 .flat_map(|r| r.filled_events)
                 .collect();
             sd_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-            eprintln!(
-                "  Box {}: {} silent drops, {} events filled ({} with ref)",
-                box_data[i].0, drops.len(), n_sd_filled, n_sd_ref,
-            );
-
-            // 合并到 events（保持排序，以便后续 FIFO reset 交叉参考更准确）
-            box_data[i].1.events.extend_from_slice(&sd_events);
-            box_data[i].1.events.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-            all_sd_filled.push((box_data[i].0.clone(), sd_events));
-        }
-
-        // 步骤三：用补全后的事件流做 FIFO reset 重建
-        eprintln!("Step 2: Reconstructing FIFO reset gaps (with corrected references)...");
-        let mut all_filled: Vec<(String, Vec<f64>)> = Vec::new();
-        for i in 0..box_data.len() {
-            let refs: Vec<&BoxReconstructionData> = box_data
-                .iter()
-                .enumerate()
-                .filter(|&(j, _)| j != i)
-                .map(|(_, (_, d))| d)
-                .collect();
-
+            // FIFO reset 重建（用原始事件做参考，不含静默丢数补全）
             let gap_results = reconstruct_gaps(&box_data[i].1, &refs);
             let n_gap_filled: usize = gap_results.iter().map(|r| r.n_lost).sum();
             let n_gap_ref = gap_results.iter().filter(|r| r.has_cross_ref).count();
-
-            eprintln!(
-                "  Box {}: {} gaps, {} events filled ({} with ref)",
-                box_data[i].0, gap_results.len(), n_gap_filled, n_gap_ref,
-            );
-
-            let mut filled: Vec<f64> = gap_results
+            let mut gap_events: Vec<f64> = gap_results
                 .into_iter()
                 .flat_map(|r| r.filled_events)
                 .collect();
-            filled.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            all_filled.push((box_data[i].0.clone(), filled));
+            gap_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            eprintln!(
+                "  Box {}: silent_drops={} ({} events, {} ref) | gaps={} ({} events, {} ref)",
+                box_data[i].0,
+                drops.len(), n_sd_filled, n_sd_ref,
+                box_data[i].1.gaps.len(), n_gap_filled, n_gap_ref,
+            );
+
+            all_sd_filled.push((box_data[i].0.clone(), sd_events));
+            all_filled.push((box_data[i].0.clone(), gap_events));
         }
 
         // 步骤四：输出 binned 光变曲线（分列输出两种补全）
