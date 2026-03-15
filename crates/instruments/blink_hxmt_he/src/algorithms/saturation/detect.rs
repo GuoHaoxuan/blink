@@ -202,6 +202,13 @@ pub fn extract_packet_infos(sci_data: &SciFile, offset: f64) -> Vec<PacketInfo> 
     infos
 }
 
+/// 不可信时间区间（FIFO reset gap 或拥塞宽包的时间覆盖）
+#[derive(Debug, Clone)]
+pub struct UnreliableInterval {
+    pub start: f64,
+    pub stop: f64,
+}
+
 /// 单个 box 的饱和重建数据
 #[derive(Debug)]
 pub struct BoxReconstructionData {
@@ -213,6 +220,92 @@ pub struct BoxReconstructionData {
     pub packets: Vec<PacketInfo>,
     /// 每个包内的事件时间（索引 = 原始包号，内部已排序）
     pub packet_events: Vec<Vec<f64>>,
+    /// 不可信区间（FIFO reset gap + 拥塞宽包），用于交叉参考时排除
+    pub unreliable: Vec<UnreliableInterval>,
+}
+
+/// 检测不可信时间区间：FIFO reset gap + 拥塞宽包 + 含静默丢数的包。
+///
+/// 三种来源：
+/// 1. FIFO reset gap：整包丢失的时间段
+/// 2. 拥塞宽包：包跨时 > 邻居中位跨时 × 3
+/// 3. 含静默丢数的包：包内有泊松异常间隔，整个包的事件分布不可信
+pub fn detect_unreliable_intervals(
+    gaps: &[SaturationInterval],
+    packets: &[PacketInfo],
+    packet_events: &[Vec<f64>],
+) -> Vec<UnreliableInterval> {
+    let mut intervals: Vec<UnreliableInterval> = Vec::new();
+
+    // 1. FIFO reset gap → 不可信
+    for g in gaps {
+        intervals.push(UnreliableInterval {
+            start: g.start_met,
+            stop: g.stop_met,
+        });
+    }
+
+    // 预计算邻居中位跨时（用于宽包和内部不均匀检测）
+    let packet_spans: Vec<f64> = packets.iter().map(|p| p.span()).collect();
+
+    for (i, pkt) in packets.iter().enumerate() {
+        let span = pkt.span();
+        if span < 1e-9 {
+            continue;
+        }
+
+        // 邻居中位跨时
+        let mut neighbor_spans: Vec<f64> = Vec::new();
+        for offset in 1..=5_usize {
+            if i >= offset && packet_spans[i - offset] > 1e-9 {
+                neighbor_spans.push(packet_spans[i - offset]);
+            }
+            if i + offset < packets.len() && packet_spans[i + offset] > 1e-9 {
+                neighbor_spans.push(packet_spans[i + offset]);
+            }
+        }
+        if neighbor_spans.is_empty() {
+            continue;
+        }
+        neighbor_spans.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median_span = neighbor_spans[neighbor_spans.len() / 2];
+
+        // 2. 拥塞宽包 → 不可信
+        if span > median_span * SPAN_RATIO_THRESHOLD {
+            intervals.push(UnreliableInterval {
+                start: pkt.min_met,
+                stop: pkt.max_met,
+            });
+            continue;
+        }
+
+        // 3. 包内有异常大间隔 → 整个包不可信
+        // 用邻居事件率做 λ，检查是否有 log10(p) < -10 的间隔
+        let times = &packet_events[pkt.pkt_idx];
+        if times.len() < 2 {
+            continue;
+        }
+        let neighbor_rate = EVENTS_PER_PKT / median_span;
+        let has_anomalous_interval = times.windows(2).any(|w| {
+            let dt = w[1] - w[0];
+            let log_p = -neighbor_rate * dt / std::f64::consts::LN_10;
+            log_p < LOG10_P_THRESHOLD
+        });
+        if has_anomalous_interval {
+            intervals.push(UnreliableInterval {
+                start: pkt.min_met,
+                stop: pkt.max_met,
+            });
+        }
+    }
+
+    // 按 start 排序
+    intervals.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap());
+    intervals
+}
+
+fn is_in_unreliable(t: f64, intervals: &[UnreliableInterval]) -> bool {
+    intervals.iter().any(|iv| t >= iv.start && t <= iv.stop)
 }
 
 /// 重建后的补全事件
@@ -266,47 +359,43 @@ pub fn reconstruct_gaps(
         let actual_sbin = gap_dur / n_sbins as f64;
         let mut shape = vec![0.0f64; n_sbins];
 
-        // 用参考 box 填充形状
+        // 汇总所有参考 box 的事件，统一构建形状函数
+        // （避免参考 box 之间的先后顺序影响结果）
         let mut has_ref = false;
-        for ref_data in references {
-            // 参考 box 在 gap 内的事件
-            let ref_start = ref_data
-                .events
-                .partition_point(|&t| t < gap_start);
-            let ref_end = ref_data
-                .events
-                .partition_point(|&t| t <= gap_stop);
-            let ref_in_gap = &ref_data.events[ref_start..ref_end];
-            if ref_in_gap.len() < 5 {
-                continue;
-            }
+        for (si, s) in shape.iter_mut().enumerate() {
+            let bin_lo = gap_start + si as f64 * actual_sbin;
+            let bin_hi = bin_lo + actual_sbin;
+            let bin_mid = (bin_lo + bin_hi) / 2.0;
 
-            // 标定比例因子 k = target_rate / ref_rate（gap 前后 0.5s）
-            let k = calibrate_ratio_sorted(
-                &target.events, &ref_data.events, gap_start, gap_stop, 0.5,
-            );
+            let mut total_ref_count = 0.0;
+            let mut n_valid_refs = 0;
 
-            // 填充形状函数（只填参考 box 未饱和的 bin）
-            for (si, s) in shape.iter_mut().enumerate() {
-                if *s > 0.0 {
-                    continue; // 已被其他参考填充
-                }
-                let bin_lo = gap_start + si as f64 * actual_sbin;
-                let bin_hi = bin_lo + actual_sbin;
-                let bin_mid = (bin_lo + bin_hi) / 2.0;
-
-                // 检查参考 box 在此处是否饱和
-                if is_in_any_gap(bin_mid, &ref_data.gaps) {
+            for ref_data in references {
+                // 跳过参考 box 在此处饱和的情况
+                if is_in_unreliable(bin_mid, &ref_data.unreliable) {
                     continue;
                 }
 
-                // 计算参考 box 在此 bin 内的事件数
+                // 参考 box 在此 bin 内的事件数
                 let lo_idx = ref_data.events.partition_point(|&t| t < bin_lo);
                 let hi_idx = ref_data.events.partition_point(|&t| t < bin_hi);
                 let count = (hi_idx - lo_idx) as f64;
-                *s = count * k;
+
+                if count > 0.0 {
+                    let k = calibrate_ratio_sorted(
+                        &target.events, &ref_data.events, gap_start, gap_stop, 0.5,
+                    );
+                    total_ref_count += count * k;
+                    n_valid_refs += 1;
+                }
+            }
+
+            if n_valid_refs > 0 {
+                // 多个参考 box 取平均
+                *s = total_ref_count / n_valid_refs as f64;
                 has_ref = true;
             }
+            // 无参考时留空，给插值处理
         }
 
         // 对空 bin 做线性插值
@@ -389,10 +478,6 @@ fn calibrate_ratio_sorted(
     }
 }
 
-fn is_in_any_gap(t: f64, gaps: &[SaturationInterval]) -> bool {
-    // 线性搜索（gap 数量通常在千量级，可接受）
-    gaps.iter().any(|g| t >= g.start_met && t <= g.stop_met)
-}
 
 // ── 静默丢数检测与重建 ──────────────────────────────────────────────────────
 
@@ -559,9 +644,9 @@ pub fn reconstruct_silent_drops(
 
         for ref_data in references {
             // 检查参考 box 在此间隔内是否有事件且未饱和
-            if is_in_any_gap(
+            if is_in_unreliable(
                 (gap_start + gap_stop) / 2.0,
-                &ref_data.gaps,
+                &ref_data.unreliable,
             ) {
                 continue;
             }
@@ -629,32 +714,16 @@ fn interpolate_empty_bins(shape: &mut [f64]) {
     if n == 0 {
         return;
     }
-    // 找有值的 bin
-    let filled: Vec<(usize, f64)> = shape
-        .iter()
-        .enumerate()
-        .filter(|(_, v)| **v > 0.0)
-        .map(|(i, v)| (i, *v))
-        .collect();
-    if filled.is_empty() || filled.len() == n {
+    let filled_vals: Vec<f64> = shape.iter().copied().filter(|&v| v > 0.0).collect();
+    if filled_vals.is_empty() || filled_vals.len() == n {
         return;
     }
-    // 线性插值
-    for i in 0..n {
-        if shape[i] > 0.0 {
-            continue;
+    // 空 bin 用有值 bin 的均值填充（均匀分布假设）
+    // 避免线性插值产生的斜坡伪影
+    let mean_val = filled_vals.iter().sum::<f64>() / filled_vals.len() as f64;
+    for s in shape.iter_mut() {
+        if *s <= 0.0 {
+            *s = mean_val;
         }
-        // 找左右最近的有值 bin
-        let left = filled.iter().rev().find(|&&(idx, _)| idx < i);
-        let right = filled.iter().find(|&&(idx, _)| idx > i);
-        shape[i] = match (left, right) {
-            (Some(&(li, lv)), Some(&(ri, rv))) => {
-                let frac = (i - li) as f64 / (ri - li) as f64;
-                lv + frac * (rv - lv)
-            }
-            (Some(&(_, lv)), None) => lv,
-            (None, Some(&(_, rv))) => rv,
-            (None, None) => 1.0,
-        };
     }
 }
