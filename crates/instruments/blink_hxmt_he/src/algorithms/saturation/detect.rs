@@ -575,6 +575,12 @@ pub fn detect_silent_drops(data: &BoxReconstructionData) -> Vec<SilentDrop> {
         let median_span = sorted_spans[sorted_spans.len() / 2];
         let neighbor_rate = EVENTS_PER_PKT / median_span;
 
+        // 深度饱和区：所有邻居都是拥塞包，无法可靠估算 R_true/lambda
+        // 跳过静默丢数检测（由 FIFO reset 重建或粗粒度修正处理）
+        if neighbor_rate < MCU_READ_RATE_FLOOR {
+            continue;
+        }
+
         // 判断是否需要检测
         let rate = times.len() as f64 / span;
         let is_wide_packet = span > median_span * SPAN_RATIO_THRESHOLD;
