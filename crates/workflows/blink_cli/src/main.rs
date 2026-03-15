@@ -1,9 +1,9 @@
 use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::algorithms::saturation::{
-    check_byte_offsets, detect_fifo_reset_intervals, diagnose_packets, dump_event_details,
-    dump_ptime_utc, extract_packet_infos, reconstruct_gaps, reconstruct_met_times,
-    reconstruct_with_wrap_tracking, reconstruct_with_wrap_tracking_labeled,
-    scan_saturation_intervals, BoxReconstructionData,
+    check_byte_offsets, detect_fifo_reset_intervals, detect_silent_drops, diagnose_packets,
+    dump_event_details, dump_ptime_utc, extract_packet_infos, reconstruct_gaps,
+    reconstruct_met_times, reconstruct_silent_drops, reconstruct_with_wrap_tracking,
+    reconstruct_with_wrap_tracking_labeled, scan_saturation_intervals, BoxReconstructionData,
 };
 use blink_hxmt_he::io::level_1b::{
     SciFile, get_eng_filenames, get_sci_filenames, read_stime_offset,
@@ -117,6 +117,13 @@ fn main() {
             let events = reconstruct_met_times(sci, *offset);
             let gaps = detect_fifo_reset_intervals(sci, *offset);
             let packets = extract_packet_infos(sci, *offset);
+            let packet_events: Vec<Vec<f64>> = reconstruct_with_wrap_tracking(sci, *offset)
+                .into_iter()
+                .map(|mut times| {
+                    times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    times
+                })
+                .collect();
             eprintln!(
                 "  Box {}: {} events, {} gaps, {} packets",
                 box_name,
@@ -130,12 +137,53 @@ fn main() {
                     events,
                     gaps,
                     packets,
+                    packet_events,
                 },
             ));
         }
 
-        // 步骤二：对每个 box 做重建（用其他 box 作为参考）
-        eprintln!("Reconstructing gaps...");
+        // 保存原始事件数（补静默丢数前）
+        let original_events: Vec<(String, Vec<f64>)> = box_data
+            .iter()
+            .map(|(name, data)| (name.clone(), data.events.clone()))
+            .collect();
+
+        // 步骤二：先对所有 box 补静默丢数（交叉参考用原始事件流）
+        eprintln!("Step 1: Reconstructing silent drops...");
+        let mut all_sd_filled: Vec<(String, Vec<f64>)> = Vec::new();
+        for i in 0..box_data.len() {
+            let refs: Vec<&BoxReconstructionData> = box_data
+                .iter()
+                .enumerate()
+                .filter(|&(j, _)| j != i)
+                .map(|(_, (_, d))| d)
+                .collect();
+
+            let drops = detect_silent_drops(&box_data[i].1);
+            let sd_results = reconstruct_silent_drops(&box_data[i].1, &drops, &refs);
+            let n_sd_filled: usize = sd_results.iter().map(|r| r.n_lost).sum();
+            let n_sd_ref = sd_results.iter().filter(|r| r.has_cross_ref).count();
+
+            let mut sd_events: Vec<f64> = sd_results
+                .into_iter()
+                .flat_map(|r| r.filled_events)
+                .collect();
+            sd_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            eprintln!(
+                "  Box {}: {} silent drops, {} events filled ({} with ref)",
+                box_data[i].0, drops.len(), n_sd_filled, n_sd_ref,
+            );
+
+            // 合并到 events（保持排序，以便后续 FIFO reset 交叉参考更准确）
+            box_data[i].1.events.extend_from_slice(&sd_events);
+            box_data[i].1.events.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            all_sd_filled.push((box_data[i].0.clone(), sd_events));
+        }
+
+        // 步骤三：用补全后的事件流做 FIFO reset 重建
+        eprintln!("Step 2: Reconstructing FIFO reset gaps (with corrected references)...");
         let mut all_filled: Vec<(String, Vec<f64>)> = Vec::new();
         for i in 0..box_data.len() {
             let refs: Vec<&BoxReconstructionData> = box_data
@@ -144,17 +192,17 @@ fn main() {
                 .filter(|&(j, _)| j != i)
                 .map(|(_, (_, d))| d)
                 .collect();
-            let results = reconstruct_gaps(&box_data[i].1, &refs);
-            let n_filled: usize = results.iter().map(|r| r.n_lost).sum();
-            let n_with_ref = results.iter().filter(|r| r.has_cross_ref).count();
+
+            let gap_results = reconstruct_gaps(&box_data[i].1, &refs);
+            let n_gap_filled: usize = gap_results.iter().map(|r| r.n_lost).sum();
+            let n_gap_ref = gap_results.iter().filter(|r| r.has_cross_ref).count();
+
             eprintln!(
-                "  Box {}: {} gaps reconstructed, {} events filled ({} with cross-ref)",
-                box_data[i].0,
-                results.len(),
-                n_filled,
-                n_with_ref
+                "  Box {}: {} gaps, {} events filled ({} with ref)",
+                box_data[i].0, gap_results.len(), n_gap_filled, n_gap_ref,
             );
-            let mut filled: Vec<f64> = results
+
+            let mut filled: Vec<f64> = gap_results
                 .into_iter()
                 .flat_map(|r| r.filled_events)
                 .collect();
@@ -175,9 +223,25 @@ fn main() {
             v
         };
 
-        for (box_name, data) in &box_data {
-            let obs_events = &data.events;
-            let filled_events = all_filled
+        // 合并静默丢数 + FIFO reset 的补全事件
+        let mut all_combined_filled: Vec<(String, Vec<f64>)> = Vec::new();
+        for (name, gap_filled) in &all_filled {
+            let sd = all_sd_filled.iter().find(|(n, _)| n == name);
+            let mut combined = gap_filled.clone();
+            if let Some((_, sd_evts)) = sd {
+                combined.extend_from_slice(sd_evts);
+                combined.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            }
+            all_combined_filled.push((name.clone(), combined));
+        }
+
+        for (box_name, _data) in &box_data {
+            let obs_events = original_events
+                .iter()
+                .find(|(n, _)| n == box_name)
+                .map(|(_, e)| e.as_slice())
+                .unwrap_or(&[]);
+            let filled_events = all_combined_filled
                 .iter()
                 .find(|(n, _)| n == box_name)
                 .map(|(_, f)| f.as_slice())

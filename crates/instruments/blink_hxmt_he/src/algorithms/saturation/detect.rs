@@ -186,6 +186,8 @@ pub struct BoxReconstructionData {
     pub gaps: Vec<SaturationInterval>,
     /// 包信息
     pub packets: Vec<PacketInfo>,
+    /// 每个包内的事件时间（索引 = 原始包号，内部已排序）
+    pub packet_events: Vec<Vec<f64>>,
 }
 
 /// 重建后的补全事件
@@ -365,6 +367,187 @@ fn calibrate_ratio_sorted(
 fn is_in_any_gap(t: f64, gaps: &[SaturationInterval]) -> bool {
     // 线性搜索（gap 数量通常在千量级，可接受）
     gaps.iter().any(|g| t >= g.start_met && t <= g.stop_met)
+}
+
+// ── 静默丢数检测与重建 ──────────────────────────────────────────────────────
+
+/// 包内异常间隔（静默丢数候选）
+#[derive(Debug, Clone)]
+pub struct SilentDrop {
+    /// 包索引
+    pub pkt_idx: usize,
+    /// 间隔起始事件在包内的索引
+    pub evt_idx: usize,
+    /// 间隔起始 MET
+    pub start_met: f64,
+    /// 间隔结束 MET
+    pub stop_met: f64,
+    /// 间隔持续时间（秒）
+    pub dt: f64,
+    /// 包内正常事件率 λ (evt/s)
+    pub lambda: f64,
+    /// log₁₀(泊松概率)
+    pub log10_p: f64,
+    /// 估算丢失事件数
+    pub n_lost: usize,
+}
+
+/// 静默丢数重建结果
+#[derive(Debug, Clone)]
+pub struct ReconstructedSilentDrop {
+    /// 对应的 SilentDrop
+    pub pkt_idx: usize,
+    pub evt_idx: usize,
+    /// 补全的事件 MET 时间
+    pub filled_events: Vec<f64>,
+    /// 丢失事件数
+    pub n_lost: usize,
+    /// 是否使用了交叉参考
+    pub has_cross_ref: bool,
+}
+
+const LOG10_P_THRESHOLD: f64 = -10.0;
+const MIN_HIGH_RATE: f64 = 15000.0; // 只检测高事件率包
+
+/// 检测包内静默丢数（泊松方法）。
+///
+/// 对每个高事件率包（rate > MIN_HIGH_RATE）：
+/// 1. 用过滤后的间隔（< 1ms）估算 λ
+/// 2. 对每个间隔计算泊松概率
+/// 3. log₁₀(p) < -10 标记为静默丢数
+pub fn detect_silent_drops(data: &BoxReconstructionData) -> Vec<SilentDrop> {
+    let mut drops = Vec::new();
+
+    for (pkt_idx, times) in data.packet_events.iter().enumerate() {
+        if times.len() < 2 {
+            continue;
+        }
+        let span = times.last().unwrap() - times.first().unwrap();
+        if span < 1e-9 {
+            continue;
+        }
+        let rate = times.len() as f64 / span;
+        if rate < MIN_HIGH_RATE {
+            continue;
+        }
+
+        // 计算间隔
+        let intervals: Vec<f64> = times.windows(2).map(|w| w[1] - w[0]).collect();
+
+        // 用过滤后的间隔估算 λ（排除 > 1ms 的异常间隔）
+        let filtered: Vec<f64> = intervals.iter().copied().filter(|&dt| dt < 1e-3).collect();
+        if filtered.is_empty() {
+            continue;
+        }
+        let mean_iv: f64 = filtered.iter().sum::<f64>() / filtered.len() as f64;
+        let lambda = 1.0 / mean_iv;
+
+        // 检测异常间隔
+        for (j, &dt) in intervals.iter().enumerate() {
+            let log_p = -lambda * dt / std::f64::consts::LN_10;
+            if log_p < LOG10_P_THRESHOLD {
+                let n_lost = (lambda * dt - 1.0).round().max(1.0) as usize;
+                drops.push(SilentDrop {
+                    pkt_idx,
+                    evt_idx: j,
+                    start_met: times[j],
+                    stop_met: times[j + 1],
+                    dt,
+                    lambda,
+                    log10_p: log_p,
+                    n_lost,
+                });
+            }
+        }
+    }
+
+    drops
+}
+
+/// 对检测到的静默丢数进行重建（交叉参考填充）。
+pub fn reconstruct_silent_drops(
+    target: &BoxReconstructionData,
+    drops: &[SilentDrop],
+    references: &[&BoxReconstructionData],
+) -> Vec<ReconstructedSilentDrop> {
+    let mut results = Vec::new();
+
+    for drop in drops {
+        let gap_start = drop.start_met;
+        let gap_stop = drop.stop_met;
+        let n_lost = drop.n_lost;
+        if n_lost == 0 {
+            continue;
+        }
+
+        // 尝试用参考 box 的事件分布
+        let mut ref_events_in_gap = Vec::new();
+        let mut has_ref = false;
+
+        for ref_data in references {
+            // 检查参考 box 在此间隔内是否有事件且未饱和
+            if is_in_any_gap(
+                (gap_start + gap_stop) / 2.0,
+                &ref_data.gaps,
+            ) {
+                continue;
+            }
+            let lo = ref_data.events.partition_point(|&t| t < gap_start);
+            let hi = ref_data.events.partition_point(|&t| t <= gap_stop);
+            if hi > lo {
+                ref_events_in_gap.extend_from_slice(&ref_data.events[lo..hi]);
+                has_ref = true;
+            }
+        }
+
+        let filled_events = if has_ref && !ref_events_in_gap.is_empty() {
+            // 用参考 box 的事件位置做形状，归一化到 n_lost
+            ref_events_in_gap.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            // 把参考事件分成 n_lost 个等概率区间，每个区间取中位时间
+            let n_ref = ref_events_in_gap.len();
+            if n_ref >= n_lost {
+                // 参考事件比需要的多，等间隔采样
+                (0..n_lost)
+                    .map(|i| {
+                        let idx = (i as f64 + 0.5) / n_lost as f64 * n_ref as f64;
+                        let idx = (idx as usize).min(n_ref - 1);
+                        ref_events_in_gap[idx]
+                    })
+                    .collect()
+            } else {
+                // 参考事件比需要的少，在参考事件之间插值
+                let mut events = Vec::with_capacity(n_lost);
+                for i in 0..n_lost {
+                    let frac = (i as f64 + 0.5) / n_lost as f64;
+                    let pos = frac * (n_ref - 1) as f64;
+                    let lo_idx = pos.floor() as usize;
+                    let hi_idx = (lo_idx + 1).min(n_ref - 1);
+                    let alpha = pos - lo_idx as f64;
+                    let t = ref_events_in_gap[lo_idx] * (1.0 - alpha)
+                        + ref_events_in_gap[hi_idx] * alpha;
+                    events.push(t);
+                }
+                events
+            }
+        } else {
+            // 无参考：均匀分布
+            let step = (gap_stop - gap_start) / (n_lost + 1) as f64;
+            (0..n_lost)
+                .map(|i| gap_start + (i as f64 + 1.0) * step)
+                .collect()
+        };
+
+        results.push(ReconstructedSilentDrop {
+            pkt_idx: drop.pkt_idx,
+            evt_idx: drop.evt_idx,
+            filled_events,
+            n_lost,
+            has_cross_ref: has_ref,
+        });
+    }
+
+    results
 }
 
 fn interpolate_empty_bins(shape: &mut [f64]) {
