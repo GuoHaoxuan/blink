@@ -95,7 +95,7 @@ pub fn detect_fifo_reset_intervals(sci_data: &SciFile, offset: f64) -> Vec<Satur
     summaries.sort_by(|a, b| a.min_met.partial_cmp(&b.min_met).unwrap());
 
     let mut intervals = Vec::new();
-    for window in summaries.windows(2) {
+    for (wi, window) in summaries.windows(2).enumerate() {
         let gap = window[1].min_met - window[0].max_met;
         if gap <= 0.0 {
             continue;
@@ -110,16 +110,41 @@ pub fn detect_fifo_reset_intervals(sci_data: &SciFile, offset: f64) -> Vec<Satur
             (None, None) => continue,
         };
 
-        // 事件率低于 MCU 读取速率 → FIFO 不可能溢出，跳过
+        // 事件率检查：优先用相邻包，若拥塞包率被拉低则用附近包的率
         let rate_prev = event_rate(&window[0]);
         let rate_next = event_rate(&window[1]);
-        let max_rate = match (rate_prev, rate_next) {
+        let max_rate_adjacent = match (rate_prev, rate_next) {
             (Some(a), Some(b)) => a.max(b),
             (Some(a), None) => a,
             (None, Some(b)) => b,
             (None, None) => continue,
         };
-        if max_rate < MCU_READ_RATE_FLOOR {
+
+        let effective_max_rate = if max_rate_adjacent >= MCU_READ_RATE_FLOOR {
+            max_rate_adjacent
+        } else {
+            // 相邻包可能是拥塞宽包（率被拉低），用附近包的率判断
+            let mut neighbor_rates: Vec<f64> = Vec::new();
+            for offset in 1..=5_usize {
+                if wi >= offset {
+                    if let Some(r) = event_rate(&summaries[wi - offset]) {
+                        neighbor_rates.push(r);
+                    }
+                }
+                if wi + 1 + offset < summaries.len() {
+                    if let Some(r) = event_rate(&summaries[wi + 1 + offset]) {
+                        neighbor_rates.push(r);
+                    }
+                }
+            }
+            neighbor_rates
+                .iter()
+                .cloned()
+                .reduce(f64::max)
+                .unwrap_or(max_rate_adjacent)
+        };
+
+        if effective_max_rate < MCU_READ_RATE_FLOOR {
             continue;
         }
 
@@ -548,43 +573,44 @@ pub fn reconstruct_silent_drops(
             }
         }
 
-        let filled_events = if has_ref && !ref_events_in_gap.is_empty() {
-            // 用参考 box 的事件位置做形状，归一化到 n_lost
-            ref_events_in_gap.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        // 用 shape bin 方法分配事件（和 FIFO reset 重建一致）
+        // 这样即使参考事件只覆盖部分间隔，空 bin 也会被插值填充
+        let gap_dur = gap_stop - gap_start;
+        let n_sbins = ((gap_dur / SHAPE_BIN_WIDTH).ceil() as usize).max(1);
+        let actual_sbin = gap_dur / n_sbins as f64;
+        let mut shape = vec![0.0f64; n_sbins];
 
-            // 把参考事件分成 n_lost 个等概率区间，每个区间取中位时间
-            let n_ref = ref_events_in_gap.len();
-            if n_ref >= n_lost {
-                // 参考事件比需要的多，等间隔采样
-                (0..n_lost)
-                    .map(|i| {
-                        let idx = (i as f64 + 0.5) / n_lost as f64 * n_ref as f64;
-                        let idx = (idx as usize).min(n_ref - 1);
-                        ref_events_in_gap[idx]
-                    })
-                    .collect()
-            } else {
-                // 参考事件比需要的少，在参考事件之间插值
-                let mut events = Vec::with_capacity(n_lost);
-                for i in 0..n_lost {
-                    let frac = (i as f64 + 0.5) / n_lost as f64;
-                    let pos = frac * (n_ref - 1) as f64;
-                    let lo_idx = pos.floor() as usize;
-                    let hi_idx = (lo_idx + 1).min(n_ref - 1);
-                    let alpha = pos - lo_idx as f64;
-                    let t = ref_events_in_gap[lo_idx] * (1.0 - alpha)
-                        + ref_events_in_gap[hi_idx] * alpha;
-                    events.push(t);
+        if has_ref && !ref_events_in_gap.is_empty() {
+            // 用参考事件构建形状函数
+            for &t in &ref_events_in_gap {
+                let si = ((t - gap_start) / actual_sbin) as usize;
+                if si < n_sbins {
+                    shape[si] += 1.0;
                 }
-                events
             }
-        } else {
-            // 无参考：均匀分布
-            let step = (gap_stop - gap_start) / (n_lost + 1) as f64;
-            (0..n_lost)
-                .map(|i| gap_start + (i as f64 + 1.0) * step)
-                .collect()
-        };
+            // 对空 bin 做插值（防止参考事件集中在部分区域导致空洞）
+            interpolate_empty_bins(&mut shape);
+        }
+
+        // 如果形状全空（无参考），均匀分配
+        if shape.iter().all(|&v| v <= 0.0) {
+            shape.iter_mut().for_each(|v| *v = 1.0);
+        }
+
+        // 归一化到 n_lost 并分配事件
+        let total: f64 = shape.iter().sum();
+        let mut filled_events = Vec::with_capacity(n_lost);
+        for (si, &s) in shape.iter().enumerate() {
+            let n_in_bin = (s / total * n_lost as f64).round() as usize;
+            if n_in_bin > 0 {
+                let bin_lo = gap_start + si as f64 * actual_sbin;
+                let bin_hi = bin_lo + actual_sbin;
+                let step = (bin_hi - bin_lo) / n_in_bin as f64;
+                for j in 0..n_in_bin {
+                    filled_events.push(bin_lo + (j as f64 + 0.5) * step);
+                }
+            }
+        }
 
         results.push(ReconstructedSilentDrop {
             pkt_idx: drop.pkt_idx,
