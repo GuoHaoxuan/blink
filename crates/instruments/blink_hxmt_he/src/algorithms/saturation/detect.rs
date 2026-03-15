@@ -407,16 +407,35 @@ pub struct ReconstructedSilentDrop {
 }
 
 const LOG10_P_THRESHOLD: f64 = -10.0;
-const MIN_HIGH_RATE: f64 = 15000.0; // 只检测高事件率包
+const SPAN_RATIO_THRESHOLD: f64 = 3.0; // 包跨时 > 邻居中位数 × 3 → 拥塞包
 
-/// 检测包内静默丢数（泊松方法）。
+/// 检测包内静默丢数（泊松方法 + 拥塞包检测）。
 ///
-/// 对每个高事件率包（rate > MIN_HIGH_RATE）：
-/// 1. 用过滤后的间隔（< 1ms）估算 λ
-/// 2. 对每个间隔计算泊松概率
-/// 3. log₁₀(p) < -10 标记为静默丢数
+/// 两种检测路径：
+/// 1. **高率包**：包内事件率 > 邻居事件率的一半时，用包内过滤间隔估算 λ
+/// 2. **拥塞宽包**：包跨时 > 邻居中位跨时 × 3 时，用邻居事件率估算 λ
+///
+/// 两种路径都用泊松概率 log₁₀(p) < -10 判定异常间隔。
 pub fn detect_silent_drops(data: &BoxReconstructionData) -> Vec<SilentDrop> {
     let mut drops = Vec::new();
+
+    // 预计算所有包的跨时
+    let spans: Vec<(usize, f64)> = data
+        .packet_events
+        .iter()
+        .enumerate()
+        .filter_map(|(i, times)| {
+            if times.len() < 2 {
+                return None;
+            }
+            let span = times.last().unwrap() - times.first().unwrap();
+            if span > 1e-9 {
+                Some((i, span))
+            } else {
+                None
+            }
+        })
+        .collect();
 
     for (pkt_idx, times) in data.packet_events.iter().enumerate() {
         if times.len() < 2 {
@@ -426,21 +445,50 @@ pub fn detect_silent_drops(data: &BoxReconstructionData) -> Vec<SilentDrop> {
         if span < 1e-9 {
             continue;
         }
+
+        // 计算邻居包的中位跨时和中位事件率（前后各 5 个包）
+        let neighbor_spans: Vec<f64> = spans
+            .iter()
+            .filter(|&&(idx, _)| {
+                let diff = if idx > pkt_idx { idx - pkt_idx } else { pkt_idx - idx };
+                diff > 0 && diff <= 5
+            })
+            .map(|&(_, s)| s)
+            .collect();
+
+        if neighbor_spans.is_empty() {
+            continue;
+        }
+
+        let mut sorted_spans = neighbor_spans.clone();
+        sorted_spans.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median_span = sorted_spans[sorted_spans.len() / 2];
+        let neighbor_rate = EVENTS_PER_PKT / median_span;
+
+        // 判断是否需要检测
         let rate = times.len() as f64 / span;
-        if rate < MIN_HIGH_RATE {
+        let is_wide_packet = span > median_span * SPAN_RATIO_THRESHOLD;
+        let is_high_rate = rate > neighbor_rate * 0.5;
+
+        if !is_wide_packet && !is_high_rate {
             continue;
         }
 
         // 计算间隔
         let intervals: Vec<f64> = times.windows(2).map(|w| w[1] - w[0]).collect();
 
-        // 用过滤后的间隔估算 λ（排除 > 1ms 的异常间隔）
-        let filtered: Vec<f64> = intervals.iter().copied().filter(|&dt| dt < 1e-3).collect();
-        if filtered.is_empty() {
-            continue;
-        }
-        let mean_iv: f64 = filtered.iter().sum::<f64>() / filtered.len() as f64;
-        let lambda = 1.0 / mean_iv;
+        // 估算 λ：
+        // - 拥塞宽包：用邻居事件率（包自身率被丢数拉低了）
+        // - 普通高率包：用包内过滤间隔
+        let lambda = if is_wide_packet {
+            neighbor_rate
+        } else {
+            let filtered: Vec<f64> = intervals.iter().copied().filter(|&dt| dt < 1e-3).collect();
+            if filtered.is_empty() {
+                continue;
+            }
+            1.0 / (filtered.iter().sum::<f64>() / filtered.len() as f64)
+        };
 
         // 检测异常间隔
         for (j, &dt) in intervals.iter().enumerate() {

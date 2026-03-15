@@ -72,20 +72,42 @@ fn main() {
     };
 
     if let Some(_pos) = detect_sat {
-        println!("box,type,start_met,stop_met,gap_s,prev_pkt,next_pkt");
+        println!("box,type,start_met,stop_met,gap_s,pkt_idx,evt_idx,n_lost,log10p");
         for (box_name, sci, offset) in &filtered_boxes {
-            let intervals = detect_fifo_reset_intervals(sci, *offset);
-            eprintln!("Box {}: {} FIFO reset intervals", box_name, intervals.len());
-            for iv in &intervals {
+            // 构建完整的 box 数据（同时用于两种检测）
+            let events = reconstruct_met_times(sci, *offset);
+            let gaps = detect_fifo_reset_intervals(sci, *offset);
+            let packets = extract_packet_infos(sci, *offset);
+            let packet_events: Vec<Vec<f64>> = reconstruct_with_wrap_tracking(sci, *offset)
+                .into_iter()
+                .map(|mut t| { t.sort_by(|a, b| a.partial_cmp(b).unwrap()); t })
+                .collect();
+
+            // FIFO reset 输出
+            eprintln!("Box {}: {} FIFO reset intervals", box_name, gaps.len());
+            for iv in &gaps {
+                let r_true = packets
+                    .iter()
+                    .find(|p| p.pkt_idx == iv.next_pkt_idx)
+                    .map(|p| 109.0 / p.span().max(1e-9))
+                    .unwrap_or(15797.0);
+                let n_lost = (r_true * iv.gap_seconds).round() as usize;
                 println!(
-                    "{},{:?},{:.6},{:.6},{:.6},{},{}",
-                    box_name,
-                    iv.saturation_type,
-                    iv.start_met,
-                    iv.stop_met,
-                    iv.gap_seconds,
-                    iv.prev_pkt_idx,
-                    iv.next_pkt_idx,
+                    "{},FifoReset,{:.6},{:.6},{:.6},{},{},{},",
+                    box_name, iv.start_met, iv.stop_met, iv.gap_seconds,
+                    iv.prev_pkt_idx, iv.next_pkt_idx, n_lost,
+                );
+            }
+
+            // 静默丢数检测 + 输出
+            let box_data = BoxReconstructionData { events, gaps, packets, packet_events };
+            let drops = detect_silent_drops(&box_data);
+            eprintln!("Box {}: {} silent drops", box_name, drops.len());
+            for d in &drops {
+                println!(
+                    "{},SilentDrop,{:.6},{:.6},{:.6},{},{},{},{:.1}",
+                    box_name, d.start_met, d.stop_met, d.dt,
+                    d.pkt_idx, d.evt_idx, d.n_lost, d.log10_p,
                 );
             }
         }
@@ -210,8 +232,8 @@ fn main() {
             all_filled.push((box_data[i].0.clone(), filled));
         }
 
-        // 步骤三：输出 binned 光变曲线
-        println!("box,bin_center,observed,reconstructed,filled");
+        // 步骤四：输出 binned 光变曲线（分列输出两种补全）
+        println!("box,bin_center,observed,reconstructed,filled_gap,filled_sd");
         let bins: Vec<f64> = {
             let mut v = Vec::new();
             let mut t = met_min;
@@ -223,31 +245,23 @@ fn main() {
             v
         };
 
-        // 合并静默丢数 + FIFO reset 的补全事件
-        let mut all_combined_filled: Vec<(String, Vec<f64>)> = Vec::new();
-        for (name, gap_filled) in &all_filled {
-            let sd = all_sd_filled.iter().find(|(n, _)| n == name);
-            let mut combined = gap_filled.clone();
-            if let Some((_, sd_evts)) = sd {
-                combined.extend_from_slice(sd_evts);
-                combined.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            }
-            all_combined_filled.push((name.clone(), combined));
-        }
-
         for (box_name, _data) in &box_data {
             let obs_events = original_events
                 .iter()
                 .find(|(n, _)| n == box_name)
                 .map(|(_, e)| e.as_slice())
                 .unwrap_or(&[]);
-            let filled_events = all_combined_filled
+            let gap_events = all_filled
+                .iter()
+                .find(|(n, _)| n == box_name)
+                .map(|(_, f)| f.as_slice())
+                .unwrap_or(&[]);
+            let sd_events = all_sd_filled
                 .iter()
                 .find(|(n, _)| n == box_name)
                 .map(|(_, f)| f.as_slice())
                 .unwrap_or(&[]);
 
-            // 如果指定了 --box，只输出该 box
             if let Some(ref fb) = filter_box {
                 if box_name != fb {
                     continue;
@@ -259,18 +273,23 @@ fn main() {
                 let bin_hi = w[1];
                 let bin_center = (bin_lo + bin_hi) / 2.0;
 
-                let n_obs = obs_events.partition_point(|&t| t < bin_hi)
-                    - obs_events.partition_point(|&t| t < bin_lo);
-                let n_filled = filled_events.partition_point(|&t| t < bin_hi)
-                    - filled_events.partition_point(|&t| t < bin_lo);
+                let count = |events: &[f64]| -> usize {
+                    events.partition_point(|&t| t < bin_hi)
+                        - events.partition_point(|&t| t < bin_lo)
+                };
 
-                let rate_obs = n_obs as f64 / bin_width;
-                let rate_total = (n_obs + n_filled) as f64 / bin_width;
-                let rate_filled = n_filled as f64 / bin_width;
+                let n_obs = count(obs_events);
+                let n_gap = count(gap_events);
+                let n_sd = count(sd_events);
+                let n_total = n_obs + n_gap + n_sd;
 
                 println!(
-                    "{},{:.6},{:.1},{:.1},{:.1}",
-                    box_name, bin_center, rate_obs, rate_total, rate_filled,
+                    "{},{:.6},{:.1},{:.1},{:.1},{:.1}",
+                    box_name, bin_center,
+                    n_obs as f64 / bin_width,
+                    n_total as f64 / bin_width,
+                    n_gap as f64 / bin_width,
+                    n_sd as f64 / bin_width,
                 );
             }
         }
