@@ -348,7 +348,7 @@ pub fn reconstruct_gaps(
         }
 
         // 步骤一：估算 R_true（从 post-reset 包的 span）
-        let r_true = estimate_r_true_for_gap(gap, &target.packets);
+        let r_true = estimate_r_true_for_gap(gap, &target.packets, &target.packet_events);
         let n_lost = (r_true * gap_dur).round() as usize;
         if n_lost == 0 {
             continue;
@@ -398,12 +398,12 @@ pub fn reconstruct_gaps(
             // 无参考时留空，给插值处理
         }
 
-        // 对空 bin 做线性插值
-        interpolate_empty_bins(&mut shape);
-
-        // 如果完全没有参考，均匀分配
-        if shape.iter().all(|&v| v <= 0.0) {
+        // 参考覆盖率检查：如果 > 70% 的 bin 没有参考，直接均匀分配
+        let n_filled = shape.iter().filter(|&&v| v > 0.0).count();
+        if n_filled == 0 || n_filled * 100 / n_sbins < 30 {
             shape.iter_mut().for_each(|v| *v = 1.0);
+        } else {
+            interpolate_empty_bins(&mut shape);
         }
 
         // 步骤三：归一化到 N_lost 并分配事件
@@ -437,22 +437,42 @@ pub fn reconstruct_gaps(
     results
 }
 
-fn estimate_r_true_for_gap(gap: &SaturationInterval, packets: &[PacketInfo]) -> f64 {
-    // 优先用 post-reset 包
-    if let Some(info) = packets.iter().find(|p| p.pkt_idx == gap.next_pkt_idx) {
+fn estimate_r_true_for_gap(
+    gap: &SaturationInterval,
+    packets: &[PacketInfo],
+    packet_events: &[Vec<f64>],
+) -> f64 {
+    // 用 post-reset 包估算
+    let post_info = packets.iter().find(|p| p.pkt_idx == gap.next_pkt_idx);
+    let post_rate = post_info.and_then(|info| {
         let span = info.span();
-        if span > 1e-9 {
-            return EVENTS_PER_PKT / span;
+        if span > 1e-9 { Some(EVENTS_PER_PKT / span) } else { None }
+    });
+
+    // 如果 post-reset 包率 >= MCU 读速率（非深度饱和），直接用
+    if let Some(rate) = post_rate {
+        if rate >= MCU_READ_RATE_FLOOR {
+            return rate;
         }
     }
-    // fallback: pre-reset 包
-    if let Some(info) = packets.iter().find(|p| p.pkt_idx == gap.prev_pkt_idx) {
-        let span = info.span();
-        if span > 1e-9 {
-            return EVENTS_PER_PKT / span;
+
+    // 深度饱和区：用邻近包的 burst rate 估算 R_true
+    // 检查 gap 附近的包，找 burst rate
+    for pkt_idx in [gap.next_pkt_idx, gap.prev_pkt_idx] {
+        let times = &packet_events[pkt_idx];
+        if times.len() < 10 {
+            continue;
+        }
+        let intervals: Vec<f64> = times.windows(2).map(|w| w[1] - w[0]).collect();
+        let burst_duration: f64 = intervals.iter().filter(|&&dt| dt < 1e-3).sum();
+        let burst_n: usize = intervals.iter().filter(|&&dt| dt < 1e-3).count() + 1;
+        if burst_duration > 1e-9 && burst_n > 5 {
+            return burst_n as f64 / burst_duration;
         }
     }
-    15797.0
+
+    // fallback
+    post_rate.unwrap_or(15797.0)
 }
 
 fn calibrate_ratio_sorted(
