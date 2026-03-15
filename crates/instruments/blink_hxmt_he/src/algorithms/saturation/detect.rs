@@ -715,6 +715,120 @@ pub fn reconstruct_silent_drops(
     results
 }
 
+/// 深度饱和包级修正。
+///
+/// 对深度饱和区的每个拥塞包，用包内 burst 部分的计数率填充空白区域。
+/// Burst = 包内事件密集的部分（MCU 读取期间），Gap = 无事件的部分。
+/// 用 burst 的计数率作为整个包的真实率，在 gap 中补全缺失的事件。
+pub fn reconstruct_deep_saturation(
+    target: &BoxReconstructionData,
+) -> Vec<ReconstructedSilentDrop> {
+    let mut results = Vec::new();
+
+    let spans: Vec<(usize, f64)> = target
+        .packet_events
+        .iter()
+        .enumerate()
+        .filter_map(|(i, times)| {
+            if times.len() < 2 {
+                return None;
+            }
+            let span = times.last().unwrap() - times.first().unwrap();
+            if span > 1e-9 { Some((i, span)) } else { None }
+        })
+        .collect();
+
+    for pkt in &target.packets {
+        let span = pkt.span();
+        if span < 1e-6 {
+            continue;
+        }
+
+        // 判断是否在深度饱和区
+        let si = match spans.binary_search_by(|&(idx, _)| idx.cmp(&pkt.pkt_idx)) {
+            Ok(i) => i,
+            Err(_) => continue,
+        };
+
+        let mut neighbor_spans: Vec<f64> = Vec::new();
+        for offset in 1..=5_usize {
+            if si >= offset { neighbor_spans.push(spans[si - offset].1); }
+            if si + offset < spans.len() { neighbor_spans.push(spans[si + offset].1); }
+        }
+        if neighbor_spans.is_empty() {
+            continue;
+        }
+        neighbor_spans.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median_span = neighbor_spans[neighbor_spans.len() / 2];
+        let neighbor_rate = EVENTS_PER_PKT / median_span;
+
+        if neighbor_rate >= MCU_READ_RATE_FLOOR {
+            continue; // 不在深度饱和区
+        }
+
+        // 计算 burst 的计数率
+        let times = &target.packet_events[pkt.pkt_idx];
+        if times.len() < 10 {
+            continue;
+        }
+
+        // Burst = 事件密集部分。找包内过滤间隔（<1ms）的总持续时间作为 burst duration
+        let intervals: Vec<f64> = times.windows(2).map(|w| w[1] - w[0]).collect();
+        let burst_duration: f64 = intervals.iter().filter(|&&dt| dt < 1e-3).sum();
+        if burst_duration < 1e-9 {
+            continue;
+        }
+        let burst_n: usize = intervals.iter().filter(|&&dt| dt < 1e-3).count() + 1;
+        let burst_rate = burst_n as f64 / burst_duration;
+
+        // Gap 部分需要补全的事件数
+        let gap_duration = span - burst_duration;
+        if gap_duration < 1e-6 {
+            continue;
+        }
+        let n_fill = (burst_rate * gap_duration).round() as usize;
+        if n_fill == 0 {
+            continue;
+        }
+
+        // 找 gap 区域（包内 > 1ms 的大间隔）并在其中均匀分配事件
+        let mut filled_events = Vec::with_capacity(n_fill);
+        let total_gap: f64 = intervals.iter().filter(|&&dt| dt >= 1e-3).sum();
+        if total_gap < 1e-9 {
+            continue;
+        }
+
+        for (j, &dt) in intervals.iter().enumerate() {
+            if dt < 1e-3 {
+                continue; // burst 间隔，跳过
+            }
+            // 这个间隔分配的事件数按比例
+            let n_in_gap = (n_fill as f64 * dt / total_gap).round() as usize;
+            if n_in_gap == 0 {
+                continue;
+            }
+            let gap_start = times[j];
+            let gap_stop = times[j + 1];
+            let step = (gap_stop - gap_start) / (n_in_gap + 1) as f64;
+            for k in 0..n_in_gap {
+                filled_events.push(gap_start + (k as f64 + 1.0) * step);
+            }
+        }
+
+        if !filled_events.is_empty() {
+            results.push(ReconstructedSilentDrop {
+                pkt_idx: pkt.pkt_idx,
+                evt_idx: 0,
+                filled_events,
+                n_lost: n_fill,
+                has_cross_ref: false,
+            });
+        }
+    }
+
+    results
+}
+
 fn interpolate_empty_bins(shape: &mut [f64]) {
     let n = shape.len();
     if n == 0 {

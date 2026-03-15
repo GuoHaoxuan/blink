@@ -1,10 +1,10 @@
 use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::algorithms::saturation::{
     check_byte_offsets, detect_fifo_reset_intervals, detect_silent_drops, diagnose_packets,
-    dump_event_details, dump_ptime_utc, extract_packet_infos, reconstruct_gaps,
-    reconstruct_met_times, reconstruct_silent_drops, reconstruct_with_wrap_tracking,
-    reconstruct_with_wrap_tracking_labeled, scan_saturation_intervals, BoxReconstructionData,
-    detect_unreliable_intervals,
+    dump_event_details, dump_ptime_utc, extract_packet_infos, reconstruct_deep_saturation,
+    reconstruct_gaps, reconstruct_met_times, reconstruct_silent_drops,
+    reconstruct_with_wrap_tracking, reconstruct_with_wrap_tracking_labeled,
+    scan_saturation_intervals, BoxReconstructionData, detect_unreliable_intervals,
 };
 use blink_hxmt_he::io::level_1b::{
     SciFile, get_eng_filenames, get_sci_filenames, read_stime_offset,
@@ -205,10 +205,25 @@ fn main() {
                 .collect();
             gap_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
+            // 深度饱和包级修正（用 burst 计数率填充 gap）
+            let ds_results = reconstruct_deep_saturation(&box_data[i].1);
+            let n_ds_count = ds_results.len();
+            let n_ds_filled: usize = ds_results.iter().map(|r| r.n_lost).sum();
+            let mut ds_events: Vec<f64> = ds_results
+                .into_iter()
+                .flat_map(|r| r.filled_events)
+                .collect();
+            ds_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            // 合并静默丢数 + 深度饱和到 sd
+            sd_events.extend_from_slice(&ds_events);
+            sd_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
             eprintln!(
-                "  Box {}: silent_drops={} ({} events, {} ref) | gaps={} ({} events, {} ref)",
+                "  Box {}: sd={} ({} evt) | deep_sat={} ({} evt) | gaps={} ({} evt, {} ref)",
                 box_data[i].0,
-                drops.len(), n_sd_filled, n_sd_ref,
+                drops.len(), n_sd_filled,
+                n_ds_count, n_ds_filled,
                 box_data[i].1.gaps.len(), n_gap_filled, n_gap_ref,
             );
 
