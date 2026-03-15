@@ -4,6 +4,7 @@ use blink_hxmt_he::algorithms::saturation::{
     dump_event_details, dump_ptime_utc, extract_packet_infos, reconstruct_gaps,
     reconstruct_met_times, reconstruct_silent_drops, reconstruct_with_wrap_tracking,
     reconstruct_with_wrap_tracking_labeled, scan_saturation_intervals, BoxReconstructionData,
+    detect_unreliable_intervals,
 };
 use blink_hxmt_he::io::level_1b::{
     SciFile, get_eng_filenames, get_sci_filenames, read_stime_offset,
@@ -100,7 +101,8 @@ fn main() {
             }
 
             // 静默丢数检测 + 输出
-            let box_data = BoxReconstructionData { events, gaps, packets, packet_events };
+            let unreliable = detect_unreliable_intervals(&gaps, &packets, &packet_events);
+            let box_data = BoxReconstructionData { events, gaps, packets, packet_events, unreliable };
             let drops = detect_silent_drops(&box_data);
             eprintln!("Box {}: {} silent drops", box_name, drops.len());
             for d in &drops {
@@ -146,12 +148,10 @@ fn main() {
                     times
                 })
                 .collect();
+            let unreliable = detect_unreliable_intervals(&gaps, &packets, &packet_events);
             eprintln!(
-                "  Box {}: {} events, {} gaps, {} packets",
-                box_name,
-                events.len(),
-                gaps.len(),
-                packets.len()
+                "  Box {}: {} events, {} gaps, {} unreliable, {} packets",
+                box_name, events.len(), gaps.len(), unreliable.len(), packets.len()
             );
             box_data.push((
                 box_name.clone(),
@@ -160,6 +160,7 @@ fn main() {
                     gaps,
                     packets,
                     packet_events,
+                    unreliable,
                 },
             ));
         }
