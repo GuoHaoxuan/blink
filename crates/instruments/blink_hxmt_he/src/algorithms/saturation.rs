@@ -5,7 +5,8 @@ pub mod rec_sci_data;
 pub use crc_check::crc_check;
 pub use detect::{
     detect_fifo_reset_intervals, detect_silent_drops, detect_unreliable_intervals,
-    extract_packet_infos, reconstruct_gaps, reconstruct_silent_drops, BoxReconstructionData,
+    extract_packet_infos, reconstruct_deep_saturation, reconstruct_gaps,
+    reconstruct_silent_drops, BoxReconstructionData,
     PacketInfo, ReconstructedGap, ReconstructedSilentDrop, SaturationInterval, SaturationType,
     SilentDrop, UnreliableInterval,
 };
