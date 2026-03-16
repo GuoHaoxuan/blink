@@ -40,6 +40,10 @@ struct PacketTimeSummary {
 
 const GAP_FACTOR: f64 = 100.0;
 
+/// FIFO Reset gap 的最大持续时间（秒）。超过此值的 gap 不认为是 FIFO 复位，
+/// 而是数据传输中断、SAA 等其他原因。正常 FIFO reset gap 在 8ms~100ms 量级。
+const MAX_FIFO_RESET_GAP: f64 = 1.0;
+
 /// MCU 读取速率下限 (events/s)。
 /// MCU 以固定速率从 FIFO A 读取：109 events / 6.9ms ≈ 15797 evt/s。
 /// 只有当物理事件率超过此值时，FIFO 才可能溢出触发 FIFOAFullReset。
@@ -148,7 +152,7 @@ pub fn detect_fifo_reset_intervals(sci_data: &SciFile, offset: f64) -> Vec<Satur
             continue;
         }
 
-        if gap > baseline * GAP_FACTOR {
+        if gap > baseline * GAP_FACTOR && gap <= MAX_FIFO_RESET_GAP {
             intervals.push(SaturationInterval {
                 start_met: window[0].max_met,
                 stop_met: window[1].min_met,
