@@ -48,7 +48,27 @@ enum TopCommands {
 #[derive(Subcommand)]
 enum SatCommands {
     /// Time reconstruction: solve event MET from 1B raw data (step 1)
-    Solve,
+    Solve {
+        /// Trigger time (MET or UTC). If omitted, output all events.
+        trigger: Option<String>,
+        /// Seconds before trigger [default: 10]
+        #[arg(long, default_value_t = 10.0)]
+        before: f64,
+        /// Seconds after trigger [default: 100]
+        #[arg(long, default_value_t = 100.0)]
+        after: f64,
+    },
+    /// Export 1K pipeline events for comparison
+    Solve1k {
+        /// Trigger time (MET or UTC). If omitted, output all events.
+        trigger: Option<String>,
+        /// Seconds before trigger [default: 10]
+        #[arg(long, default_value_t = 10.0)]
+        before: f64,
+        /// Seconds after trigger [default: 100]
+        #[arg(long, default_value_t = 100.0)]
+        after: f64,
+    },
     /// Saturation detection: find FIFO resets + silent drops (step 2)
     Detect,
     /// Light curve reconstruction: fill saturated gaps (step 3)
@@ -64,15 +84,25 @@ enum SatCommands {
 
 #[derive(Args)]
 struct TimeWindow {
-    /// Center time (MET number or UTC datetime, e.g. 339945422.0 or 2022-10-09T13:37:02)
-    center_met: String,
-    /// Half window size in seconds
-    half_window: f64,
+    /// Trigger time (MET number or UTC datetime, e.g. 339945422.0 or 2022-10-09T13:37:02)
+    trigger: String,
+    /// Seconds before trigger
+    #[arg(long, default_value_t = 10.0)]
+    before: f64,
+    /// Seconds after trigger
+    #[arg(long, default_value_t = 100.0)]
+    after: f64,
 }
 
 impl TimeWindow {
-    fn met(&self) -> f64 {
-        parse_met_or_utc(&self.center_met)
+    fn trigger_met(&self) -> f64 {
+        parse_met_or_utc(&self.trigger)
+    }
+    fn met_min(&self) -> f64 {
+        self.trigger_met() - self.before
+    }
+    fn met_max(&self) -> f64 {
+        self.trigger_met() + self.after
     }
 }
 
@@ -208,10 +238,17 @@ fn filter_boxes<'a>(
 
 fn cmd_solve(
     filtered_boxes: &[&(String, SciFile, f64)],
+    met_min: Option<f64>,
+    met_max: Option<f64>,
 ) {
+    if let (Some(lo), Some(hi)) = (met_min, met_max) {
+        eprintln!("Solving events in [{:.3}, {:.3}]", lo, hi);
+    } else {
+        eprintln!("Solving all events...");
+    }
     println!("box,type,met,channel,pkt_idx,evt_idx");
     for (box_name, sci, offset) in filtered_boxes {
-        let events = solve_events(sci, *offset, None, None);
+        let events = solve_events(sci, *offset, met_min, met_max);
         let mut n_evt = 0u64;
         let mut n_sec = 0u64;
         for evt in &events {
@@ -227,6 +264,39 @@ fn cmd_solve(
         let n_err = n_total_slots as u64 - n_evt - n_sec;
         eprintln!("  Box {}: {} events, {} seconds, {} CRC errors",
                   box_name, n_evt, n_sec, n_err);
+    }
+}
+
+fn cmd_solve_1k(
+    epoch: DateTime<Utc>,
+    box_filter: &Option<String>,
+    met_min: Option<f64>,
+    met_max: Option<f64>,
+) {
+    eprintln!("Loading 1K EventFile...");
+    let evt = EventFile::from_epoch(&epoch).expect("Failed to load 1K EventFile");
+    let k1_times = evt.times();
+    let k1_dets = evt.det_ids();
+
+    let box_ranges: [(&str, u8, u8); 3] = [("A", 0, 5), ("B", 6, 11), ("C", 12, 17)];
+    let lo = met_min.unwrap_or(f64::NEG_INFINITY);
+    let hi = met_max.unwrap_or(f64::INFINITY);
+
+    println!("box,type,met,channel,pkt_idx,evt_idx");
+    for (bname, d_lo, d_hi) in &box_ranges {
+        if let Some(fb) = box_filter {
+            if !fb.eq_ignore_ascii_case(bname) {
+                continue;
+            }
+        }
+        let mut n = 0u64;
+        for (t, d) in k1_times.iter().zip(k1_dets.iter()) {
+            if *d >= *d_lo && *d <= *d_hi && *t >= lo && *t <= hi {
+                println!("{},EVT,{:.6},{},0,0", bname, t, d);
+                n += 1;
+            }
+        }
+        eprintln!("  Box {}: {} events", bname, n);
     }
 }
 
@@ -286,12 +356,12 @@ fn cmd_reconstruct(
     boxes: &[(String, SciFile, f64)],
     filter_box: &Option<String>,
 ) {
-    let center_met = args.window.met();
-    let half_window = args.window.half_window;
+    let met_min = args.window.met_min();
+    let met_max = args.window.met_max();
     let bin_width = args.bin_width;
 
-    let met_min = center_met - half_window;
-    let met_max = center_met + half_window;
+    
+    
 
     eprintln!("Preparing reconstruction data...");
     let mut box_data: Vec<(String, BoxReconstructionData)> = Vec::new();
@@ -457,16 +527,17 @@ fn cmd_dump_times(
     window: &TimeWindow,
     boxes: &[(String, SciFile, f64)],
 ) {
-    let met_min = window.met() - window.half_window;
-    let met_max = window.met() + window.half_window;
+    let met_min = window.met_min();
+    let met_max = window.met_max();
 
     eprintln!(
-        "Dumping times in [{:.3}, {:.3}] (center={:.3}, half_window={:.1})",
-        met_min, met_max, window.met(), window.half_window
+        "Dumping times in [{:.3}, {:.3}] (trigger={:.3}, before={:.1}, after={:.1})",
+        met_min, met_max, window.trigger_met(), window.before, window.after
     );
 
-    println!("# center_met={:.6}", window.met());
-    println!("# half_window={:.1}", window.half_window);
+    println!("# trigger_met={:.6}", window.trigger_met());
+    println!("# before={:.1}", window.before);
+    println!("# after={:.1}", window.after);
 
     for (box_name, sci, offset) in boxes {
         eprintln!("Box {} (offset={:.0}) ...", box_name, offset);
@@ -512,8 +583,8 @@ fn cmd_dump_packets(
     filtered_boxes: &[&(String, SciFile, f64)],
     boxes: &[(String, SciFile, f64)],
 ) {
-    let met_min = window.met() - window.half_window;
-    let met_max = window.met() + window.half_window;
+    let met_min = window.met_min();
+    let met_max = window.met_max();
 
     println!("box,pkt_idx,min_time,max_time,n_events");
     for (box_name, sci, offset) in filtered_boxes {
@@ -557,8 +628,8 @@ fn cmd_dump_events(
     window: &TimeWindow,
     filtered_boxes: &[&(String, SciFile, f64)],
 ) {
-    let met_min = window.met() - window.half_window;
-    let met_max = window.met() + window.half_window;
+    let met_min = window.met_min();
+    let met_max = window.met_max();
 
     eprintln!("Dumping events in [{:.3}, {:.3}]", met_min, met_max);
 
@@ -591,12 +662,12 @@ fn cmd_dump_hist(
     args: &HistArgs,
     filtered_boxes: &[&(String, SciFile, f64)],
 ) {
-    let center_met = args.window.met();
-    let half_window = args.window.half_window;
+    let met_min = args.window.met_min();
+    let met_max = args.window.met_max();
     let bin_width = args.bin_width;
 
-    let met_min = center_met - half_window;
-    let met_max = center_met + half_window;
+    
+    
     let n_bins = ((met_max - met_min) / bin_width).ceil() as usize;
 
     eprintln!(
@@ -629,8 +700,8 @@ fn cmd_dump_hist(
 
     eprintln!("  Total in hist: {}", n_total);
 
-    println!("# center_met={:.6}", center_met);
-    println!("# half_window={:.1}", half_window);
+    println!("# trigger_met={:.6}", met_min);
+    println!("# before={:.1}, after={:.1}", args.window.before, args.window.after);
     println!("# bin_width={:.6}", bin_width);
     println!("# n_bins={}", n_bins);
     println!("# n_total={}", n_total);
@@ -656,8 +727,8 @@ fn cmd_dump_diag(
     window: &TimeWindow,
     boxes: &[(String, SciFile, f64)],
 ) {
-    let met_min = window.met() - window.half_window;
-    let met_max = window.met() + window.half_window;
+    let met_min = window.met_min();
+    let met_max = window.met_max();
 
     println!(
         "box,pkt,n_evt,n_sec,n_sec_valid,n_err,n_out,n_drop,anchor,utc_tail,met_min,met_max"
@@ -753,10 +824,10 @@ fn cmd_compare(
     epoch: DateTime<Utc>,
     filter_box: &Option<String>,
 ) {
-    let center_met = args.window.met();
-    let half_window = args.window.half_window;
-    let met_min = center_met - half_window;
-    let met_max = center_met + half_window;
+    let met_min = args.window.met_min();
+    let met_max = args.window.met_max();
+    
+    
 
     // Load 1B times per box
     eprintln!("Loading 1B times...");
@@ -1035,7 +1106,26 @@ fn main() {
             let filtered = filter_boxes(&boxes, &box_filter);
 
             match command {
-                SatCommands::Solve => cmd_solve(&filtered),
+                SatCommands::Solve { trigger, before, after } => {
+                    let (met_min, met_max) = match &trigger {
+                        Some(t) => {
+                            let trig = parse_met_or_utc(t);
+                            (Some(trig - before), Some(trig + after))
+                        }
+                        None => (None, None),
+                    };
+                    cmd_solve(&filtered, met_min, met_max);
+                }
+                SatCommands::Solve1k { trigger, before, after } => {
+                    let (met_min, met_max) = match &trigger {
+                        Some(t) => {
+                            let trig = parse_met_or_utc(t);
+                            (Some(trig - before), Some(trig + after))
+                        }
+                        None => (None, None),
+                    };
+                    cmd_solve_1k(epoch, &box_filter, met_min, met_max);
+                }
                 SatCommands::Detect => cmd_detect(&filtered),
                 SatCommands::Reconstruct(args) => {
                     cmd_reconstruct(&args, &boxes, &box_filter)
