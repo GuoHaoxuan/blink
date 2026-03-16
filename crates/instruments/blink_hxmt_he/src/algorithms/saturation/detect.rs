@@ -801,8 +801,20 @@ pub fn reconstruct_deep_saturation(
         let burst_n: usize = intervals.iter().filter(|&&dt| dt < 1e-3).count() + 1;
         let burst_rate = burst_n as f64 / burst_duration;
 
-        // Gap 部分需要补全的事件数
+        // 额外判据：burst rate 必须显著高于表观率，证明确实是 MCU 瓶颈
+        // 而不是源率本来就低。真正的深度饱和包：burst rate >> 表观率（因为 MCU
+        // 在 burst 期间以接近硬件极限速度读取）。非饱和包：burst rate ≈ 表观率。
+        let apparent_rate = times.len() as f64 / span;
+        if burst_rate < apparent_rate * 2.0 || burst_rate < MCU_READ_RATE_FLOOR as f64 {
+            continue; // burst rate 不够高，不是真正的深度饱和
+        }
+
+        // 额外判据：包内必须有显著的 gap（> 总时长的 30%），表明 MCU 确实有空闲期
         let gap_duration = span - burst_duration;
+        if gap_duration < span * 0.3 {
+            continue; // gap 占比太小，不像深度饱和的 burst + idle 模式
+        }
+
         if gap_duration < 1e-6 {
             continue;
         }

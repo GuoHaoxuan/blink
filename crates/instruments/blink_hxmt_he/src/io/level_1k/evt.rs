@@ -32,6 +32,14 @@ impl EventFile {
         Self::new(&path)
     }
 
+    pub fn times(&self) -> &[f64] {
+        &self.time
+    }
+
+    pub fn det_ids(&self) -> &[u8] {
+        &self.det_id
+    }
+
     fn new(filename: &str) -> Result<Self, Error> {
         let mut fptr = fitsio::FitsFile::open(filename)?;
 
