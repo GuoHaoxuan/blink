@@ -386,7 +386,6 @@ fn cmd_reconstruct(
 ) {
     let met_min = args.window.met_min();
     let met_max = args.window.met_max();
-    let bin_width = args.bin_width;
 
     
     
@@ -489,18 +488,8 @@ fn cmd_reconstruct(
         all_filled.push((box_data[i].0.clone(), gap_events));
     }
 
-    println!("box,bin_center,observed,reconstructed,filled_gap,filled_sd");
-    let bins: Vec<f64> = {
-        let mut v = Vec::new();
-        let mut t = met_min;
-        while t < met_max {
-            v.push(t);
-            t += bin_width;
-        }
-        v.push(met_max);
-        v
-    };
-
+    // Output all events (real + filled) in solve-compatible format
+    println!("box,type,met,channel,pkt_idx,evt_idx");
     for (box_name, _data) in &box_data {
         let obs_events = original_events
             .iter()
@@ -519,35 +508,38 @@ fn cmd_reconstruct(
             .unwrap_or(&[]);
 
         if let Some(fb) = filter_box {
-            if box_name != fb {
+            if !box_name.eq_ignore_ascii_case(fb) {
                 continue;
             }
         }
 
-        for w in bins.windows(2) {
-            let bin_lo = w[0];
-            let bin_hi = w[1];
-            let bin_center = (bin_lo + bin_hi) / 2.0;
+        let mut n_obs = 0u64;
+        let mut n_gap = 0u64;
+        let mut n_sd = 0u64;
 
-            let count = |events: &[f64]| -> usize {
-                events.partition_point(|&t| t < bin_hi) - events.partition_point(|&t| t < bin_lo)
-            };
-
-            let n_obs = count(obs_events);
-            let n_gap = count(gap_events);
-            let n_sd = count(sd_events);
-            let n_total = n_obs + n_gap + n_sd;
-
-            println!(
-                "{},{:.6},{:.1},{:.1},{:.1},{:.1}",
-                box_name,
-                bin_center,
-                n_obs as f64 / bin_width,
-                n_total as f64 / bin_width,
-                n_gap as f64 / bin_width,
-                n_sd as f64 / bin_width,
-            );
+        for &t in obs_events {
+            if t >= met_min && t <= met_max {
+                println!("{},EVT,{:.6},0,-1,-1", box_name, t);
+                n_obs += 1;
+            }
         }
+        for &t in gap_events {
+            if t >= met_min && t <= met_max {
+                println!("{},FILL_GAP,{:.6},0,-1,-1", box_name, t);
+                n_gap += 1;
+            }
+        }
+        for &t in sd_events {
+            if t >= met_min && t <= met_max {
+                println!("{},FILL_SD,{:.6},0,-1,-1", box_name, t);
+                n_sd += 1;
+            }
+        }
+
+        eprintln!(
+            "  Box {}: {} observed, {} gap-filled, {} sd-filled",
+            box_name, n_obs, n_gap, n_sd,
+        );
     }
 }
 
