@@ -1822,14 +1822,26 @@ pub fn dump_event_details(
     met_min: f64,
     met_max: f64,
 ) -> Vec<EventDetail> {
+    solve_events(sci_data, offset, Some(met_min), Some(met_max))
+}
+
+/// 时间解算：返回所有事件的详细信息。
+/// met_min/met_max 为 None 时不做时间窗口过滤。
+pub fn solve_events(
+    sci_data: &SciFile,
+    offset: f64,
+    met_min: Option<f64>,
+    met_max: Option<f64>,
+) -> Vec<EventDetail> {
     let packet_times = reconstruct_with_wrap_tracking(sci_data, offset);
     let mut result = Vec::new();
+    let lo = met_min.unwrap_or(f64::NEG_INFINITY);
+    let hi = met_max.unwrap_or(f64::INFINITY);
 
     for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
         let events = parse_events(ccsds);
         let times = &packet_times[pkt_idx];
 
-        // reconstruct_with_wrap_tracking 已经过滤了 Error，times 和非 Error 事件一一对应
         let mut time_idx = 0;
         for (evt_idx, event) in events.iter().enumerate() {
             match event {
@@ -1837,7 +1849,7 @@ pub fn dump_event_details(
                     if time_idx < times.len() {
                         let computed_met = times[time_idx];
                         time_idx += 1;
-                        if computed_met >= met_min && computed_met <= met_max {
+                        if computed_met >= lo && computed_met <= hi {
                             result.push(EventDetail {
                                 pkt_index: pkt_idx,
                                 evt_index: evt_idx,
@@ -1857,7 +1869,7 @@ pub fn dump_event_details(
                     if time_idx < times.len() {
                         let computed_met = times[time_idx];
                         time_idx += 1;
-                        if computed_met >= met_min && computed_met <= met_max {
+                        if computed_met >= lo && computed_met <= hi {
                             result.push(EventDetail {
                                 pkt_index: pkt_idx,
                                 evt_index: evt_idx,
