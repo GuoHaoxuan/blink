@@ -60,17 +60,16 @@ def run_cli(epoch, subcmd, trigger=None, before=10, after=100, box_filter=None):
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             text=True, env=env)
 
+    # boxes[box][type] = [met, ...]
     boxes = {}
     for line in proc.stdout:
         parts = line.strip().split(",")
         if len(parts) < 3 or parts[0] == "box":
             continue
         box, typ, met = parts[0], parts[1], float(parts[2])
-        if typ != "EVT":
+        if typ == "SEC":
             continue
-        if box not in boxes:
-            boxes[box] = []
-        boxes[box].append(met)
+        boxes.setdefault(box, {}).setdefault(typ, []).append(met)
 
     stderr = proc.stderr.read()
     proc.wait()
@@ -79,7 +78,8 @@ def run_cli(epoch, subcmd, trigger=None, before=10, after=100, box_filter=None):
             print(f"  {line}", file=sys.stderr)
 
     for box in boxes:
-        boxes[box] = np.array(boxes[box])
+        for typ in boxes[box]:
+            boxes[box][typ] = np.array(boxes[box][typ])
     return boxes
 
 
@@ -123,9 +123,13 @@ def run_detect(epoch, trigger=None, before=10, after=100):
 
 def plot_lightcurve(b1, k1, fifo_resets, silent_drops,
                     trigger_met=None, bin_width=1.0, output=None, epoch=""):
-    all_b1 = np.concatenate(list(b1.values())) if b1 else np.array([])
-    all_k1 = np.concatenate(list(k1.values())) if k1 else np.array([])
-    all_times = np.concatenate([all_b1, all_k1])
+    all_times_list = []
+    for box_data in [b1, k1]:
+        for type_dict in box_data.values():
+            for arr in type_dict.values():
+                if len(arr) > 0:
+                    all_times_list.append(arr)
+    all_times = np.concatenate(all_times_list) if all_times_list else np.array([0])
     t_min = all_times.min()
     t_max = all_times.max()
     t_ref = trigger_met if trigger_met else (t_min + t_max) / 2
@@ -150,23 +154,55 @@ def plot_lightcurve(b1, k1, fifo_resets, silent_drops,
                                   gridspec_kw={"height_ratios": height_ratios,
                                                "hspace": 0.05})
 
-    def draw_lc(ax, times_1k, times_1b, fill_color, line_color):
-        if times_1k is not None and len(times_1k) > 0:
-            counts_k, _ = np.histogram(times_1k, bins=edges)
-            rates_k = counts_k / bin_width
-            ax.fill_between(plot_edges[:-1], rates_k, step="post", color="#DDDDDD",
+    def draw_lc(ax, box_1k, box_1b, fill_color, line_color):
+        """Draw: 1K background + 1B observed + FILL_GAP bars + FILL_SD bars."""
+        n_bins = len(plot_edges) - 1
+        x = plot_edges[:-1]
+
+        # 1K background
+        t_1k = box_1k.get("EVT", np.array([])) if box_1k else np.array([])
+        if len(t_1k) > 0:
+            rates_k = np.histogram(t_1k, bins=edges)[0] / bin_width
+            ax.fill_between(x, rates_k, step="post", color="#DDDDDD",
                       alpha=0.8, edgecolor="none", linewidth=0, zorder=1)
-            ax.step(plot_edges[:-1], rates_k, where="post", color="#AAAAAA",
-                    lw=0.5, label=f"1K (n={len(times_1k):,})", zorder=2)
-        if times_1b is not None and len(times_1b) > 0:
-            counts_b, _ = np.histogram(times_1b, bins=edges)
-            rates_b = counts_b / bin_width
-            ax.fill_between(plot_edges[:-1], rates_b, step="post",
-                      color=fill_color, alpha=0.5,
-                      edgecolor="none", linewidth=0, zorder=3)
-            ax.step(plot_edges[:-1], rates_b, where="post",
-                    color=line_color, lw=0.5,
-                    label=f"1B (n={len(times_1b):,})", zorder=4)
+            ax.step(x, rates_k, where="post", color="#AAAAAA",
+                    lw=0.5, label=f"1K ({len(t_1k):,})", zorder=2)
+
+        if not box_1b:
+            return
+
+        # 1B observed
+        t_evt = box_1b.get("EVT", np.array([]))
+        rates_evt = np.histogram(t_evt, bins=edges)[0] / bin_width if len(t_evt) else np.zeros(n_bins)
+        ax.fill_between(x, rates_evt, step="post", color=fill_color, alpha=0.5,
+                  edgecolor="none", linewidth=0, zorder=3)
+        ax.step(x, rates_evt, where="post", color=line_color, lw=0.5,
+                label=f"1B ({len(t_evt):,})", zorder=4)
+
+        # FILL_GAP: red bars only where fill > 0
+        t_gap = box_1b.get("FILL_GAP", np.array([]))
+        if len(t_gap) > 0:
+            rates_gap = np.histogram(t_gap, bins=edges)[0] / bin_width
+            mask = rates_gap > 0
+            if mask.any():
+                ax.bar(x[mask], rates_gap[mask], width=bin_width,
+                       bottom=rates_evt[mask], color="#E74C3C", alpha=0.5,
+                       align="edge", edgecolor="none", zorder=5,
+                       label=f"Gap fill ({len(t_gap):,})")
+        else:
+            rates_gap = np.zeros(n_bins)
+
+        # FILL_SD: purple bars only where fill > 0
+        t_sd = box_1b.get("FILL_SD", np.array([]))
+        if len(t_sd) > 0:
+            rates_sd = np.histogram(t_sd, bins=edges)[0] / bin_width
+            mask = rates_sd > 0
+            if mask.any():
+                base = rates_evt + rates_gap
+                ax.bar(x[mask], rates_sd[mask], width=bin_width,
+                       bottom=base[mask], color="#9B59B6", alpha=0.5,
+                       align="edge", edgecolor="none", zorder=6,
+                       label=f"SD fill ({len(t_sd):,})")
 
     def draw_sat_strip(ax, box, color):
         """Draw saturation indicators as a thin strip."""
@@ -192,7 +228,7 @@ def plot_lightcurve(b1, k1, fifo_resets, silent_drops,
         ax_lc = all_axes[i * 2]
         ax_sat = all_axes[i * 2 + 1]
 
-        draw_lc(ax_lc, k1.get(box), b1.get(box),
+        draw_lc(ax_lc, k1.get(box, {}), b1.get(box, {}),
                 fill_1b.get(box, "#88BBDD"),
                 colors_1b.get(box, "#336699"))
         ax_lc.set_ylabel(f"Box {box}\n(evt/s)", fontsize=12)
@@ -207,8 +243,15 @@ def plot_lightcurve(b1, k1, fifo_resets, silent_drops,
     ax_lc = all_axes[idx_merged]
     ax_sat = all_axes[idx_merged + 1]
 
-    merged_k = np.concatenate(list(k1.values())) if k1 else None
-    merged_b = np.concatenate(list(b1.values())) if b1 else None
+    def merge_boxes(data):
+        merged = {}
+        for type_dict in data.values():
+            for typ, arr in type_dict.items():
+                merged.setdefault(typ, []).append(arr)
+        return {t: np.concatenate(v) for t, v in merged.items()}
+
+    merged_k = merge_boxes(k1) if k1 else {}
+    merged_b = merge_boxes(b1) if b1 else {}
     draw_lc(ax_lc, merged_k, merged_b, "#B0C4DE", "#4A6A8A")
     ax_lc.set_ylabel("A+B+C\n(evt/s)", fontsize=12)
     ax_lc.legend(loc="upper right", fontsize=8, framealpha=0.9)
@@ -262,9 +305,14 @@ def main():
     parser.add_argument("-o", "--output", default=None)
     args = parser.parse_args()
 
-    print("Loading 1B data...")
-    b1 = run_cli(args.epoch, "solve", trigger=args.trigger,
-                 before=args.before, after=args.after, box_filter=args.box_filter)
+    if not args.no_sat:
+        print("Loading 1B + reconstruction...")
+        b1 = run_cli(args.epoch, "reconstruct", trigger=args.trigger,
+                     before=args.before, after=args.after, box_filter=args.box_filter)
+    else:
+        print("Loading 1B data...")
+        b1 = run_cli(args.epoch, "solve", trigger=args.trigger,
+                     before=args.before, after=args.after, box_filter=args.box_filter)
 
     k1 = {}
     if not args.no_1k:
@@ -289,11 +337,13 @@ def main():
         print("No 1B events found!", file=sys.stderr)
         sys.exit(1)
 
-    n_1b = sum(len(v) for v in b1.values())
-    n_1k = sum(len(v) for v in k1.values())
+    n_evt = sum(len(td.get("EVT", [])) for td in b1.values())
+    n_gap = sum(len(td.get("FILL_GAP", [])) for td in b1.values())
+    n_fsd = sum(len(td.get("FILL_SD", [])) for td in b1.values())
+    n_1k = sum(len(td.get("EVT", [])) for td in k1.values())
     n_fr = sum(len(v) for v in fifo_resets.values())
     n_sd = sum(len(v) for v in silent_drops.values())
-    print(f"1B: {n_1b:,}  |  1K: {n_1k:,}  |  FIFO Reset: {n_fr}  |  Silent Drop: {n_sd}")
+    print(f"EVT: {n_evt:,}  Gap: {n_gap:,}  SD: {n_fsd:,}  |  1K: {n_1k:,}  |  FR: {n_fr}  SD: {n_sd}")
 
     trigger_met = parse_met_or_utc(args.trigger) if args.trigger else None
     plot_lightcurve(b1, k1, fifo_resets, silent_drops,
