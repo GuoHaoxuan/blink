@@ -70,7 +70,16 @@ enum SatCommands {
         after: f64,
     },
     /// Saturation detection: find FIFO resets + silent drops (step 2)
-    Detect,
+    Detect {
+        /// Trigger time (MET or UTC). If omitted, detect in full epoch.
+        trigger: Option<String>,
+        /// Seconds before trigger [default: 10]
+        #[arg(long, default_value_t = 10.0)]
+        before: f64,
+        /// Seconds after trigger [default: 100]
+        #[arg(long, default_value_t = 100.0)]
+        after: f64,
+    },
     /// Light curve reconstruction: fill saturated gaps (step 3)
     Reconstruct(ReconstructArgs),
     /// Compare 1B vs 1K event data
@@ -300,7 +309,19 @@ fn cmd_solve_1k(
     }
 }
 
-fn cmd_detect(filtered_boxes: &[&(String, SciFile, f64)]) {
+fn cmd_detect(
+    filtered_boxes: &[&(String, SciFile, f64)],
+    met_min: Option<f64>,
+    met_max: Option<f64>,
+) {
+    let lo = met_min.unwrap_or(f64::NEG_INFINITY);
+    let hi = met_max.unwrap_or(f64::INFINITY);
+    if let (Some(a), Some(b)) = (met_min, met_max) {
+        eprintln!("Detecting saturation in [{:.3}, {:.3}]", a, b);
+    } else {
+        eprintln!("Detecting saturation in full epoch...");
+    }
+
     println!("box,type,start_met,stop_met,gap_s,pkt_idx,evt_idx,n_lost,log10p");
     for (box_name, sci, offset) in filtered_boxes {
         let events = reconstruct_met_times(sci, *offset);
@@ -314,9 +335,11 @@ fn cmd_detect(filtered_boxes: &[&(String, SciFile, f64)]) {
             })
             .collect();
 
-        // FifoReset: pkt_idx = gap 之前的包, evt_idx = -1 (无包内位置)
-        eprintln!("Box {}: {} FIFO reset intervals", box_name, gaps.len());
+        let mut n_fifo = 0;
         for iv in &gaps {
+            if iv.stop_met < lo || iv.start_met > hi {
+                continue;
+            }
             let r_true = packets
                 .iter()
                 .find(|p| p.pkt_idx == iv.next_pkt_idx)
@@ -328,9 +351,9 @@ fn cmd_detect(filtered_boxes: &[&(String, SciFile, f64)]) {
                 box_name, iv.start_met, iv.stop_met, iv.gap_seconds,
                 iv.prev_pkt_idx, n_lost,
             );
+            n_fifo += 1;
         }
 
-        // SilentDrop: pkt_idx = 所在包, evt_idx = 包内间隔位置
         let unreliable = detect_unreliable_intervals(&gaps, &packets, &packet_events);
         let box_data = BoxReconstructionData {
             events,
@@ -340,14 +363,19 @@ fn cmd_detect(filtered_boxes: &[&(String, SciFile, f64)]) {
             unreliable,
         };
         let drops = detect_silent_drops(&box_data);
-        eprintln!("Box {}: {} silent drops", box_name, drops.len());
+        let mut n_sd = 0;
         for d in &drops {
+            if d.stop_met < lo || d.start_met > hi {
+                continue;
+            }
             println!(
                 "{},SilentDrop,{:.6},{:.6},{:.6},{},{},{},{:.1}",
                 box_name, d.start_met, d.stop_met, d.dt, d.pkt_idx, d.evt_idx, d.n_lost,
                 d.log10_p,
             );
+            n_sd += 1;
         }
+        eprintln!("  Box {}: {} FIFO resets, {} silent drops", box_name, n_fifo, n_sd);
     }
 }
 
@@ -1126,7 +1154,16 @@ fn main() {
                     };
                     cmd_solve_1k(epoch, &box_filter, met_min, met_max);
                 }
-                SatCommands::Detect => cmd_detect(&filtered),
+                SatCommands::Detect { trigger, before, after } => {
+                    let (met_min, met_max) = match &trigger {
+                        Some(t) => {
+                            let trig = parse_met_or_utc(t);
+                            (Some(trig - before), Some(trig + after))
+                        }
+                        None => (None, None),
+                    };
+                    cmd_detect(&filtered, met_min, met_max);
+                }
                 SatCommands::Reconstruct(args) => {
                     cmd_reconstruct(&args, &boxes, &box_filter)
                 }
