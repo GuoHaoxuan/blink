@@ -40,6 +40,10 @@ impl EventFile {
         &self.det_id
     }
 
+    pub fn channels(&self) -> &[u8] {
+        &self.channel
+    }
+
     fn new(filename: &str) -> Result<Self, Error> {
         let mut fptr = fitsio::FitsFile::open(filename)?;
 

@@ -22,247 +22,12 @@ struct PackInfo {
     max_time: f64,
 }
 
-
-
 const PTIME_MOD: u64 = 1 << 19; // 524288
 const WRAP_PERIOD: f64 = PTIME_MOD as f64 * 2e-6; // 1.048576s
 
 /// 1B→1K 经验时间校正 (秒)。
 /// 通过 GRB 200415A 和 GRB 221009A 交叉验证确定。
 const MET_CORRECTION: f64 = 4.0;
-
-/// SEC-anchored MET computation with multi-wrap support.
-///
-/// Uses SEC anchor's (met, ptime) as precise reference. For fresh anchors
-/// (< 1.5 WRAP_PERIOD old), determines wrap by threshold on ptime delta.
-/// For stale anchors (after FIFO reset gaps), uses utc_tail to estimate
-/// the number of complete wraps, then picks the best candidate from
-/// n_est-1, n_est, n_est+1 by comparing to utc_tail.
-///
-/// When `force_normal` is true, the normal (threshold) path is used even if
-/// `elapsed` is large. This is used during saturation when a SEC event was
-/// accepted via stime continuity — the anchor is fresh relative to the FIFO
-/// events even though `utc_tail` has advanced far beyond.
-///
-/// Immune to multi-detector ptime non-monotonicity (per-event independent).
-const WRAP_THRESHOLD: i64 = 10000; // ~20ms in ptime ticks
-
-/// Estimate the base wrap count for a packet using its median ptime.
-///
-/// The stale path's per-event best-of-3 is ambiguous when events are near
-/// (k + 0.5) × WRAP_PERIOD from utc_tail. The median ptime is typically
-/// far from any wrap boundary, making the estimation robust.
-///
-/// Returns the base wrap count `n_base` such that:
-///   met ≈ anchor + (raw_delta + n_base * PTIME_MOD) * 2e-6 + MET_CORRECTION
-/// for events with ptime near the packet's median.
-#[inline]
-fn estimate_packet_wraps(
-    median_ptime: u64,
-    anchor_ptime: u64,
-    anchor: f64,
-    utc_tail: f64,
-) -> i64 {
-    let elapsed = utc_tail - anchor;
-    let raw_delta = median_ptime as i64 - anchor_ptime as i64;
-    let n_est = ((elapsed - raw_delta as f64 * 2e-6) / WRAP_PERIOD)
-        .round()
-        .max(0.0) as i64;
-
-    let mut best_n = n_est;
-    let mut best_err = f64::MAX;
-    for n in [n_est - 1, n_est, n_est + 1] {
-        if n < 0 {
-            continue;
-        }
-        let met = anchor + (raw_delta + n * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-        let err = (met - MET_CORRECTION - utc_tail).abs();
-        if err < best_err {
-            best_err = err;
-            best_n = n;
-        }
-    }
-    best_n
-}
-
-/// Like `estimate_packet_wraps`, but allows negative wrap counts.
-///
-/// Used for backward SEC correction where events happen BEFORE the anchor
-/// (fresh SEC), so the wrap count relative to the anchor is negative.
-/// Also returns the confidence margin: how close the best candidate is
-/// to the decision boundary (0.0 = right on boundary, 0.5 = maximum
-/// confidence). Values below ~0.1 indicate ambiguous wrap count.
-#[inline]
-fn estimate_packet_wraps_signed(
-    median_ptime: u64,
-    anchor_ptime: u64,
-    anchor: f64,
-    utc_tail: f64,
-) -> (i64, f64) {
-    // Use +0.5 bias: utc_tail = floor(onboard_time), so midpoint of the
-    // bin (utc_tail + 0.5) is a better estimate than the floor.
-    let elapsed = utc_tail + 0.5 - anchor;
-    let raw_delta = median_ptime as i64 - anchor_ptime as i64;
-    let n_est = ((elapsed - raw_delta as f64 * 2e-6) / WRAP_PERIOD)
-        .round() as i64; // No .max(0.0) — allow negative
-
-    let target = utc_tail + MET_CORRECTION + 0.5;
-    let mut best_n = n_est;
-    let mut best_err = f64::MAX;
-    let mut second_err = f64::MAX;
-    for n in [n_est - 1, n_est, n_est + 1] {
-        let met = anchor + (raw_delta + n * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-        let err = (met - target).abs();
-        if err < best_err {
-            second_err = best_err;
-            best_err = err;
-            best_n = n;
-        } else if err < second_err {
-            second_err = err;
-        }
-    }
-    // Confidence: how much better the best is vs second-best, normalized
-    // to [0, 0.5]. Near 0 = ambiguous, near 0.5 = certain.
-    let margin = (second_err - best_err) / (2.0 * WRAP_PERIOD);
-    (best_n, margin.min(0.5))
-}
-
-/// SEC-anchored MET computation with multi-wrap support.
-///
-/// When `force_normal` is true, uses the threshold path (handles ±1 wrap).
-/// When false and elapsed is small (< 1.5 WRAP), also uses threshold path.
-/// When false and elapsed is large, uses per-event stale path (best-of-3).
-///
-/// For consistent intra-packet wrap assignment during FIFO congestion,
-/// prefer calling `estimate_packet_wraps` once for the packet's median
-/// ptime, then use `compute_met_with_base_wraps` for each event.
-#[inline]
-fn compute_met_anchored(
-    ptime: u64,
-    anchor_ptime: u64,
-    anchor: f64,
-    utc_tail: f64,
-    force_normal: bool,
-) -> f64 {
-    let raw_delta = ptime as i64 - anchor_ptime as i64;
-    let elapsed = utc_tail - anchor;
-
-    if force_normal || (elapsed < WRAP_PERIOD * 1.5 && elapsed > -0.5) {
-        // Normal case: anchor is fresh, at most 1 wrap
-        let adjusted_delta = if raw_delta < -WRAP_THRESHOLD {
-            raw_delta + PTIME_MOD as i64
-        } else if raw_delta > (PTIME_MOD as i64 - WRAP_THRESHOLD) {
-            raw_delta - PTIME_MOD as i64
-        } else {
-            raw_delta
-        };
-        anchor + adjusted_delta as f64 * 2e-6 + MET_CORRECTION
-    } else {
-        // Stale anchor (gap from FIFO reset): estimate wraps using utc_tail
-        let n_est = ((elapsed - raw_delta as f64 * 2e-6) / WRAP_PERIOD)
-            .round()
-            .max(0.0) as i64;
-
-        let mut best_met = f64::NAN;
-        let mut best_err = f64::MAX;
-        for n in [n_est - 1, n_est, n_est + 1] {
-            if n < 0 {
-                continue;
-            }
-            let met = anchor + (raw_delta + n * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-            let err = (met - MET_CORRECTION - utc_tail).abs();
-            if err < best_err {
-                best_err = err;
-                best_met = met;
-            }
-        }
-        best_met
-    }
-}
-
-/// Compute MET using a pre-determined base wrap count from the packet's
-/// median ptime. Handles the single possible intra-packet wrap via threshold.
-#[inline]
-fn compute_met_with_base_wraps(
-    ptime: u64,
-    anchor_ptime: u64,
-    anchor: f64,
-    n_base: i64,
-    median_ptime: u64,
-) -> f64 {
-    // raw_delta relative to anchor, same as stale path
-    let raw_delta = ptime as i64 - anchor_ptime as i64;
-    // delta relative to median ptime — determines if event is in the same
-    // wrap as the median or ±1 wrap
-    let delta_from_median = ptime as i64 - median_ptime as i64;
-    let wrap_adjust = if delta_from_median < -(PTIME_MOD as i64 / 2) {
-        1 // event ptime wrapped forward relative to median
-    } else if delta_from_median > (PTIME_MOD as i64 / 2) {
-        -1 // event ptime wrapped backward relative to median
-    } else {
-        0 // same wrap as median
-    };
-    let total = raw_delta + (n_base + wrap_adjust) * PTIME_MOD as i64;
-    anchor + total as f64 * 2e-6 + MET_CORRECTION
-}
-
-/// Compute MET using a "backward" (future) SEC anchor.
-///
-/// After a FIFO reset, the first SEC may be stale (from FIFO contents
-/// before the reset). The second SEC is fresh and correct. Events between
-/// the two SECs are recomputed using the second SEC as anchor.
-///
-/// `approx_met` is the approximate MET from biased estimation, used to
-/// determine the correct wrap count when events span multiple wraps.
-#[inline]
-fn compute_met_backward(
-    ptime: u64,
-    future_anchor_ptime: u64,
-    future_anchor_met: f64,
-    approx_met: f64,
-) -> f64 {
-    let raw_delta = ptime as i64 - future_anchor_ptime as i64;
-    let raw_met = future_anchor_met + raw_delta as f64 * 2e-6 + MET_CORRECTION;
-    // Determine the correct wrap offset using the approximate MET
-    let k = ((raw_met - approx_met) / WRAP_PERIOD).round() as i64;
-    raw_met - k as f64 * WRAP_PERIOD
-}
-
-/// Compute MET using packet-level estimation with +0.5 utc_tail bias.
-///
-/// Fallback for post-FIFO-reset events when no future SEC is available
-/// (e.g., end of data). The +0.5 bias compensates for utc_tail being
-/// floor(event_time), making the target the midpoint of the 1-second
-/// utc_tail bin.
-#[inline]
-fn estimate_packet_wraps_biased(
-    median_ptime: u64,
-    anchor_ptime: u64,
-    anchor: f64,
-    utc_tail: f64,
-) -> i64 {
-    let elapsed = utc_tail + 0.5 - anchor;
-    let raw_delta = median_ptime as i64 - anchor_ptime as i64;
-    let n_est = ((elapsed - raw_delta as f64 * 2e-6) / WRAP_PERIOD)
-        .round()
-        .max(0.0) as i64;
-
-    let target = utc_tail + MET_CORRECTION + 0.5;
-    let mut best_n = n_est;
-    let mut best_err = f64::MAX;
-    for n in [n_est - 1, n_est, n_est + 1] {
-        if n < 0 {
-            continue;
-        }
-        let met = anchor + (raw_delta + n * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-        let err = (met - target).abs();
-        if err < best_err {
-            best_err = err;
-            best_n = n;
-        }
-    }
-    best_n
-}
 
 /// Floor-based per-event wrap computation (retained for diagnostics only).
 #[inline]
@@ -320,1265 +85,758 @@ fn get_utc_tail(ccsds: &[u8]) -> f64 {
         + (ccsds[881] as f64) * 16777216.0
 }
 
-/// SEC-anchored 时间重建。
-///
-/// 每个事件用最近 SEC 的 (met, ptime) 作为锚点，通过 ptime 差值阈值判定
-/// 是否发生了 wrap。不使用 utc_tail，不依赖 ptime 全局单调性。
-///
-/// 前提条件：SEC 事件每秒出现一次，间距 < WRAP_PERIOD (1.048576s)，
-/// 因此相邻两个 SEC 锚点之间至多发生 1 次 wrap。
-pub fn reconstruct_with_wrap_tracking(sci_data: &SciFile, offset: f64) -> Vec<Vec<f64>> {
-    reconstruct_with_wrap_tracking_labeled(sci_data, offset, "")
+// ─────────────────────────────────────────────────────────────────────────────
+// Two-pass reconstruction structures
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// SEC anchor found during pass 1.
+struct AnchorInfo {
+    pkt_idx: usize,
+    #[allow(dead_code)]
+    evt_idx: usize,
+    met: f64,
+    ptime: u64,
 }
 
-pub fn reconstruct_with_wrap_tracking_labeled(sci_data: &SciFile, offset: f64, label: &str) -> Vec<Vec<f64>> {
-    let mut result: Vec<Vec<f64>> = Vec::with_capacity(sci_data.ccsds.len());
-    let mut anchor: Option<f64> = None;
-    let mut anchor_ptime: u64 = 0;
-    let mut anchor_pkt: usize = 0;
-    let mut last_accepted_stime: Option<u64> = None;
-    let debug = std::env::var("DEBUG_WRAP").is_ok();
+/// Pass 1 output: anchors, confidence, rough METs.
+struct Pass1Result {
+    anchors: Vec<AnchorInfo>,
+    anchor_is_clean: Vec<bool>,
+    confident: Vec<Vec<bool>>,
+    rough_mets: Vec<Vec<f64>>,
+}
 
-    // Maximum number of packets since last anchor update to still consider
-    // it "recent" (i.e., use the normal path). ~35 packets ≈ 1 second of
-    // FIFO data at saturation event rates.
-    const ANCHOR_RECENT_PKT_LIMIT: usize = 35;
+// ─────────────────────────────────────────────────────────────────────────────
+// Pass 1 helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
-    // ── FIFO congestion: median-ptime wrap tracking ──
-    //
-    // During FIFO congestion, utc_tail tracks real time while events are
-    // delayed. The stale path's utc_tail-based n_wraps estimation is
-    // biased (over-estimates by FIFO_delay / WRAP_PERIOD wraps).
-    //
-    // Fix: track ptime wraps between consecutive packets using each
-    // packet's median ptime. Within a congestion period, the FIFO is read
-    // sequentially, so consecutive packets have monotonically advancing
-    // ptimes. When the median ptime wraps (large negative delta), we
-    // increment a wrap counter.
-    //
-    // This gives the correct n_wraps without using utc_tail, eliminating
-    // the FIFO delay bias entirely.
-    //
-    // Reset on FIFO reset (utc_tail jump > 3s): after reset, events are
-    // fresh and the stale path's raw utc_tail is correct again.
-    //
-    // IMPORTANT: We always accumulate wrap counts when stale, but only
-    // USE them (replace stale path) when utc_tail has diverged far from
-    // the anchor (indicating extreme FIFO congestion). This prevents
-    // wrap tracking from interfering with moderate saturation (e.g.,
-    // 260226A, elapsed ~1-5s) where the stale path's utc_tail-based
-    // estimation is accurate enough. For extreme saturation (e.g.,
-    // 221009A, elapsed 100s+), utc_tail is far from event time and
-    // wrap tracking is essential.
-    //
-    // Elapsed threshold: 0.0 means always use wrap tracking when stale.
-    // This works because compute_met_with_base_wraps handles intra-packet
-    // wrap boundaries correctly, and the initialization from the anchor
-    // packet's median ptime ensures accurate inter-packet tracking.
-    const WRAP_TRACKING_ELAPSED_THRESHOLD: f64 = 0.0;
-    let mut congestion_wrap_count: i64 = 0;
-    let mut prev_median_ptime: Option<u64> = None;
-    let mut wrap_tracking_active = false;
+/// Detect disruption at packet boundary.
+/// Returns true if a FIFO reset (utc_tail jump > 3s) is detected.
+#[inline]
+fn detect_disruption(prev_utc_tail: f64, cur_utc_tail: f64) -> bool {
+    prev_utc_tail > 0.0 && cur_utc_tail - prev_utc_tail > 3.0
+}
+
+/// Estimate wrap count across a disruption using utc_tail best-of-3.
+/// Given an anchor (met, ptime) and a target event ptime + utc_tail,
+/// find the wrap count that best matches the utc_tail reference.
+fn estimate_wrap_count(
+    anc_met: f64,
+    anc_ptime: u64,
+    target_ptime: u64,
+    target_utc_tail: f64,
+) -> i64 {
+    let raw_delta = target_ptime as i64 - anc_ptime as i64;
+    let elapsed = target_utc_tail + 0.5 - anc_met;
+    let n_est = ((elapsed - raw_delta as f64 * 2e-6) / WRAP_PERIOD).round() as i64;
+
+    let target_met = target_utc_tail + MET_CORRECTION + 0.5;
+    let mut best_n = n_est;
+    let mut best_err = f64::MAX;
+    for n in [n_est - 1, n_est, n_est + 1] {
+        let met = anc_met + (raw_delta + n * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
+        let err = (met - target_met).abs();
+        if err < best_err {
+            best_err = err;
+            best_n = n;
+        }
+    }
+    best_n
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pass 1: Forward scan + aggressive saturation detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn pass1_scan(sci_data: &SciFile, offset: f64, debug: bool) -> Pass1Result {
+    let n_packets = sci_data.ccsds.len();
+    let mut anchors: Vec<AnchorInfo> = Vec::new();
+    let mut anchor_is_clean: Vec<bool> = Vec::new();
+    let mut confident: Vec<Vec<bool>> = Vec::with_capacity(n_packets);
+    let mut rough_mets: Vec<Vec<f64>> = Vec::with_capacity(n_packets);
+
+    // Streaming state
+    let mut wrap_count: i64 = 0;
+    let mut prev_ptime: Option<u64> = None;
+    let mut pre_wrap_ptime: Option<u64> = None; // ptime before a tentative wrap
+    let mut pending_wrap: bool = false; // wrap detected but not yet confirmed
+    let mut anc_met: Option<f64> = None;
+    let mut anc_ptime: u64 = 0;
+    let mut is_confident = false; // no anchor yet → not confident
     let mut prev_utc_tail: f64 = 0.0;
-    // Phase correction: median-based wrap tracking counts rollovers of the
-    // median ptime, but the time computation uses anchor_ptime (SEC's ptime).
-    // When anchor_ptime and anchor_median are far apart (e.g., SEC ptime near
-    // 0 but median near PTIME_MOD), median rollovers overcount by 1.
-    let mut anchor_median_ptime: Option<u64> = None;
-    // After a FIFO reset (UTC_JUMP), events are fresh (no FIFO delay).
-    // The stale path's utc_tail estimation is correct for them.
-    // Prevent wrap tracking from re-activating until a new SEC anchor
-    // is established, which properly resets congestion_wrap_count.
-    let mut fifo_reset_no_wt = false;
-    // After FIFO reset, the first accepted SEC establishes an anchor that
-    // may be stale (the SEC event was in the FIFO before the reset). Events
-    // computed with this anchor may be ~1 WRAP_PERIOD off. We buffer these
-    // events and recompute them when a fresh SEC arrives (backward approach).
-    // In the meantime, we use +0.5 biased estimation as a reasonable
-    // approximation. The backward SEC replaces it once available.
-    let mut anchor_post_fifo_reset = false;
-    // Buffer of (pkt_idx, evt_idx, ptime, utc_tail) for events awaiting
-    // backward correction from a fresh SEC.
-    struct PendingEvent {
-        pkt_idx: usize,
-        evt_idx: usize,
-        ptime: u64,
-        utc_tail: f64,
-    }
-    let mut fifo_reset_pending: Vec<PendingEvent> = Vec::new();
-    // When wrap tracking activates during FIFO reset recovery, record
-    // the starting packet. The backward flush will later compute the
-    // correct total wraps from the two SEC anchors (stale + fresh)
-    // and retroactively fix wrap tracking events.
-    let mut wrap_tracking_fifo_reset_start: Option<usize> = None;
+    let mut last_accepted_stime: Option<u64> = None;
 
-    // When a second UTC_JUMP occurs before the backward flush for the
-    // first has fired, we save the first cycle's state here instead
-    // of dropping it. The backward flush processes all stale batches
-    // when a fresh SEC finally arrives.
-    struct StaleBatch {
-        pending_events: Vec<PendingEvent>,
-        wt_start: Option<usize>,
-        wt_end_pkt: usize,
-        cwc_at_end: i64,
-        anchor_met: f64,
-        anchor_ptime: u64,
-    }
-    let mut stale_batches: Vec<StaleBatch> = Vec::new();
-    // Track packets corrected by backward flush so the global sort
-    // doesn't undo their corrections.
-    let mut backward_flushed: Vec<bool> = vec![false; sci_data.ccsds.len()];
+    // For inter-packet interval check (aggressive saturation detection)
+    let mut prev_pkt_met_max: Option<f64> = None;
+    let mut baseline_interval: Option<f64> = None;
 
     for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
         let utc_tail = get_utc_tail(ccsds);
         let events = parse_events(ccsds);
-        let mut times = Vec::with_capacity(events.len());
 
-        // Anchor is "recent" if set within the last few packets.
-        let mut anchor_is_recent =
-            anchor.is_some() && pkt_idx.saturating_sub(anchor_pkt) < ANCHOR_RECENT_PKT_LIMIT;
-
-        // Detect FIFO reset: utc_tail jumps forward significantly.
-        // After reset, events are fresh (no FIFO delay), so wrap tracking
-        // from the congestion period is invalid. Fall back to stale path.
-        let utc_jumped = prev_utc_tail > 0.0 && utc_tail - prev_utc_tail > 3.0;
-        if utc_jumped {
-            // Save current FIFO reset cycle's state before clearing,
-            // so the backward flush can correct it when a fresh SEC
-            // finally arrives.
-            if !fifo_reset_pending.is_empty() || wrap_tracking_fifo_reset_start.is_some() {
-                if let Some(anc) = anchor {
-                    stale_batches.push(StaleBatch {
-                        pending_events: std::mem::take(&mut fifo_reset_pending),
-                        wt_start: wrap_tracking_fifo_reset_start.take(),
-                        wt_end_pkt: pkt_idx,
-                        cwc_at_end: congestion_wrap_count,
-                        anchor_met: anc,
-                        anchor_ptime,
-                    });
-                    if debug {
-                        let sb = stale_batches.last().unwrap();
-                        eprintln!(
-                            "UTC_JUMP pkt={}: saved stale batch #{}: {} pending, wt_start={:?}, wt_end={}, cwc={}, anc={:.3} anc_pt={}",
-                            pkt_idx, stale_batches.len(), sb.pending_events.len(),
-                            sb.wt_start, sb.wt_end_pkt, sb.cwc_at_end, sb.anchor_met, sb.anchor_ptime
-                        );
-                    }
-                } else {
-                    // No anchor — can't save; just clear.
-                    fifo_reset_pending.clear();
-                    wrap_tracking_fifo_reset_start = None;
-                }
-            }
-            wrap_tracking_active = false;
-            prev_median_ptime = None;
-            congestion_wrap_count = 0;
-            fifo_reset_no_wt = true;
-            anchor_post_fifo_reset = false;
-            if debug {
-                eprintln!(
-                    "UTC_JUMP pkt={} prev_ut={:.0} ut={:.0} jump={:.0} → wrap tracking reset, fifo_reset_no_wt=true",
-                    pkt_idx, prev_utc_tail, utc_tail, utc_tail - prev_utc_tail
-                );
+        // ── Count n_error ──
+        let mut n_error: usize = 0;
+        for e in &events {
+            if matches!(e, Pack::Error) {
+                n_error += 1;
             }
         }
 
-        // Compute median ptime for wrap tracking.
-        // Only trust the median if enough events pass CRC. Corrupted packets
-        // may have a few random CRC-passing events whose ptimes are garbage;
-        // using such a median would falsely trigger WRAP_INC.
-        const MIN_EVENTS_FOR_MEDIAN: usize = 50;
-        let (median_pt, n_valid_events) = if anchor.is_some() {
-            let mut ptimes: Vec<u64> = events
-                .iter()
-                .filter_map(|e| match e {
+        // ── Disruption detection ──
+        let is_disruption = detect_disruption(prev_utc_tail, utc_tail);
+        if is_disruption {
+            // Reset wrap tracking across disruption
+            if let Some(am) = anc_met {
+                // Find first valid ptime in this packet for wrap estimation
+                let first_valid_ptime = events.iter().find_map(|e| match e {
                     Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => Some(*ptime),
                     _ => None,
-                })
-                .collect();
-            let n = ptimes.len();
-            if ptimes.is_empty() {
-                (None, 0)
-            } else {
-                ptimes.sort_unstable();
-                (Some(ptimes[ptimes.len() / 2]), n)
-            }
-        } else {
-            (None, 0)
-        };
-
-        // Activate wrap tracking (accumulation) when anchor goes stale.
-        // Activate wrap tracking (accumulation) when anchor goes stale.
-        // congestion_wrap_count was reset to 0 when the anchor was set.
-        // prev_median_ptime was set to the anchor packet's median, so the
-        // first median comparison (current packet vs anchor packet) spans
-        // ALL recent packets and will detect any wraps that occurred.
-        if !wrap_tracking_active && !anchor_is_recent && prev_median_ptime.is_some() && !fifo_reset_no_wt {
-            wrap_tracking_active = true;
-            // If wrap tracking activates while backward correction is pending,
-            // stop buffering new events (wrap tracking computes correct METs
-            // directly). Keep the existing pending buffer so the backward
-            // flush can still correct POST_RESET_BIAS events when a fresh
-            // SEC arrives.
-            if anchor_post_fifo_reset {
-                wrap_tracking_fifo_reset_start = Some(pkt_idx);
-                if debug {
-                    eprintln!(
-                        "WRAP_INIT pkt={} wrap tracking active, stop buffering ({} pending events kept for backward flush)",
-                        pkt_idx, fifo_reset_pending.len()
-                    );
+                });
+                if let Some(fp) = first_valid_ptime {
+                    wrap_count = estimate_wrap_count(am, anc_ptime, fp, utc_tail);
+                    // After disruption, prev_ptime chain is broken
+                    prev_ptime = None;
                 }
-                anchor_post_fifo_reset = false;
             }
+            is_confident = false;
             if debug {
                 eprintln!(
-                    "WRAP_INIT pkt={} congestion_wrap_count={} prev_med={:?}",
-                    pkt_idx, congestion_wrap_count, prev_median_ptime
+                    "PASS1 disruption (FIFO reset) at pkt={} utc_jump={:.1}",
+                    pkt_idx, utc_tail - prev_utc_tail
                 );
             }
         }
 
-        // Always accumulate wrap counts when stale (even before USE threshold).
-        // Only detect forward wraps (WRAP_INC): during FIFO congestion, ptime
-        // advances monotonically (sequential FIFO reads), so backward wraps
-        // (large positive diff) never occur. A large positive diff at activation
-        // time is normal ptime advancement during the recent period when anchor
-        // ptime was near 0 — NOT a backward wrap.
-        // Skip corrupted packets (< MIN_EVENTS_FOR_MEDIAN valid events) to
-        // avoid false WRAP_INC from unreliable median ptimes.
-        if wrap_tracking_active && !anchor_is_recent && n_valid_events >= MIN_EVENTS_FOR_MEDIAN {
-            if let (Some(med), Some(prev_med)) = (median_pt, prev_median_ptime) {
-                let diff = med as i64 - prev_med as i64;
-                if diff < -(PTIME_MOD as i64 / 2) {
-                    congestion_wrap_count += 1;
-                    if debug {
-                        eprintln!(
-                            "WRAP_INC pkt={} med={} prev_med={} diff={} → wraps={}",
-                            pkt_idx, med, prev_med, diff, congestion_wrap_count
-                        );
+        // ── Process events: wrap tracking + SEC extraction + rough MET ──
+        let mut pkt_confident: Vec<bool> = Vec::with_capacity(events.len());
+        let mut pkt_mets: Vec<f64> = Vec::with_capacity(events.len());
+
+        // Track ptime gaps within this packet for silent-drop detection
+        let mut pkt_ptime_gaps: Vec<i64> = Vec::new();
+
+        for (evt_idx, event) in events.iter().enumerate() {
+            match event {
+                Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => {
+                    // ── Stream wrap detection with ghost rejection ──
+                    // A "ghost event" is a CRC collision with random ptime.
+                    // When a wrap is detected (ptime drops > MOD/2), we defer
+                    // the decision: if the NEXT event's ptime is close to the
+                    // pre-wrap value (within MOD/3), the drop was caused by a
+                    // ghost and the wrap is rejected.
+                    if pending_wrap {
+                        // Confirm or reject the pending wrap
+                        if let Some(pre) = pre_wrap_ptime {
+                            let back_to_pre = (*ptime as i64 - pre as i64).unsigned_abs();
+                            if back_to_pre < PTIME_MOD / 3 {
+                                // Current ptime is close to the pre-wrap value →
+                                // the "wrap" was caused by a ghost. Undo it.
+                                wrap_count -= 1;
+                                if debug {
+                                    eprintln!(
+                                        "PASS1 ghost_reject pkt={} pre_wrap={} cur={} (undid wrap)",
+                                        pkt_idx, pre, *ptime
+                                    );
+                                }
+                            }
+                        }
+                        pending_wrap = false;
+                        pre_wrap_ptime = None;
+                    }
+
+                    if let Some(prev) = prev_ptime {
+                        let diff = *ptime as i64 - prev as i64;
+                        if diff < -(PTIME_MOD as i64 / 2) {
+                            // Tentative wrap — commit immediately but mark
+                            // for possible rollback at the next event.
+                            pre_wrap_ptime = Some(prev);
+                            wrap_count += 1;
+                            pending_wrap = true;
+                        }
+                        pkt_ptime_gaps.push(diff);
+                    }
+
+                    // ── SEC anchor check ──
+                    if let Pack::Second { stime, ptime: sec_ptime } = event {
+                        let met = *stime as f64 + offset;
+                        let normal_accept = (met - utc_tail).abs() < 2.0;
+                        let continuity_accept = last_accepted_stime.map_or(false, |prev_st| {
+                            *stime > prev_st && *stime <= prev_st + 60
+                        });
+                        if normal_accept || continuity_accept {
+                            // Re-anchor: reset wrap_count
+                            let old_anc_met = anc_met;
+                            let old_anc_ptime = anc_ptime;
+                            anc_met = Some(met);
+                            anc_ptime = *sec_ptime;
+                            let old_wrap = wrap_count;
+                            wrap_count = 0;
+                            last_accepted_stime = Some(*stime);
+                            pending_wrap = false;
+
+                            // Events in this packet before the SEC that were
+                            // computed with a different wrap_count will be fixed
+                            // by the SEC bracket post-correction at the end of pass1.
+
+                            // A SEC is clean if its packet is not corrupted (CRC ok).
+                            // SEC provides absolute time reference via stime,
+                            // so it doesn't need prior confidence to be trustworthy.
+                            let crc_clean = (n_error as f64) < 109.0 * 0.5;
+
+                            anchors.push(AnchorInfo {
+                                pkt_idx,
+                                evt_idx,
+                                met,
+                                ptime: *sec_ptime,
+                            });
+                            anchor_is_clean.push(crc_clean);
+
+                            // Any valid SEC in a non-corrupted packet restores confidence
+                            if crc_clean {
+                                is_confident = true;
+                            }
+
+                            if debug && continuity_accept && !normal_accept {
+                                eprintln!(
+                                    "PASS1 SEC_CONT pkt={} stime={} accepted via continuity",
+                                    pkt_idx, stime
+                                );
+                            }
+                        }
+                    }
+
+                    // ── Compute rough MET ──
+                    if let Some(am) = anc_met {
+                        let raw_delta = *ptime as i64 - anc_ptime as i64;
+                        let total = raw_delta + wrap_count * PTIME_MOD as i64;
+                        let met = am + total as f64 * 2e-6 + MET_CORRECTION;
+                        pkt_mets.push(met);
+                    } else {
+                        pkt_mets.push(f64::NAN);
+                    }
+
+                    pkt_confident.push(is_confident);
+                    prev_ptime = Some(*ptime);
+                }
+                Pack::Error => {
+                    // CRC errors don't contribute to wrap tracking
+                }
+            }
+        }
+
+        // ── Aggressive saturation detection (packet-level) ──
+        let mut is_saturated = false;
+
+        // 1. CRC error rate > 50%
+        if n_error as f64 > 109.0 * 0.5 {
+            is_saturated = true;
+            if debug {
+                eprintln!(
+                    "PASS1 saturated (CRC) pkt={} n_error={}/109",
+                    pkt_idx, n_error
+                );
+            }
+        }
+
+        // 2. Inter-packet interval anomaly
+        if !is_saturated && !pkt_mets.is_empty() {
+            let pkt_met_min = pkt_mets.iter().copied().filter(|m| !m.is_nan()).fold(f64::INFINITY, f64::min);
+            let pkt_met_max_cur = pkt_mets.iter().copied().filter(|m| !m.is_nan()).fold(f64::NEG_INFINITY, f64::max);
+
+            if let Some(prev_max) = prev_pkt_met_max {
+                let gap = pkt_met_min - prev_max;
+                if gap > 0.0 {
+                    // Update baseline as running average of normal intervals
+                    if let Some(bl) = baseline_interval {
+                        if gap < bl * 100.0 {
+                            // Normal gap → update baseline (exponential moving average)
+                            baseline_interval = Some(bl * 0.9 + gap * 0.1);
+                        } else {
+                            // Anomalous gap → saturation
+                            is_saturated = true;
+                            if debug {
+                                eprintln!(
+                                    "PASS1 saturated (gap) pkt={} gap={:.6} baseline={:.6}",
+                                    pkt_idx, gap, bl
+                                );
+                            }
+                        }
+                    } else {
+                        baseline_interval = Some(gap);
+                    }
+                }
+            }
+
+            if pkt_met_max_cur.is_finite() {
+                prev_pkt_met_max = Some(pkt_met_max_cur);
+            }
+        }
+
+        // 3. Poisson anomaly: large ptime gap within packet
+        if !is_saturated && pkt_ptime_gaps.len() >= 2 {
+            // Use ptime gaps (in ticks) to check for anomalous intervals
+            let positive_gaps: Vec<f64> = pkt_ptime_gaps.iter()
+                .map(|&g| {
+                    // Normalize: if gap is negative (wrap), add PTIME_MOD
+                    let normalized = if g < 0 { g + PTIME_MOD as i64 } else { g };
+                    normalized as f64 * 2e-6 // convert to seconds
+                })
+                .filter(|&g| g > 0.0 && g < WRAP_PERIOD)
+                .collect();
+
+            if positive_gaps.len() >= 2 {
+                // Estimate lambda from filtered gaps (exclude outliers)
+                let mut sorted_gaps = positive_gaps.clone();
+                sorted_gaps.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                let median_gap = sorted_gaps[sorted_gaps.len() / 2];
+                let lambda = 1.0 / median_gap;
+
+                for &dt in &positive_gaps {
+                    let log_p = -lambda * dt / std::f64::consts::LN_10;
+                    if log_p < -10.0 {
+                        is_saturated = true;
+                        if debug {
+                            eprintln!(
+                                "PASS1 saturated (Poisson) pkt={} dt={:.6} log10p={:.1}",
+                                pkt_idx, dt, log_p
+                            );
+                        }
+                        break;
                     }
                 }
             }
         }
 
-        // Only USE wrap tracking for time computation when utc_tail has
-        // diverged far enough from anchor (extreme FIFO congestion).
-        // For moderate saturation, the stale path is more reliable.
-        let elapsed_from_anchor = anchor.map_or(0.0, |a| utc_tail - a);
-        let use_wrap_tracking = wrap_tracking_active
-            && !anchor_is_recent
-            && elapsed_from_anchor > WRAP_TRACKING_ELAPSED_THRESHOLD;
-        // Only update prev_median_ptime when wrap tracking is active (to
-        // track inter-packet wraps) or when it hasn't been set yet.
-        // During the "recent" period, we KEEP the anchor packet's median
-        // so that the first wrap comparison at activation spans all recent
-        // packets and catches any wraps that occurred.
-        // Skip corrupted packets to avoid poisoning the median reference.
-        if (wrap_tracking_active || prev_median_ptime.is_none()) && n_valid_events >= MIN_EVENTS_FOR_MEDIAN {
-            if let Some(med) = median_pt {
-                prev_median_ptime = Some(med);
+        // If saturated, mark all subsequent events as not confident
+        if is_saturated {
+            is_confident = false;
+            // Also mark events in THIS packet as not confident
+            for c in pkt_confident.iter_mut() {
+                *c = false;
             }
         }
 
-        // Pre-compute packet-level base wraps for the stale path.
-        // When the anchor is stale (not recent) and we're not using wrap
-        // tracking, determine n_base from the median ptime to avoid
-        // per-event wrap ambiguity.
-        let use_stale_path = anchor.is_some()
-            && !anchor_is_recent
-            && !use_wrap_tracking
-            && elapsed_from_anchor >= WRAP_PERIOD * 1.5;
-        let mut packet_base_wraps = if use_stale_path {
-            median_pt.map(|med| {
-                estimate_packet_wraps(med, anchor_ptime, anchor.unwrap(), utc_tail)
-            })
-        } else if anchor_post_fifo_reset && anchor.is_some() && !use_wrap_tracking {
-            // Post-FIFO-reset: anchor may be stale by ~1s. The normal
-            // threshold path would give wrong n_wraps. Use +0.5 biased
-            // estimation which targets the midpoint of the utc_tail bin,
-            // compensating for utc_tail being floor(event_time).
-            median_pt.map(|med| {
-                let n = estimate_packet_wraps_biased(med, anchor_ptime, anchor.unwrap(), utc_tail);
-                if debug {
-                    eprintln!(
-                        "POST_RESET_BIAS pkt={} med={} anc_pt={} anc={:.3} ut={:.0} → n_base={}",
-                        pkt_idx, med, anchor_ptime, anchor.unwrap(), utc_tail, n
-                    );
+        confident.push(pkt_confident);
+        rough_mets.push(pkt_mets);
+        prev_utc_tail = utc_tail;
+    }
+
+    if debug {
+        let n_clean = anchor_is_clean.iter().filter(|&&c| c).count();
+        eprintln!(
+            "PASS1 complete: {} anchors ({} clean), {} packets",
+            anchors.len(), n_clean, n_packets
+        );
+    }
+
+    // ── SEC intra-packet post-correction ──
+    // When a ptime wrap occurs BEFORE a SEC in the same packet, events
+    // between the wrap and the SEC are computed with wrap_count=N (from
+    // the old anchor), but they should be close to the SEC's time.
+    // For each SEC, check events in the SAME PACKET: if any event's MET
+    // is ~1 wrap above the SEC's MET, subtract one WRAP_PERIOD.
+    // Also serves as safety net for ghost-induced errors near SECs.
+    {
+        let mut n_corrections = 0u32;
+        for anc in &anchors {
+            let sec_met = anc.met + MET_CORRECTION;
+            for met in rough_mets[anc.pkt_idx].iter_mut() {
+                if met.is_nan() {
+                    continue;
                 }
-                n
-            })
+                let diff = *met - sec_met;
+                // Event should be within ±0.5 wrap of the SEC (same packet ≈ same time).
+                // If it's ~1 wrap too high, correct it.
+                if diff > WRAP_PERIOD * 0.5 {
+                    let n = (diff / WRAP_PERIOD).round() as i64;
+                    if n > 0 && n <= 2 {
+                        *met -= n as f64 * WRAP_PERIOD;
+                        n_corrections += 1;
+                    }
+                } else if diff < -WRAP_PERIOD * 0.5 {
+                    let n = (-diff / WRAP_PERIOD).round() as i64;
+                    if n > 0 && n <= 2 {
+                        *met += n as f64 * WRAP_PERIOD;
+                        n_corrections += 1;
+                    }
+                }
+            }
+        }
+        if debug && n_corrections > 0 {
+            eprintln!(
+                "PASS1 sec_intra_pkt: {} event corrections applied",
+                n_corrections
+            );
+        }
+    }
+
+    Pass1Result {
+        anchors,
+        anchor_is_clean,
+        confident,
+        rough_mets,
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pass 2: Bidirectional anchor reconstruction
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn pass2_reconstruct(
+    sci_data: &SciFile,
+    pass1: &Pass1Result,
+    offset: f64,
+    debug: bool,
+) -> Vec<Vec<f64>> {
+    let n_packets = sci_data.ccsds.len();
+    let mut result: Vec<Vec<f64>> = vec![Vec::new(); n_packets];
+
+    if pass1.anchors.is_empty() {
+        return result;
+    }
+
+    // Collect clean anchor indices
+    let clean_indices: Vec<usize> = pass1.anchor_is_clean.iter()
+        .enumerate()
+        .filter(|&(_, c)| *c)
+        .map(|(i, _)| i)
+        .collect();
+
+    // If no clean anchors, fall back to all anchors (mark as suspicious)
+    let working_indices = if clean_indices.is_empty() {
+        if debug {
+            eprintln!("PASS2 WARNING: no clean anchors, falling back to all anchors");
+        }
+        (0..pass1.anchors.len()).collect::<Vec<_>>()
+    } else {
+        clean_indices
+    };
+
+    // Pre-parse all packets (events needed for both forward and backward passes)
+    let all_events: Vec<Vec<Pack>> = sci_data.ccsds.iter().map(|c| parse_events(c)).collect();
+
+    // For each packet, find the best anchor and compute MET via directional wrap tracking.
+    // Strategy: for each packet, find the nearest clean anchor on each side,
+    // then use the closer one (or both for cross-validation on uncertain events).
+
+    // Build a sorted list of (pkt_idx, anchor_index_in_working) for binary search
+    let anchor_pkts: Vec<usize> = working_indices.iter().map(|&i| pass1.anchors[i].pkt_idx).collect();
+
+    for pkt_idx in 0..n_packets {
+        let n_evt = pass1.rough_mets[pkt_idx].len();
+        if n_evt == 0 {
+            continue;
+        }
+
+        // Pass1's streaming with ghost rejection + SEC intra-packet correction
+        // is reliable for all non-NaN events. Only fall through to pass2
+        // for events that have no anchor (NaN rough_mets).
+        if pass1.rough_mets[pkt_idx].iter().all(|m| !m.is_nan()) {
+            result[pkt_idx] = pass1.rough_mets[pkt_idx].clone();
+            continue;
+        }
+
+        // Find nearest clean anchors (left and right)
+        let pos = anchor_pkts.partition_point(|&p| p <= pkt_idx);
+        let left_anchor = if pos > 0 { Some(working_indices[pos - 1]) } else { None };
+        let right_anchor = if pos < working_indices.len() { Some(working_indices[pos]) } else { None };
+
+        // If this packet contains an anchor, prefer it
+        let self_anchor = if pos > 0 && pass1.anchors[working_indices[pos - 1]].pkt_idx == pkt_idx {
+            Some(working_indices[pos - 1])
+        } else if pos < working_indices.len() && pass1.anchors[working_indices[pos]].pkt_idx == pkt_idx {
+            Some(working_indices[pos])
         } else {
             None
         };
 
-        // Phase correction for wrap tracking: congestion_wrap_count tracks
-        // median-ptime rollovers relative to anchor_median. But the time
-        // computation uses anchor_ptime. When these differ significantly
-        // (e.g., SEC ptime near 0, median near PTIME_MOD), the median
-        // rollover count overcounts (or undercounts).
-        //
-        // Correction: count how many extra wraps go from anchor_ptime to
-        // anchor_median vs. direct anchor_ptime to current_median.
-        let phase_correction: i64 = if use_wrap_tracking {
-            if let Some(anc_med) = anchor_median_ptime {
-                let delta = anc_med as i64 - anchor_ptime as i64;
-                // Use 70% threshold (367002) instead of 50% (262144).
-                // At 50%, Box C falsely triggers (delta=269502=51.4%)
-                // when anchor and median are just slightly over half
-                // apart but no actual wrap boundary crossing occurred.
-                let phase_thresh = PTIME_MOD as i64 * 7 / 10;
-                if delta > phase_thresh {
-                    -1
-                } else if delta < -phase_thresh {
-                    1
-                } else {
-                    0
+        // Choose primary anchor: self > nearer side
+        let primary = self_anchor.or_else(|| {
+            match (left_anchor, right_anchor) {
+                (Some(l), Some(r)) => {
+                    let ld = pkt_idx - pass1.anchors[l].pkt_idx;
+                    let rd = pass1.anchors[r].pkt_idx - pkt_idx;
+                    if ld <= rd { Some(l) } else { Some(r) }
                 }
-            } else {
-                0
+                (Some(l), None) => Some(l),
+                (None, Some(r)) => Some(r),
+                (None, None) => None,
             }
-        } else {
-            0
+        });
+
+        let Some(primary_idx) = primary else {
+            continue;
         };
-        let corrected_wrap_count = congestion_wrap_count + phase_correction;
 
-        for event in &events {
-            match event {
-                Pack::Second { stime, ptime } => {
-                    let met = *stime as f64 + offset;
+        let anc = &pass1.anchors[primary_idx];
+        let is_forward = anc.pkt_idx <= pkt_idx; // anchor is to the left → scan forward
 
-                    let normal_accept = (met - utc_tail).abs() < 2.0;
-                    let continuity_accept = last_accepted_stime.map_or(false, |prev| {
-                        *stime > prev && *stime <= prev + 60
-                    });
+        // Compute MET via directional wrap tracking from anchor to this packet
+        let pkt_mets = if is_forward {
+            forward_wrap_track(sci_data, &all_events, anc, pkt_idx, offset)
+        } else {
+            backward_wrap_track(sci_data, &all_events, anc, pkt_idx, offset)
+        };
 
-                    if normal_accept || continuity_accept {
-                        if debug && continuity_accept && !normal_accept {
-                            eprintln!(
-                                "SEC_CONT pkt={} stime={} prev={} ut={:.0} anchor updated via continuity",
-                                pkt_idx, stime,
-                                last_accepted_stime.unwrap_or(0),
-                                utc_tail
-                            );
-                        }
+        // Cross-validate with secondary anchor for uncertain events
+        let secondary = if is_forward { right_anchor } else { left_anchor };
+        if let Some(sec_idx) = secondary {
+            if sec_idx != primary_idx {
+                let sec_anc = &pass1.anchors[sec_idx];
+                let sec_is_forward = sec_anc.pkt_idx <= pkt_idx;
+                let sec_mets = if sec_is_forward {
+                    forward_wrap_track(sci_data, &all_events, sec_anc, pkt_idx, offset)
+                } else {
+                    backward_wrap_track(sci_data, &all_events, sec_anc, pkt_idx, offset)
+                };
 
-                        // When a SEC arrives after the anchor has gone stale
-                        // (non-recent), the SEC is from new data, not from
-                        // the pre-reset FIFO buffer. Flush pending events
-                        // using this fresh SEC as backward anchor, then clear
-                        // the post-reset flag. Stale SECs arrive in the first
-                        // 1-2 packets (still "recent"), so this only triggers
-                        // for fresh SECs.
-                        if (!fifo_reset_pending.is_empty() || !stale_batches.is_empty()) && !anchor_is_recent {
-                            let fresh_met = met;
-                            let fresh_ptime = *ptime;
-
-                            // ── Process stale batches from earlier FIFO resets ──
-                            for sb in stale_batches.drain(..) {
-                                // Phase S1-S3: recompute pending events using fresh SEC
-                                if !sb.pending_events.is_empty() {
-                                    let mut sb_pkt_groups: std::collections::BTreeMap<usize, Vec<usize>> =
-                                        std::collections::BTreeMap::new();
-                                    for (i, pe) in sb.pending_events.iter().enumerate() {
-                                        sb_pkt_groups.entry(pe.pkt_idx).or_default().push(i);
-                                    }
-                                    let mut sb_pkt_results: std::collections::BTreeMap<usize, (i64, u64)> =
-                                        std::collections::BTreeMap::new();
-                                    for (&pi, indices) in &sb_pkt_groups {
-                                        let mut ptimes_v: Vec<u64> = indices.iter()
-                                            .map(|&i| sb.pending_events[i].ptime).collect();
-                                        ptimes_v.sort_unstable();
-                                        let med = ptimes_v[ptimes_v.len() / 2];
-                                        let ut = sb.pending_events[indices[0]].utc_tail;
-                                        let (n_base, _margin) = estimate_packet_wraps_signed(
-                                            med, fresh_ptime, fresh_met, ut,
-                                        );
-                                        sb_pkt_results.insert(pi, (n_base, med));
-                                    }
-                                    if debug {
-                                        eprintln!(
-                                            "STALE_BATCH_FLUSH pkt={}: {} pending events in {} pkts, anc={:.3} anc_pt={}",
-                                            pkt_idx, sb.pending_events.len(), sb_pkt_groups.len(),
-                                            sb.anchor_met, sb.anchor_ptime,
-                                        );
-                                    }
-                                    // Apply corrections
-                                    for (&pi, &(n_base, med)) in &sb_pkt_results {
-                                        let indices = &sb_pkt_groups[&pi];
-                                        for &idx in indices {
-                                            let pe = &sb.pending_events[idx];
-                                            let corrected = compute_met_with_base_wraps(
-                                                pe.ptime, fresh_ptime, fresh_met, n_base, med,
-                                            );
-                                            result[pe.pkt_idx][pe.evt_idx] = corrected;
-                                        }
-                                    }
-                                }
-                                // Phase S4: correct wrap tracking events from stale batch
-                                if let Some(wt_start) = sb.wt_start {
-                                    let total_wraps = ((fresh_met - sb.anchor_met) / 2e-6
-                                        - (fresh_ptime as i64 - sb.anchor_ptime as i64) as f64)
-                                        / PTIME_MOD as f64;
-                                    let total_wraps = total_wraps.round() as i64;
-                                    let delta = total_wraps - sb.cwc_at_end;
-                                    if delta != 0 {
-                                        let shift = delta as f64 * WRAP_PERIOD;
-                                        if debug {
-                                            eprintln!(
-                                                "STALE_BATCH wt correction: wt_start={} → wt_end={}, total_wraps={} cwc={} delta={} shift={:.6}",
-                                                wt_start, sb.wt_end_pkt, total_wraps, sb.cwc_at_end, delta, shift
-                                            );
-                                        }
-                                        for pi in wt_start..sb.wt_end_pkt {
-                                            for t in result[pi].iter_mut() {
-                                                *t += shift;
-                                            }
-                                        }
-                                    }
-                                    // Phase S5: boundary continuity between pending and wt
-                                    if !sb.pending_events.is_empty() && !result[wt_start].is_empty() {
-                                        let first_wt_met = result[wt_start][0];
-                                        // Find last pending packet
-                                        let last_pend_pkt = sb.pending_events.iter()
-                                            .map(|pe| pe.pkt_idx).max().unwrap();
-                                        if !result[last_pend_pkt].is_empty() {
-                                            let last_pend_met = *result[last_pend_pkt].last().unwrap();
-                                            let gap = first_wt_met - last_pend_met;
-                                            let n_shift = (gap / WRAP_PERIOD).round() as i64;
-                                            let residual = (gap - n_shift as f64 * WRAP_PERIOD).abs();
-                                            if n_shift.abs() == 1 && residual < 0.3 {
-                                                let corr = n_shift as f64 * WRAP_PERIOD;
-                                                if debug {
-                                                    eprintln!(
-                                                        "STALE_BATCH boundary fix: last_pend={:.3} first_wt={:.3} gap={:.3} n_shift={} corr={:.6}",
-                                                        last_pend_met, first_wt_met, gap, n_shift, corr,
-                                                    );
-                                                }
-                                                for pe in &sb.pending_events {
-                                                    result[pe.pkt_idx][pe.evt_idx] += corr;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            // ── End stale batch processing ──
-                            // Group pending events by packet
-                            let mut pkt_groups: std::collections::BTreeMap<usize, Vec<usize>> =
-                                std::collections::BTreeMap::new();
-                            for (i, pe) in fifo_reset_pending.iter().enumerate() {
-                                pkt_groups.entry(pe.pkt_idx).or_default().push(i);
-                            }
-                            // Phase 1: compute backward MET for all packets,
-                            // classify as confident or ambiguous.
-                            const CONFIDENCE_THRESHOLD: f64 = 0.05;
-                            struct PktResult {
-                                n_base: i64,
-                                n_alt: i64, // alternative wrap count
-                                confident: bool,
-                                median: u64,
-                                representative_met: f64, // MET of first event
-                            }
-                            let mut pkt_results: std::collections::BTreeMap<usize, PktResult> =
-                                std::collections::BTreeMap::new();
-                            let mut n_confident = 0usize;
-                            let mut n_ambiguous = 0usize;
-                            for (&pi, indices) in &pkt_groups {
-                                let mut ptimes_v: Vec<u64> = indices.iter()
-                                    .map(|&i| fifo_reset_pending[i].ptime).collect();
-                                ptimes_v.sort_unstable();
-                                let med = ptimes_v[ptimes_v.len() / 2];
-                                let ut = fifo_reset_pending[indices[0]].utc_tail;
-                                let (n_base, margin) = estimate_packet_wraps_signed(
-                                    med, fresh_ptime, fresh_met, ut,
-                                );
-                                let confident = margin > CONFIDENCE_THRESHOLD;
-                                if debug && !confident {
-                                    let raw_d = med as i64 - fresh_ptime as i64;
-                                    let m_base = fresh_met + (raw_d + n_base * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-                                    eprintln!(
-                                        "  AMBIGUOUS pi={} med={} ut={:.0} n_base={} margin={:.4} met_base={:.3}",
-                                        pi, med, ut, n_base, margin, m_base
-                                    );
-                                }
-                                // Alternative: shift by ±1 (toward the ambiguous side)
-                                let n_alt = if margin <= CONFIDENCE_THRESHOLD {
-                                    // Determine which direction is ambiguous
-                                    let raw_delta = med as i64 - fresh_ptime as i64;
-                                    let best_met = fresh_met + (raw_delta + n_base * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-                                    let target = ut;
-                                    if best_met - MET_CORRECTION > target {
-                                        n_base - 1 // try lower
-                                    } else {
-                                        n_base + 1 // try higher
-                                    }
-                                } else {
-                                    n_base
-                                };
-                                // Use median ptime for representative MET (consistent with n_base)
-                                let raw_delta_med = med as i64 - fresh_ptime as i64;
-                                let repr_met = fresh_met + (raw_delta_med + n_base * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-                                if confident { n_confident += 1; } else { n_ambiguous += 1; }
-                                pkt_results.insert(pi, PktResult {
-                                    n_base, n_alt, confident, median: med,
-                                    representative_met: repr_met,
-                                });
-                            }
-                            if debug {
+                // Check consistency for uncertain events
+                if debug && pkt_mets.len() == sec_mets.len() {
+                    for (i, (m1, m2)) in pkt_mets.iter().zip(sec_mets.iter()).enumerate() {
+                        if !m1.is_nan() && !m2.is_nan() {
+                            let diff = (m1 - m2).abs();
+                            if diff > 10e-6 {
                                 eprintln!(
-                                    "BACKWARD_FLUSH pkt={} total={} confident={} ambiguous={} fresh_met={} fresh_pt={}",
-                                    pkt_idx, fifo_reset_pending.len(), n_confident, n_ambiguous, fresh_met, fresh_ptime
+                                    "PASS2 XCHECK pkt={} evt={} fwd={:.6} bwd={:.6} diff={:.6}",
+                                    pkt_idx, i, m1, m2, diff
                                 );
                             }
-                            // Phase 2: resolve ambiguous packets using
-                            // cross-reference ("前后对照") between the biased
-                            // forward estimate (stale anchor) and the backward
-                            // estimate (fresh anchor). Since the two anchors
-                            // have different wrap boundaries (different ptime),
-                            // events ambiguous for one are often unambiguous
-                            // for the other.
-                            for (&pi, pr) in pkt_results.iter_mut() {
-                                if pr.confident {
-                                    continue;
-                                }
-                                let indices = &pkt_groups[&pi];
-                                // Get the existing biased MET (computed from stale anchor)
-                                let biased_met = if indices[0] < fifo_reset_pending.len() {
-                                    let pe = &fifo_reset_pending[indices[0]];
-                                    if pe.pkt_idx == pkt_idx {
-                                        times[pe.evt_idx]
-                                    } else {
-                                        result[pe.pkt_idx][pe.evt_idx]
-                                    }
-                                } else {
-                                    continue;
-                                };
-                                // Compute backward MET for both options
-                                let raw_delta = pr.median as i64 - fresh_ptime as i64;
-                                let met_base = fresh_met + (raw_delta + pr.n_base * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-                                let met_alt = fresh_met + (raw_delta + pr.n_alt * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-                                // Pick the backward option closest to the biased estimate
-                                let err_base = (met_base - biased_met).abs();
-                                let err_alt = (met_alt - biased_met).abs();
-                                if err_alt < err_base {
-                                    if debug {
-                                        eprintln!(
-                                            "  CROSSREF pi={} n_base={} → n_alt={} (biased={:.3} base={:.3} alt={:.3} err_b={:.3} err_a={:.3})",
-                                            pi, pr.n_base, pr.n_alt,
-                                            biased_met, met_base, met_alt,
-                                            err_base, err_alt,
-                                        );
-                                    }
-                                    pr.n_base = pr.n_alt;
-                                } else if debug {
-                                    eprintln!(
-                                        "  CROSSREF_KEEP pi={} n_base={} (biased={:.3} base={:.3} alt={:.3} err_b={:.3} err_a={:.3})",
-                                        pi, pr.n_base,
-                                        biased_met, met_base, met_alt,
-                                        err_base, err_alt,
-                                    );
-                                }
-                            }
-                            // Phase 3: apply corrections
-                            for (&pi, pr) in &pkt_results {
-                                let indices = &pkt_groups[&pi];
-                                for &idx in indices {
-                                    let pe = &fifo_reset_pending[idx];
-                                    let corrected = compute_met_with_base_wraps(
-                                        pe.ptime, fresh_ptime, fresh_met, pr.n_base, pr.median,
-                                    );
-                                    if pe.pkt_idx == pkt_idx {
-                                        times[pe.evt_idx] = corrected;
-                                    } else {
-                                        result[pe.pkt_idx][pe.evt_idx] = corrected;
-                                    }
-                                }
-                            }
-                            // Mark backward-flushed packets so the global
-                            // sort won't undo the correction.
-                            for &pi in pkt_results.keys() {
-                                if pi < backward_flushed.len() {
-                                    backward_flushed[pi] = true;
-                                }
-                            }
-                            if pkt_idx < backward_flushed.len() {
-                                backward_flushed[pkt_idx] = true;
-                            }
-                            // Phase 4: retroactive wrap tracking correction.
-                            // When wrap tracking activated during FIFO reset
-                            // recovery, it used congestion_wrap_count=0. The
-                            // backward flush knows the correct n_base for the
-                            // last pending packet. Convert to stale-anchor
-                            // equivalent and adjust wrap tracking events.
-                            if let Some(wt_start) = wrap_tracking_fifo_reset_start {
-                                // Compute total wraps between the two SEC anchors
-                                // directly, avoiding the error-prone utc_tail-based
-                                // estimates. This is exact because both SECs are
-                                // ground truth.
-                                let anc = anchor.unwrap();
-                                let total_wraps = ((fresh_met - anc) / 2e-6
-                                    - (fresh_ptime as i64 - anchor_ptime as i64) as f64)
-                                    / PTIME_MOD as f64;
-                                let total_wraps = total_wraps.round() as i64;
-                                // congestion_wrap_count tracks rollovers detected
-                                // since the stale SEC reset it to 0. The correct
-                                // total should match total_wraps.
-                                let delta = total_wraps - congestion_wrap_count;
-                                if delta != 0 {
-                                    let shift = delta as f64 * WRAP_PERIOD;
-                                    if debug {
-                                        eprintln!(
-                                            "BACKWARD_FLUSH retroactive wt correction: wt_start={} → pkt={}, total_wraps={} cwc={} delta={} shift={:.6}",
-                                            wt_start, pkt_idx, total_wraps, congestion_wrap_count, delta, shift
-                                        );
-                                    }
-                                    for pi in wt_start..pkt_idx {
-                                        for t in result[pi].iter_mut() {
-                                            *t += shift;
-                                        }
-                                    }
-                                    // Also fix events already pushed for the current packet
-                                    // (events before the SEC in this packet used wrap tracking)
-                                    for t in times.iter_mut() {
-                                        *t += shift;
-                                    }
-                                    congestion_wrap_count += delta;
-                                }
-                                // Phase 5: boundary continuity check.
-                                // The backward flush may assign wrong n_base
-                                // to pending packets (off by ±1) because
-                                // utc_tail is ~1s ahead of actual event time
-                                // after FIFO reset. Check if the last pending
-                                // packet's MET is consistent with the first
-                                // wrap tracking packet's (already corrected)
-                                // MET. If there's a ~WRAP_PERIOD gap, shift
-                                // all pending events.
-                                // Get the first wrap tracking event MET.
-                                // If wt_start == pkt_idx, the current packet
-                                // hasn't been pushed to result yet; use times.
-                                let first_wt_times = if wt_start < pkt_idx {
-                                    result[wt_start].as_slice()
-                                } else {
-                                    times.as_slice()
-                                };
-                                if !first_wt_times.is_empty() {
-                                    let first_wt_met = first_wt_times[0];
-                                    // Find last pending packet's representative MET
-                                    if let Some((&last_pi, _)) = pkt_results.iter().next_back() {
-                                        if !result[last_pi].is_empty() {
-                                            let last_pend_met = *result[last_pi].last().unwrap();
-                                            let gap = first_wt_met - last_pend_met;
-                                            // Generalized: find integer N such that
-                                            // gap - N*WRAP ≈ 0 (pending N wraps off)
-                                            let n_shift = (gap / WRAP_PERIOD).round() as i64;
-                                            let residual = (gap - n_shift as f64 * WRAP_PERIOD).abs();
-                                            // Only correct ±1 WRAP; larger shifts are
-                                            // likely genuine FIFO reset gaps, not errors.
-                                            if n_shift.abs() == 1 && residual < 0.3 {
-                                                let corr = n_shift as f64 * WRAP_PERIOD;
-                                                if debug {
-                                                    eprintln!(
-                                                        "BACKWARD_FLUSH boundary fix: last_pend={:.3} first_wt={:.3} gap={:.3} n_shift={} corr={:.6}",
-                                                        last_pend_met, first_wt_met, gap, n_shift, corr,
-                                                    );
-                                                }
-                                                for (&pi, _) in &pkt_results {
-                                                    for t in result[pi].iter_mut() {
-                                                        *t += corr;
-                                                    }
-                                                }
-                                                // Also fix pending events in the current packet
-                                                // (pkt_idx == the SEC packet)
-                                                if pkt_results.contains_key(&pkt_idx) {
-                                                    for t in times.iter_mut() {
-                                                        *t += corr;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                wrap_tracking_fifo_reset_start = None;
-                            }
-                            fifo_reset_pending.clear();
-                            anchor_post_fifo_reset = false;
-                        } else if anchor_post_fifo_reset && !anchor_is_recent {
-                            // Fresh SEC but no pending events — just clear
-                            anchor_post_fifo_reset = false;
-                        }
-
-                        anchor = Some(met);
-                        anchor_ptime = *ptime;
-                        anchor_pkt = pkt_idx;
-                        last_accepted_stime = Some(*stime);
-                        anchor_is_recent = true;
-                        congestion_wrap_count = 0;
-                        wrap_tracking_active = false;
-                        // After FIFO reset, mark anchor as potentially stale.
-                        // The flag stays set until a non-recent SEC arrives
-                        // (which indicates a fresh SEC after the stale ones).
-                        if fifo_reset_no_wt {
-                            anchor_post_fifo_reset = true;
-                        }
-                        fifo_reset_no_wt = false;
-                        if let Some(med) = median_pt {
-                            prev_median_ptime = Some(med);
-                            anchor_median_ptime = Some(med);
-                        }
-                        packet_base_wraps = None;
-                    }
-
-                    if let Some(anc) = anchor {
-                        let evt_idx = times.len();
-                        if use_wrap_tracking && !anchor_is_recent {
-                            if let Some(med) = median_pt {
-                                times.push(compute_met_with_base_wraps(
-                                    *ptime, anchor_ptime, anc, corrected_wrap_count, med,
-                                ));
-                            } else {
-                                let raw_delta = *ptime as i64 - anchor_ptime as i64;
-                                let total = raw_delta + corrected_wrap_count * PTIME_MOD as i64;
-                                times.push(anc + total as f64 * 2e-6 + MET_CORRECTION);
-                            }
-                        } else if let (Some(n_base), Some(med)) = (packet_base_wraps, median_pt) {
-                            times.push(compute_met_with_base_wraps(
-                                *ptime, anchor_ptime, anc, n_base, med,
-                            ));
-                        } else {
-                            times.push(compute_met_anchored(
-                                *ptime,
-                                anchor_ptime,
-                                anc,
-                                utc_tail,
-                                anchor_is_recent,
-                            ));
-                        }
-                        // Buffer for backward correction from future fresh SEC
-                        if anchor_post_fifo_reset {
-                            fifo_reset_pending.push(PendingEvent {
-                                pkt_idx, evt_idx, ptime: *ptime, utc_tail,
-                            });
                         }
                     }
                 }
-                Pack::Event { ptime, .. } => {
-                    if let Some(anc) = anchor {
-                        let evt_idx = times.len();
-                        if use_wrap_tracking && !anchor_is_recent {
-                            if let Some(med) = median_pt {
-                                times.push(compute_met_with_base_wraps(
-                                    *ptime, anchor_ptime, anc, corrected_wrap_count, med,
-                                ));
-                            } else {
-                                let raw_delta = *ptime as i64 - anchor_ptime as i64;
-                                let total = raw_delta + corrected_wrap_count * PTIME_MOD as i64;
-                                times.push(anc + total as f64 * 2e-6 + MET_CORRECTION);
-                            }
-                        } else if let (Some(n_base), Some(med)) = (packet_base_wraps, median_pt) {
-                            times.push(compute_met_with_base_wraps(
-                                *ptime, anchor_ptime, anc, n_base, med,
-                            ));
-                        } else {
-                            let met = compute_met_anchored(
-                                *ptime,
-                                anchor_ptime,
-                                anc,
-                                utc_tail,
-                                anchor_is_recent,
-                            );
-                            times.push(met);
-                        }
-                        // Buffer for backward correction from future fresh SEC
-                        if anchor_post_fifo_reset {
-                            fifo_reset_pending.push(PendingEvent {
-                                pkt_idx, evt_idx, ptime: *ptime, utc_tail,
-                            });
-                        }
-                    }
-                }
-                Pack::Error => {}
             }
         }
-        if debug && !times.is_empty() {
-            let t_min = times.iter().cloned().fold(f64::INFINITY, f64::min);
-            let t_max = times.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-            let elapsed = utc_tail - anchor.unwrap_or(0.0);
-            eprintln!(
-                "PKT {} pkt={} ut={:.0} anc={:.3} anc_pt={} el={:.3} n={} tmin={:.6} tmax={:.6} span={:.4} recent={} wt={} wraps={} phase={} eff={}",
-                label, pkt_idx, utc_tail, anchor.unwrap_or(0.0), anchor_ptime,
-                elapsed, times.len(), t_min, t_max, t_max - t_min, anchor_is_recent, use_wrap_tracking, congestion_wrap_count, phase_correction, corrected_wrap_count
-            );
-        }
 
-        prev_utc_tail = utc_tail;
-        result.push(times);
-    }
-
-    // Remaining pending events have no future fresh SEC — keep their
-    // biased estimation times (the best we can do without a backward anchor).
-    if !fifo_reset_pending.is_empty() {
-        if debug {
-            eprintln!(
-                "POST_RESET_FALLBACK: {} events have no backward SEC, keeping biased estimation",
-                fifo_reset_pending.len()
-            );
-        }
-        fifo_reset_pending.clear();
-    }
-
-    // ── Pass 2: Fix FIFO-reset time reversals ──
-    // After FIFO resets, some packets get reordered in the file. A batch of
-    // packets may be placed at time T+X+WRAP_PERIOD when they should be at T+X.
-    // Signature: a batch at time A is followed by packets at time B where
-    // B < A - 0.5 (time reversal ≈ -WRAP_PERIOD). The batch before the reversal
-    // should be shifted by -WRAP_PERIOD.
-    fix_wrap_reversals(&mut result);
-
-    // ── Pass 3: Fix wrap-boundary dips ──
-    // Near ptime wrap boundaries, some events/packets get assigned one wrap too
-    // low. This manifests as: ...HIGH packets... LOW batch... HIGH packets...
-    // where the LOW batch is ~WRAP_PERIOD below neighbors. Shift them up.
-    // Also fix mixed-wrap packets (span ≈ WRAP_PERIOD) by aligning the minority
-    // cluster with neighbors.
-    fix_wrap_boundary_dips(&mut result);
-
-    // ── Pass 4: Global sort for complex reordering ──
-    // In extreme saturation cases (e.g., GRB 221009A), FIFO resets cause complex
-    // multi-level packet reordering that Pass 2 cannot fully resolve. Flatten all
-    // events and sort globally by time to ensure monotonicity.
-    let needs_global_sort = result.iter().enumerate().any(|(i, pkt)| {
-        if i == 0 || pkt.is_empty() {
-            return false;
-        }
-        // Check if this packet's first event is before previous packet's last event
-        if let Some(prev_pkt) = result.get(i - 1) {
-            if !prev_pkt.is_empty() && !pkt.is_empty() {
-                if pkt[0] < prev_pkt[prev_pkt.len() - 1] {
-                    // Skip reversals at backward-flushed boundaries:
-                    // pending (fresh SEC) vs wrap tracking (stale anchor)
-                    // reversals are expected and should not trigger a sort.
-                    let bf_prev = i > 0 && backward_flushed.get(i - 1).copied().unwrap_or(false);
-                    let bf_curr = backward_flushed.get(i).copied().unwrap_or(false);
-                    if bf_prev || bf_curr {
-                        return false;
-                    }
-                    return true;
-                }
-            }
-        }
-        // Intra-packet reversals are handled by Pass 3 (mixed packet
-        // logic) and should not trigger a global sort.
-        false
-    });
-
-    if needs_global_sort {
-        if debug {
-            eprintln!("Global sort: sorting non-backward-flushed segments");
-        }
-        // Sort each contiguous segment of non-backward-flushed packets
-        // independently, preserving backward-flushed packet METs.
-        let n = result.len();
-        let mut seg_start = 0;
-        while seg_start < n {
-            if seg_start < backward_flushed.len() && backward_flushed[seg_start] {
-                seg_start += 1;
-                continue;
-            }
-            let mut seg_end = seg_start + 1;
-            while seg_end < n && !(seg_end < backward_flushed.len() && backward_flushed[seg_end]) {
-                seg_end += 1;
-            }
-            let mut seg_events: Vec<f64> = result[seg_start..seg_end]
-                .iter().flatten().copied().collect();
-            seg_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let mut event_idx = 0;
-            for pkt in result[seg_start..seg_end].iter_mut() {
-                let pkt_len = pkt.len();
-                if pkt_len > 0 && event_idx < seg_events.len() {
-                    let end_idx = (event_idx + pkt_len).min(seg_events.len());
-                    pkt.clear();
-                    pkt.extend_from_slice(&seg_events[event_idx..end_idx]);
-                    event_idx = end_idx;
-                }
-            }
-            seg_start = seg_end;
-        }
+        result[pkt_idx] = pkt_mets.into_iter().filter(|m| !m.is_nan()).collect();
     }
 
     result
 }
 
-/// Detect and fix time reversals caused by FIFO-reset packet reordering.
-///
-/// When a batch of consecutive packets has times ~WRAP_PERIOD ahead of the
-/// following batch, shift the earlier batch by -WRAP_PERIOD. This fixes the
-/// case where stale anchors + biased utc_tail cause events to be placed
-/// one wrap period too late.
-fn fix_wrap_reversals(packets: &mut [Vec<f64>]) {
-    let debug = std::env::var("DEBUG_WRAP").is_ok();
+/// Forward wrap tracking: from anchor to target packet, scanning left→right.
+/// Re-anchors on valid SEC events and rejects ghost-induced false wraps.
+fn forward_wrap_track(
+    sci_data: &SciFile,
+    all_events: &[Vec<Pack>],
+    anchor: &AnchorInfo,
+    target_pkt: usize,
+    offset: f64,
+) -> Vec<f64> {
+    let mut wrap_count: i64 = 0;
+    let mut prev_ptime: Option<u64> = None;
+    let mut pending_wrap = false;
+    let mut pre_wrap_ptime: Option<u64> = None;
+    let mut anc_met = anchor.met;
+    let mut anc_ptime = anchor.ptime;
 
-    if debug {
-        eprintln!("fix_wrap_reversals: called with {} packets", packets.len());
-    }
+    let start_pkt = anchor.pkt_idx;
+    let mut target_mets: Vec<f64> = Vec::new();
 
-    // Strategy: detect backward jumps ≈ -WRAP_PERIOD between clean packets,
-    // then walk backward to find the misplaced batch. Distinguish real
-    // misplacement from file reordering by checking whether the batch is
-    // preceded by a TIME GAP (FIFO reset → misplacement) or by smooth
-    // continuation (file reorder → no shift needed).
+    for pkt_idx in start_pkt..=target_pkt {
+        let events = &all_events[pkt_idx];
+        let utc_tail = get_utc_tail(&sci_data.ccsds[pkt_idx]);
 
-    struct PktStat {
-        idx: usize,
-        mn: f64,
-        mx: f64,
-    }
-
-    let clean: Vec<PktStat> = (0..packets.len())
-        .filter_map(|i| {
-            if packets[i].is_empty() {
-                return None;
-            }
-            let mn = packets[i].iter().cloned().fold(f64::INFINITY, f64::min);
-            let mx = packets[i].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-            let span = mx - mn;
-            if span < 0.3 {
-                Some(PktStat { idx: i, mn, mx })
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    let mut fixed = vec![false; packets.len()];
-
-    for ci in 0..clean.len().saturating_sub(1) {
-        if fixed[clean[ci].idx] {
-            continue;
-        }
-        let reversal = clean[ci].mx - clean[ci + 1].mn;
-        if reversal < WRAP_PERIOD * 0.8 || reversal > WRAP_PERIOD * 1.2 {
-            continue;
-        }
-
-        // Found backward jump ≈ -WRAP between clean[ci] and clean[ci+1].
-        // Walk backward from clean[ci]: find all packets with
-        // mn > clean[ci+1].mn + 0.5*WRAP (i.e., at the elevated level).
-        let ref_mn = clean[ci + 1].mn;
-        let threshold = ref_mn + WRAP_PERIOD * 0.5;
-
-        let mut first_shifted = clean[ci].idx;
-        let mut prev_pkt_max = f64::NAN; // max of the packet just before the batch
-
-        for j in (0..clean[ci].idx).rev() {
-            if packets[j].is_empty() || fixed[j] {
-                continue;
-            }
-            let j_mn = packets[j].iter().cloned().fold(f64::INFINITY, f64::min);
-            let j_mx = packets[j].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-            let j_span = j_mx - j_mn;
-
-            if j_mn > threshold && j_span < WRAP_PERIOD * 0.5 {
-                first_shifted = j;
-            } else {
-                prev_pkt_max = j_mx;
-                break;
-            }
-        }
-
-        // Check: is there a gap between the previous packet and the batch?
-        // A misplaced batch follows a FIFO reset gap (> 0.5s).
-        // File-reordered packets have smooth continuation (gap < 0.1s).
-        let batch_mn = packets[first_shifted]
-            .iter()
-            .cloned()
-            .fold(f64::INFINITY, f64::min);
-        let gap = batch_mn - prev_pkt_max;
-
-        if debug {
-            eprintln!(
-                "fix_wrap_reversals: reversal={:.4}s at pkt {}->pkt {}, batch {}..={}, gap_before={:.4}s",
-                reversal,
-                clean[ci].idx,
-                clean[ci + 1].idx,
-                first_shifted,
-                clean[ci].idx,
-                gap
-            );
-        }
-
-        // Decision criteria:
-        // 1. Large gap (> 0.3s) → FIFO reset → shift
-        // 2. Small gap → file reorder → skip
-        // Note: do NOT shift based on reversal size alone. Even when
-        // reversal ≈ WRAP_PERIOD, a small gap means it's file reordering,
-        // not FIFO reset. Shifting incorrectly breaks 260226A.
-        let should_shift = gap > 0.3 || prev_pkt_max.is_nan();
-
-        if should_shift {
-            // Misplaced batch after FIFO reset → shift down
-            if debug {
-                let reason = if gap > 0.3 || prev_pkt_max.is_nan() {
-                    format!("large gap={:.4}s", gap)
-                } else {
-                    format!("reversal≈WRAP={:.4}s, gap={:.4}s", reversal, gap)
-                };
-                eprintln!(
-                    "fix_wrap_reversals:   → SHIFTING pkts {}..={} by -{:.6} ({})",
-                    first_shifted,
-                    clean[ci].idx,
-                    WRAP_PERIOD,
-                    reason
-                );
-            }
-            for idx in first_shifted..=clean[ci].idx {
-                if !packets[idx].is_empty() {
-                    for t in packets[idx].iter_mut() {
-                        *t -= WRAP_PERIOD;
-                    }
-                    fixed[idx] = true;
+        if pkt_idx > start_pkt {
+            let prev_ut = get_utc_tail(&sci_data.ccsds[pkt_idx - 1]);
+            if detect_disruption(prev_ut, utc_tail) {
+                let first_ptime = events.iter().find_map(|e| match e {
+                    Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => Some(*ptime),
+                    _ => None,
+                });
+                if let Some(fp) = first_ptime {
+                    wrap_count = estimate_wrap_count(anc_met, anc_ptime, fp, utc_tail);
+                    prev_ptime = None;
+                    pending_wrap = false;
                 }
             }
-        } else if debug {
-            eprintln!(
-                "fix_wrap_reversals:   → SKIPPING (file reorder: reversal={:.4}s, gap={:.4}s)",
-                reversal, gap
-            );
+        }
+
+        let is_target = pkt_idx == target_pkt;
+
+        for event in events {
+            match event {
+                Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => {
+                    // Ghost rejection: if pending wrap, check next event
+                    if pending_wrap {
+                        if let Some(pre) = pre_wrap_ptime {
+                            let back = (*ptime as i64 - pre as i64).unsigned_abs();
+                            if back < PTIME_MOD / 3 {
+                                wrap_count -= 1;
+                            }
+                        }
+                        pending_wrap = false;
+                        pre_wrap_ptime = None;
+                    }
+
+                    // Wrap detection
+                    if let Some(prev) = prev_ptime {
+                        let diff = *ptime as i64 - prev as i64;
+                        if diff < -(PTIME_MOD as i64 / 2) {
+                            pre_wrap_ptime = Some(prev);
+                            wrap_count += 1;
+                            pending_wrap = true;
+                        }
+                    }
+
+                    // Re-anchor on valid SEC
+                    if let Pack::Second { stime, ptime: sec_ptime } = event {
+                        let met = *stime as f64 + offset;
+                        if (met - utc_tail).abs() < 2.0 {
+                            anc_met = met;
+                            anc_ptime = *sec_ptime;
+                            wrap_count = 0;
+                            pending_wrap = false;
+                        }
+                    }
+
+                    if is_target {
+                        let raw_delta = *ptime as i64 - anc_ptime as i64;
+                        let total = raw_delta + wrap_count * PTIME_MOD as i64;
+                        target_mets.push(anc_met + total as f64 * 2e-6 + MET_CORRECTION);
+                    }
+
+                    prev_ptime = Some(*ptime);
+                }
+                Pack::Error => {}
+            }
         }
     }
+
+    target_mets
 }
 
-/// Fix wrap-boundary dips: short batches at the wrong wrap level.
+/// Backward wrap tracking: from anchor to target packet, scanning right→left.
+/// Re-anchors on valid SEC events and rejects ghost-induced false wraps.
+fn backward_wrap_track(
+    sci_data: &SciFile,
+    all_events: &[Vec<Pack>],
+    anchor: &AnchorInfo,
+    target_pkt: usize,
+    offset: f64,
+) -> Vec<f64> {
+    let mut wrap_count: i64 = 0;
+    let mut next_ptime: Option<u64> = None;
+    let mut pending_unwrap = false;
+    let mut pre_unwrap_ptime: Option<u64> = None;
+    let mut anc_met = anchor.met;
+    let mut anc_ptime = anchor.ptime;
+
+    let start_pkt = anchor.pkt_idx;
+    let mut target_mets: Vec<f64> = Vec::new();
+
+    for pkt_idx in (target_pkt..=start_pkt).rev() {
+        let events = &all_events[pkt_idx];
+        let utc_tail = get_utc_tail(&sci_data.ccsds[pkt_idx]);
+
+        if pkt_idx < start_pkt {
+            let next_ut = get_utc_tail(&sci_data.ccsds[pkt_idx + 1]);
+            if detect_disruption(utc_tail, next_ut) {
+                let last_ptime = events.iter().rev().find_map(|e| match e {
+                    Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => Some(*ptime),
+                    _ => None,
+                });
+                if let Some(lp) = last_ptime {
+                    wrap_count = estimate_wrap_count(anc_met, anc_ptime, lp, utc_tail);
+                    next_ptime = None;
+                    pending_unwrap = false;
+                }
+            }
+        }
+
+        let is_target = pkt_idx == target_pkt;
+
+        let mut pkt_mets_rev: Vec<f64> = Vec::new();
+        for event in events.iter().rev() {
+            match event {
+                Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => {
+                    // Ghost rejection (backward)
+                    if pending_unwrap {
+                        if let Some(pre) = pre_unwrap_ptime {
+                            let back = (*ptime as i64 - pre as i64).unsigned_abs();
+                            if back < PTIME_MOD / 3 {
+                                wrap_count += 1; // undo the -1
+                            }
+                        }
+                        pending_unwrap = false;
+                        pre_unwrap_ptime = None;
+                    }
+
+                    // Backward wrap detection
+                    if let Some(next) = next_ptime {
+                        let diff = next as i64 - *ptime as i64;
+                        if diff < -(PTIME_MOD as i64 / 2) {
+                            pre_unwrap_ptime = Some(next);
+                            wrap_count -= 1;
+                            pending_unwrap = true;
+                        }
+                    }
+
+                    // Re-anchor on valid SEC
+                    if let Pack::Second { stime, ptime: sec_ptime } = event {
+                        let met = *stime as f64 + offset;
+                        if (met - utc_tail).abs() < 2.0 {
+                            anc_met = met;
+                            anc_ptime = *sec_ptime;
+                            wrap_count = 0;
+                            pending_unwrap = false;
+                        }
+                    }
+
+                    if is_target {
+                        let raw_delta = *ptime as i64 - anc_ptime as i64;
+                        let total = raw_delta + wrap_count * PTIME_MOD as i64;
+                        pkt_mets_rev.push(anc_met + total as f64 * 2e-6 + MET_CORRECTION);
+                    }
+
+                    next_ptime = Some(*ptime);
+                }
+                Pack::Error => {}
+            }
+        }
+
+        if is_target {
+            pkt_mets_rev.reverse();
+            target_mets = pkt_mets_rev;
+        }
+    }
+
+    target_mets
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public API
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// SEC-anchored 时间重建。
 ///
-/// After FIFO resets, some packets near the ptime wrap boundary get assigned
-/// one wrap period too low. Pattern: HIGH...HIGH, LOW_batch, HIGH...HIGH
-/// where LOW_batch is ~WRAP_PERIOD below both neighbors. Also fixes mixed-wrap
-/// packets (span ≈ WRAP_PERIOD) by shifting the minority cluster.
-fn fix_wrap_boundary_dips(packets: &mut [Vec<f64>]) {
+/// 使用两阶段方法：先预扫描找出所有 SEC 锚点和间隔异常，
+/// 然后对每段事件选可信方向的锚点 + ptime 单调性计 wrap，一次算对。
+pub fn reconstruct_with_wrap_tracking(sci_data: &SciFile, offset: f64) -> Vec<Vec<f64>> {
+    reconstruct_with_wrap_tracking_labeled(sci_data, offset, "")
+}
+
+pub fn reconstruct_with_wrap_tracking_labeled(
+    sci_data: &SciFile,
+    offset: f64,
+    _label: &str,
+) -> Vec<Vec<f64>> {
     let debug = std::env::var("DEBUG_WRAP").is_ok();
+    let n_packets = sci_data.ccsds.len();
 
-    if debug {
-        eprintln!("fix_wrap_boundary_dips: called with {} packets", packets.len());
+    if n_packets == 0 {
+        return Vec::new();
     }
 
-    // Step 1: Fix sandwiched "dip" batches FIRST.
-    // Find forward jumps ≈ WRAP_PERIOD between clean packets, then check
-    // if the low batch was preceded by a backward jump from the high level.
-    // Also shift LOW events within adjacent mixed-wrap packets.
+    // Pass 1: Forward scan — extract anchors, confidence, rough METs
+    let pass1 = pass1_scan(sci_data, offset, debug);
 
-    struct PktStat {
-        idx: usize,
-        mn: f64,
-        mx: f64,
+    if pass1.anchors.is_empty() {
+        return vec![Vec::new(); n_packets];
     }
 
-    let clean: Vec<PktStat> = (0..packets.len())
-        .filter_map(|i| {
-            if packets[i].is_empty() {
-                return None;
-            }
-            let mn = packets[i].iter().cloned().fold(f64::INFINITY, f64::min);
-            let mx = packets[i].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-            let span = mx - mn;
-            if span < 0.3 {
-                Some(PktStat { idx: i, mn, mx })
-            } else {
-                None
-            }
-        })
-        .collect();
+    // Pass 2: Bidirectional anchor reconstruction
+    let result = pass2_reconstruct(sci_data, &pass1, offset, debug);
 
-    let mut shifted = vec![false; packets.len()];
-
-    for ci in 0..clean.len().saturating_sub(1) {
-        if shifted[clean[ci].idx] {
-            continue;
-        }
-
-        // Look for forward jump ≈ WRAP_PERIOD: clean[ci] is LOW, clean[ci+1] is HIGH
-        let forward_jump = clean[ci + 1].mn - clean[ci].mx;
-        if forward_jump < WRAP_PERIOD * 0.8 || forward_jump > WRAP_PERIOD * 1.2 {
-            continue;
-        }
-
-        // Walk backward from clean[ci] to find the extent of the LOW batch
-        let high_level = clean[ci + 1].mn;
-        let low_threshold = high_level - WRAP_PERIOD * 0.5;
-
-        let mut first_low = clean[ci].idx;
-        let mut prev_high_max = f64::NAN;
-        let mut mixed_pkts_in_range: Vec<usize> = Vec::new();
-
-        for j in (0..clean[ci].idx).rev() {
-            if packets[j].is_empty() || shifted[j] {
-                continue;
-            }
-            let j_mn = packets[j].iter().cloned().fold(f64::INFINITY, f64::min);
-            let j_mx = packets[j].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-            let j_span = j_mx - j_mn;
-
-            // Skip mixed-wrap packets but remember them for later processing
-            if j_span > WRAP_PERIOD * 0.5 {
-                mixed_pkts_in_range.push(j);
-                continue;
-            }
-
-            if j_mx < low_threshold {
-                first_low = j;
-            } else if j_mn >= low_threshold {
-                // Found a HIGH packet before the batch → sandwiched!
-                prev_high_max = j_mx;
-                break;
-            } else {
-                break;
-            }
-        }
-
-        // Verify: the batch is preceded by HIGH level (backward jump from HIGH to LOW)
-        if prev_high_max.is_nan() {
-            continue;
-        }
-
-        let batch_mn = packets[first_low]
-            .iter()
-            .cloned()
-            .fold(f64::INFINITY, f64::min);
-        let backward_jump = prev_high_max - batch_mn;
-
-        if backward_jump < WRAP_PERIOD * 0.5 {
-            continue; // not a genuine wrap dip
-        }
-
-        if debug {
-            eprintln!(
-                "fix_wrap_boundary_dips: dip batch pkts {}..={}, backward_jump={:.4}s, forward_jump={:.4}s",
-                first_low, clean[ci].idx, backward_jump, forward_jump
-            );
-            eprintln!(
-                "fix_wrap_boundary_dips:   → SHIFTING pkts {}..={} UP by {:.6}",
-                first_low, clean[ci].idx, WRAP_PERIOD
-            );
-        }
-
-        // Shift all clean LOW packets in the batch
-        for idx in first_low..=clean[ci].idx {
-            if !packets[idx].is_empty() && !shifted[idx] {
-                for t in packets[idx].iter_mut() {
-                    *t += WRAP_PERIOD;
-                }
-                shifted[idx] = true;
-            }
-        }
-
-        // Also shift LOW events within adjacent mixed-wrap packets
-        for &mix_idx in &mixed_pkts_in_range {
-            if shifted[mix_idx] || packets[mix_idx].is_empty() {
-                continue;
-            }
-            let mix_mn = packets[mix_idx].iter().cloned().fold(f64::INFINITY, f64::min);
-            let midpoint = mix_mn + WRAP_PERIOD * 0.5;
-            if debug {
-                let n_low = packets[mix_idx].iter().filter(|&&t| t < midpoint).count();
-                eprintln!(
-                    "fix_wrap_boundary_dips:   → also shifting {} LOW events in mixed pkt {} UP",
-                    n_low, mix_idx
-                );
-            }
-            for t in packets[mix_idx].iter_mut() {
-                if *t < midpoint {
-                    *t += WRAP_PERIOD;
-                }
-            }
-            shifted[mix_idx] = true;
-        }
-    }
-
-    // Step 2: Fix remaining mixed-wrap packets (span ≈ WRAP_PERIOD).
-    // Split events into two clusters, shift the minority to match majority
-    // based on neighboring packet times.
-    for i in 0..packets.len() {
-        if shifted[i] || packets[i].len() < 2 {
-            continue;
-        }
-        let mn = packets[i].iter().cloned().fold(f64::INFINITY, f64::min);
-        let mx = packets[i].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let span = mx - mn;
-        if span < WRAP_PERIOD * 0.8 || span > WRAP_PERIOD * 1.2 {
-            continue;
-        }
-
-        // Split into low and high clusters
-        let midpoint = mn + WRAP_PERIOD * 0.5;
-        let n_low = packets[i].iter().filter(|&&t| t < midpoint).count();
-        let n_high = packets[i].iter().filter(|&&t| t >= midpoint).count();
-
-        if n_low == 0 || n_high == 0 {
-            continue;
-        }
-
-        // Determine which cluster to shift by looking at neighboring packets
-        let mut neighbor_high_count = 0usize;
-        let mut neighbor_low_count = 0usize;
-
-        // Check up to 5 neighbors on each side (skip mixed packets)
-        for &dir in &[-1i64, 1i64] {
-            for step in 1..=5usize {
-                let j = i as i64 + dir * step as i64;
-                if j < 0 || j >= packets.len() as i64 {
-                    break;
-                }
-                let j = j as usize;
-                if packets[j].is_empty() {
-                    continue;
-                }
-                let j_mn = packets[j].iter().cloned().fold(f64::INFINITY, f64::min);
-                let j_mx = packets[j].iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                let j_span = j_mx - j_mn;
-                if j_span > WRAP_PERIOD * 0.5 {
-                    continue; // skip other mixed packets
-                }
-                if j_mn >= midpoint {
-                    neighbor_high_count += 1;
-                } else {
-                    neighbor_low_count += 1;
-                }
-                break; // only count nearest non-mixed neighbor per direction
-            }
-        }
-
-        if debug {
-            eprintln!(
-                "fix_wrap_boundary_dips: mixed pkt {}: n_low={}, n_high={}, neighbors: high={}, low={}",
-                i, n_low, n_high, neighbor_high_count, neighbor_low_count
-            );
-        }
-
-        // If neighbors are predominantly at the HIGH level, shift LOW cluster UP
-        if neighbor_high_count > neighbor_low_count {
-            if debug {
-                eprintln!(
-                    "fix_wrap_boundary_dips:   → shifting {} LOW events UP by {:.6}",
-                    n_low, WRAP_PERIOD
-                );
-            }
-            for t in packets[i].iter_mut() {
-                if *t < midpoint {
-                    *t += WRAP_PERIOD;
-                }
-            }
-        } else if neighbor_low_count > neighbor_high_count {
-            if debug {
-                eprintln!(
-                    "fix_wrap_boundary_dips:   → shifting {} HIGH events DOWN by {:.6}",
-                    n_high, WRAP_PERIOD
-                );
-            }
-            for t in packets[i].iter_mut() {
-                if *t >= midpoint {
-                    *t -= WRAP_PERIOD;
-                }
-            }
-        }
-    }
+    result
 }
 
 /// 提取所有秒事例（Second event）的重建 MET 时间。
@@ -1963,7 +1221,7 @@ pub fn diagnose_packets(sci_data: &SciFile, offset: f64) -> Vec<PacketDiag> {
     result
 }
 
-/// 扫描单个机箱一小时的科学数据，返回饱和时间段列表。
+/// 扫描饱和区间，返回 MissionElapsedTime 类型。
 pub fn scan_saturation_intervals(
     sci_data: &SciFile,
     offset: f64,
@@ -2022,96 +1280,141 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_anchored_basic() {
-        let anchor = 292.0;
-        let anchor_ptime = 500000u64;
-        let utc_tail = 292.0; // fresh anchor
+    fn test_streaming_wrap_tracking_no_wrap() {
+        // Simulate a sequence of increasing ptimes with no wrap
+        let ptimes = [100, 200, 300, 400, 500];
+        let anc_met = 292.0;
+        let anc_ptime = 100u64;
 
-        let met = compute_met_anchored(500100, anchor_ptime, anchor, utc_tail, false);
-        let expected = 292.0 + 100.0 * 2e-6 + MET_CORRECTION;
-        assert!((met - expected).abs() < 1e-9);
+        let mut wrap_count: i64 = 0;
+        let mut prev_ptime: Option<u64> = None;
+        let mut mets = Vec::new();
+
+        for &ptime in &ptimes {
+            if let Some(prev) = prev_ptime {
+                if (ptime as i64 - prev as i64) < -(PTIME_MOD as i64 / 2) {
+                    wrap_count += 1;
+                }
+            }
+            let raw_delta = ptime as i64 - anc_ptime as i64;
+            let total = raw_delta + wrap_count * PTIME_MOD as i64;
+            mets.push(anc_met + total as f64 * 2e-6 + MET_CORRECTION);
+            prev_ptime = Some(ptime);
+        }
+
+        // No wraps, so MET should be strictly increasing
+        for i in 1..mets.len() {
+            assert!(mets[i] > mets[i - 1], "MET should be increasing");
+        }
+        assert_eq!(wrap_count, 0);
+
+        // First event (ptime=100) is anchor itself → delta=0
+        let expected_first = anc_met + MET_CORRECTION;
+        assert!((mets[0] - expected_first).abs() < 1e-9);
     }
 
     #[test]
-    fn test_anchored_wrap() {
-        let anchor = 292.0;
-        let anchor_ptime = 400000u64;
-        let utc_tail = 293.0; // fresh, ~1s later
+    fn test_streaming_wrap_tracking_with_wrap() {
+        // Simulate ptime wrap: 524000 → 200 (drop > MOD/2 = 262144)
+        let ptimes = [100000u64, 200000, 400000, 524000, 200];
+        let anc_met = 292.0;
+        let anc_ptime = 100000u64;
 
-        let met = compute_met_anchored(3000, anchor_ptime, anchor, utc_tail, false);
-        let expected = 292.0 + (3000i64 - 400000 + PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-        assert!((met - expected).abs() < 1e-9, "expected {expected}, got {met}");
+        let mut wrap_count: i64 = 0;
+        let mut prev_ptime: Option<u64> = None;
+        let mut mets = Vec::new();
+
+        for &ptime in &ptimes {
+            if let Some(prev) = prev_ptime {
+                if (ptime as i64 - prev as i64) < -(PTIME_MOD as i64 / 2) {
+                    wrap_count += 1;
+                }
+            }
+            let raw_delta = ptime as i64 - anc_ptime as i64;
+            let total = raw_delta + wrap_count * PTIME_MOD as i64;
+            mets.push(anc_met + total as f64 * 2e-6 + MET_CORRECTION);
+            prev_ptime = Some(ptime);
+        }
+
+        assert_eq!(wrap_count, 1, "should detect one wrap");
+        // MET should still be monotonically increasing
+        for i in 1..mets.len() {
+            assert!(mets[i] > mets[i - 1], "MET should be increasing after wrap at i={}", i);
+        }
+
+        // Last event: ptime=200, wrap_count=1
+        // delta = 200 - 100000 + 1*524288 = 424488
+        let expected_last = anc_met + 424488.0 * 2e-6 + MET_CORRECTION;
+        assert!((mets[4] - expected_last).abs() < 1e-9);
     }
 
     #[test]
-    fn test_anchored_multi_detector() {
-        let anchor = 292.0;
-        let anchor_ptime = 100000u64;
-        let utc_tail = 292.0;
+    fn test_bidirectional_wrap_consistency() {
+        // Forward: anchor at ptime=100000, events ascending then wrapping
+        let ptimes = [100000u64, 200000, 400000, 524000, 200, 100000];
+        let anc_met = 292.0;
+        let anc_ptime = 100000u64;
 
-        let met = compute_met_anchored(99950, anchor_ptime, anchor, utc_tail, false);
-        let expected = 292.0 + (-50.0) * 2e-6 + MET_CORRECTION;
-        assert!((met - expected).abs() < 1e-9);
+        // Forward pass
+        let mut fwd_wraps: i64 = 0;
+        let mut prev: Option<u64> = None;
+        let mut fwd_mets = Vec::new();
+        for &ptime in &ptimes {
+            if let Some(p) = prev {
+                if (ptime as i64 - p as i64) < -(PTIME_MOD as i64 / 2) {
+                    fwd_wraps += 1;
+                }
+            }
+            let raw = ptime as i64 - anc_ptime as i64;
+            fwd_mets.push(anc_met + (raw + fwd_wraps * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION);
+            prev = Some(ptime);
+        }
 
-        let met2 = compute_met_anchored(99000, anchor_ptime, anchor, utc_tail, false);
-        let expected2 = 292.0 + (-1000.0) * 2e-6 + MET_CORRECTION;
-        assert!((met2 - expected2).abs() < 1e-9);
+        // Backward pass from the last event (use it as reverse anchor)
+        // The last event's MET from forward is known
+        let last_met = fwd_mets[ptimes.len() - 1];
+        let last_ptime = ptimes[ptimes.len() - 1];
+
+        let mut bwd_wraps: i64 = 0;
+        let mut next: Option<u64> = None;
+        let mut bwd_mets = vec![0.0f64; ptimes.len()];
+        for i in (0..ptimes.len()).rev() {
+            let ptime = ptimes[i];
+            if let Some(n) = next {
+                if (n as i64 - ptime as i64) < -(PTIME_MOD as i64 / 2) {
+                    bwd_wraps -= 1;
+                }
+            }
+            let raw = ptime as i64 - last_ptime as i64;
+            bwd_mets[i] = last_met + (raw + bwd_wraps * PTIME_MOD as i64) as f64 * 2e-6;
+            next = Some(ptime);
+        }
+
+        // Forward and backward should agree within floating-point tolerance
+        for i in 0..ptimes.len() {
+            let diff = (fwd_mets[i] - bwd_mets[i]).abs();
+            assert!(diff < 1e-9, "fwd/bwd mismatch at i={}: fwd={:.9} bwd={:.9} diff={:.9}", i, fwd_mets[i], bwd_mets[i], diff);
+        }
     }
 
     #[test]
-    fn test_anchored_consistency() {
-        let anchor = 292.0;
-        let anchor_ptime = 100u64;
-        let utc_tail = 292.0;
+    fn test_estimate_wrap_count_basic() {
+        let anc_met = 100.0;
+        let anc_ptime = 100000u64;
+        // Target is ~2 wrap periods later, same ptime → 2 wraps
+        let target_ptime = 100000u64;
+        // Expected MET = 100 + (0 + 2*524288)*2e-6 + 4.0 = 106.097152
+        // utc_tail ≈ MET - MET_CORRECTION - 0.5
+        let target_utc_tail = anc_met + 2.0 * WRAP_PERIOD - 0.5;
 
-        let met1 = compute_met_anchored(200, anchor_ptime, anchor, utc_tail, false);
-        let met2 = compute_met_anchored(300, anchor_ptime, anchor, utc_tail, false);
-        let met3 = compute_met_anchored(400, anchor_ptime, anchor, utc_tail, false);
-        assert!(met2 > met1);
-        assert!(met3 > met2);
-        assert!((met2 - met1 - 100.0 * 2e-6).abs() < 1e-9);
+        let n = estimate_wrap_count(anc_met, anc_ptime, target_ptime, target_utc_tail);
+        assert_eq!(n, 2, "should estimate 2 wraps");
     }
 
     #[test]
-    fn test_anchored_stale_multi_wrap() {
-        // FIFO reset gap: anchor is 2+ wraps old
-        let anchor = 292.0;
-        let anchor_ptime = 200000u64;
-        // Event 2.2s later → 2 complete wraps
-        // ptime = (200000 + 1100000) % 524288 = 251424 (after 2 full wraps)
-        let utc_tail = 294.0; // ~2s after anchor
-
-        let met = compute_met_anchored(251424, anchor_ptime, anchor, utc_tail, false);
-        // Expected: anchor + 2.2s worth of ticks * 2μs + correction
-        let expected = 292.0 + (251424i64 - 200000 + 2 * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-        assert!(
-            (met - expected).abs() < 1e-6,
-            "stale anchor multi-wrap: expected {expected}, got {met}"
-        );
-    }
-
-    #[test]
-    fn test_anchored_force_normal_during_saturation() {
-        // Simulates saturation: anchor was recently set via stime continuity,
-        // but utc_tail is far ahead (FIFO delay). force_normal=true should
-        // use the threshold path, ignoring the large elapsed.
-        let anchor = 292.0;
-        let anchor_ptime = 200000u64;
-        let utc_tail = 305.0; // 13s ahead — FIFO delay during saturation
-
-        // Event with ptime slightly ahead of anchor — should be placed at ~292.0
-        let met = compute_met_anchored(200500, anchor_ptime, anchor, utc_tail, true);
-        let expected = 292.0 + 500.0 * 2e-6 + MET_CORRECTION;
-        assert!(
-            (met - expected).abs() < 1e-9,
-            "force_normal: expected {expected}, got {met}"
-        );
-
-        // Without force_normal, the stale path would pick a much larger n_wraps
-        let met_stale = compute_met_anchored(200500, anchor_ptime, anchor, utc_tail, false);
-        assert!(
-            met_stale > met + 5.0,
-            "stale path should give much larger MET: stale={met_stale}, normal={met}"
-        );
+    fn test_detect_disruption() {
+        assert!(!detect_disruption(0.0, 100.0)); // prev=0 → no check
+        assert!(!detect_disruption(100.0, 101.0)); // small jump
+        assert!(detect_disruption(100.0, 104.0)); // >3s jump
     }
 }
