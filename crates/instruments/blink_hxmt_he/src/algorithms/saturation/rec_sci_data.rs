@@ -158,8 +158,6 @@ fn pass1_scan(sci_data: &SciFile, offset: f64, debug: bool) -> Pass1Result {
     // Streaming state
     let mut wrap_count: i64 = 0;
     let mut prev_ptime: Option<u64> = None;
-    let mut pre_wrap_ptime: Option<u64> = None; // ptime before a tentative wrap
-    let mut pending_wrap: bool = false; // wrap detected but not yet confirmed
     let mut anc_met: Option<f64> = None;
     let mut anc_ptime: u64 = 0;
     let mut is_confident = false; // no anchor yet → not confident
@@ -214,43 +212,40 @@ fn pass1_scan(sci_data: &SciFile, offset: f64, debug: bool) -> Pass1Result {
         // Track ptime gaps within this packet for silent-drop detection
         let mut pkt_ptime_gaps: Vec<i64> = Vec::new();
 
+        // Pre-scan for ghost events in this packet
+        let is_ghost = ghost_prescan(&events, prev_ptime);
+        if debug {
+            for (gi, &g) in is_ghost.iter().enumerate() {
+                if g {
+                    if let Pack::Event { ptime, .. } | Pack::Second { ptime, .. } = &events[gi] {
+                        eprintln!("PASS1 ghost_prescan pkt={} evt={} ptime={}", pkt_idx, gi, ptime);
+                    }
+                }
+            }
+        }
+
         for (evt_idx, event) in events.iter().enumerate() {
             match event {
                 Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => {
-                    // ── Stream wrap detection with ghost rejection ──
-                    // A "ghost event" is a CRC collision with random ptime.
-                    // When a wrap is detected (ptime drops > MOD/2), we defer
-                    // the decision: if the NEXT event's ptime is close to the
-                    // pre-wrap value (within MOD/3), the drop was caused by a
-                    // ghost and the wrap is rejected.
-                    if pending_wrap {
-                        // Confirm or reject the pending wrap
-                        if let Some(pre) = pre_wrap_ptime {
-                            let back_to_pre = (*ptime as i64 - pre as i64).unsigned_abs();
-                            if back_to_pre < PTIME_MOD / 3 {
-                                // Current ptime is close to the pre-wrap value →
-                                // the "wrap" was caused by a ghost. Undo it.
-                                wrap_count -= 1;
-                                if debug {
-                                    eprintln!(
-                                        "PASS1 ghost_reject pkt={} pre_wrap={} cur={} (undid wrap)",
-                                        pkt_idx, pre, *ptime
-                                    );
-                                }
-                            }
+                    // ── Ghost handling: compute MET but skip wrap tracking ──
+                    if is_ghost[evt_idx] {
+                        if let Some(am) = anc_met {
+                            let raw_delta = *ptime as i64 - anc_ptime as i64;
+                            let total = raw_delta + wrap_count * PTIME_MOD as i64;
+                            pkt_mets.push(am + total as f64 * 2e-6 + MET_CORRECTION);
+                        } else {
+                            pkt_mets.push(f64::NAN);
                         }
-                        pending_wrap = false;
-                        pre_wrap_ptime = None;
+                        pkt_confident.push(is_confident);
+                        // Do NOT update prev_ptime for ghost events
+                        continue;
                     }
 
+                    // ── Wrap detection (ghosts already excluded) ──
                     if let Some(prev) = prev_ptime {
                         let diff = *ptime as i64 - prev as i64;
-                        if diff < -(PTIME_MOD as i64 / 2) {
-                            // Tentative wrap — commit immediately but mark
-                            // for possible rollback at the next event.
-                            pre_wrap_ptime = Some(prev);
+                        if diff < 0 {
                             wrap_count += 1;
-                            pending_wrap = true;
                         }
                         pkt_ptime_gaps.push(diff);
                     }
@@ -271,7 +266,6 @@ fn pass1_scan(sci_data: &SciFile, offset: f64, debug: bool) -> Pass1Result {
                             let old_wrap = wrap_count;
                             wrap_count = 0;
                             last_accepted_stime = Some(*stime);
-                            pending_wrap = false;
 
                             // Events in this packet before the SEC that were
                             // computed with a different wrap_count will be fixed
@@ -612,6 +606,33 @@ fn pass2_reconstruct(
     result
 }
 
+/// Pre-scan a packet's events to identify ghost events (CRC collisions with
+/// random ptime that break strict ascending order). An event is ghost if
+/// removing it restores ascending between its neighbors.
+fn ghost_prescan(events: &[Pack], prev_ptime_external: Option<u64>) -> Vec<bool> {
+    let mut is_ghost = vec![false; events.len()];
+    let valid: Vec<(usize, u64)> = events.iter().enumerate()
+        .filter_map(|(i, e)| match e {
+            Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => Some((i, *ptime)),
+            _ => None,
+        })
+        .collect();
+
+    for j in 0..valid.len() {
+        let (idx, pt) = valid[j];
+        let pt_prev = if j > 0 { Some(valid[j - 1].1) } else { prev_ptime_external };
+        let pt_next = if j + 1 < valid.len() { Some(valid[j + 1].1) } else { None };
+        let (Some(prev), Some(next)) = (pt_prev, pt_next) else { continue };
+        let breaks_from_prev = (pt as i64 - prev as i64) < 0;
+        let breaks_to_next = (next as i64 - pt as i64) < 0;
+        let neighbors_ascending = (next as i64 - prev as i64) >= 0;
+        if (breaks_from_prev || breaks_to_next) && neighbors_ascending {
+            is_ghost[idx] = true;
+        }
+    }
+    is_ghost
+}
+
 /// Forward wrap tracking: from anchor to target packet, scanning left→right.
 /// Re-anchors on valid SEC events and rejects ghost-induced false wraps.
 fn forward_wrap_track(
@@ -623,8 +644,6 @@ fn forward_wrap_track(
 ) -> Vec<f64> {
     let mut wrap_count: i64 = 0;
     let mut prev_ptime: Option<u64> = None;
-    let mut pending_wrap = false;
-    let mut pre_wrap_ptime: Option<u64> = None;
     let mut anc_met = anchor.met;
     let mut anc_ptime = anchor.ptime;
 
@@ -645,35 +664,32 @@ fn forward_wrap_track(
                 if let Some(fp) = first_ptime {
                     wrap_count = estimate_wrap_count(anc_met, anc_ptime, fp, utc_tail);
                     prev_ptime = None;
-                    pending_wrap = false;
                 }
             }
         }
 
         let is_target = pkt_idx == target_pkt;
+        let pkt_ghost = ghost_prescan(events, prev_ptime);
 
-        for event in events {
+        for (evt_idx, event) in events.iter().enumerate() {
             match event {
                 Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => {
-                    // Ghost rejection: if pending wrap, check next event
-                    if pending_wrap {
-                        if let Some(pre) = pre_wrap_ptime {
-                            let back = (*ptime as i64 - pre as i64).unsigned_abs();
-                            if back < PTIME_MOD / 3 {
-                                wrap_count -= 1;
-                            }
+                    // Skip ghosts for wrap tracking (but still compute MET)
+                    if pkt_ghost[evt_idx] {
+                        if is_target {
+                            let raw_delta = *ptime as i64 - anc_ptime as i64;
+                            let total = raw_delta + wrap_count * PTIME_MOD as i64;
+                            target_mets.push(anc_met + total as f64 * 2e-6 + MET_CORRECTION);
                         }
-                        pending_wrap = false;
-                        pre_wrap_ptime = None;
+                        // Do NOT update prev_ptime for ghost events
+                        continue;
                     }
 
-                    // Wrap detection
+                    // Wrap detection (ghosts already excluded)
                     if let Some(prev) = prev_ptime {
                         let diff = *ptime as i64 - prev as i64;
-                        if diff < -(PTIME_MOD as i64 / 2) {
-                            pre_wrap_ptime = Some(prev);
+                        if diff < 0 {
                             wrap_count += 1;
-                            pending_wrap = true;
                         }
                     }
 
@@ -684,7 +700,6 @@ fn forward_wrap_track(
                             anc_met = met;
                             anc_ptime = *sec_ptime;
                             wrap_count = 0;
-                            pending_wrap = false;
                         }
                     }
 
@@ -715,8 +730,6 @@ fn backward_wrap_track(
 ) -> Vec<f64> {
     let mut wrap_count: i64 = 0;
     let mut next_ptime: Option<u64> = None;
-    let mut pending_unwrap = false;
-    let mut pre_unwrap_ptime: Option<u64> = None;
     let mut anc_met = anchor.met;
     let mut anc_ptime = anchor.ptime;
 
@@ -737,36 +750,33 @@ fn backward_wrap_track(
                 if let Some(lp) = last_ptime {
                     wrap_count = estimate_wrap_count(anc_met, anc_ptime, lp, utc_tail);
                     next_ptime = None;
-                    pending_unwrap = false;
                 }
             }
         }
 
         let is_target = pkt_idx == target_pkt;
+        let pkt_ghost = ghost_prescan(events, None);
 
         let mut pkt_mets_rev: Vec<f64> = Vec::new();
-        for event in events.iter().rev() {
+        for (evt_idx, event) in events.iter().enumerate().rev() {
             match event {
                 Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => {
-                    // Ghost rejection (backward)
-                    if pending_unwrap {
-                        if let Some(pre) = pre_unwrap_ptime {
-                            let back = (*ptime as i64 - pre as i64).unsigned_abs();
-                            if back < PTIME_MOD / 3 {
-                                wrap_count += 1; // undo the -1
-                            }
+                    // Skip ghosts for wrap tracking (but still compute MET)
+                    if pkt_ghost[evt_idx] {
+                        if is_target {
+                            let raw_delta = *ptime as i64 - anc_ptime as i64;
+                            let total = raw_delta + wrap_count * PTIME_MOD as i64;
+                            pkt_mets_rev.push(anc_met + total as f64 * 2e-6 + MET_CORRECTION);
                         }
-                        pending_unwrap = false;
-                        pre_unwrap_ptime = None;
+                        // Do NOT update next_ptime for ghost events
+                        continue;
                     }
 
-                    // Backward wrap detection
+                    // Backward wrap detection (ghosts already excluded)
                     if let Some(next) = next_ptime {
                         let diff = next as i64 - *ptime as i64;
-                        if diff < -(PTIME_MOD as i64 / 2) {
-                            pre_unwrap_ptime = Some(next);
+                        if diff < 0 {
                             wrap_count -= 1;
-                            pending_unwrap = true;
                         }
                     }
 
@@ -777,7 +787,6 @@ fn backward_wrap_track(
                             anc_met = met;
                             anc_ptime = *sec_ptime;
                             wrap_count = 0;
-                            pending_unwrap = false;
                         }
                     }
 
@@ -1292,7 +1301,7 @@ mod tests {
 
         for &ptime in &ptimes {
             if let Some(prev) = prev_ptime {
-                if (ptime as i64 - prev as i64) < -(PTIME_MOD as i64 / 2) {
+                if (ptime as i64 - prev as i64) < 0 {
                     wrap_count += 1;
                 }
             }
@@ -1326,7 +1335,7 @@ mod tests {
 
         for &ptime in &ptimes {
             if let Some(prev) = prev_ptime {
-                if (ptime as i64 - prev as i64) < -(PTIME_MOD as i64 / 2) {
+                if (ptime as i64 - prev as i64) < 0 {
                     wrap_count += 1;
                 }
             }
@@ -1361,7 +1370,7 @@ mod tests {
         let mut fwd_mets = Vec::new();
         for &ptime in &ptimes {
             if let Some(p) = prev {
-                if (ptime as i64 - p as i64) < -(PTIME_MOD as i64 / 2) {
+                if (ptime as i64 - p as i64) < 0 {
                     fwd_wraps += 1;
                 }
             }
@@ -1381,7 +1390,7 @@ mod tests {
         for i in (0..ptimes.len()).rev() {
             let ptime = ptimes[i];
             if let Some(n) = next {
-                if (n as i64 - ptime as i64) < -(PTIME_MOD as i64 / 2) {
+                if (n as i64 - ptime as i64) < 0 {
                     bwd_wraps -= 1;
                 }
             }
