@@ -286,6 +286,7 @@ fn cmd_solve_1k(
     let evt = EventFile::from_epoch(&epoch).expect("Failed to load 1K EventFile");
     let k1_times = evt.times();
     let k1_dets = evt.det_ids();
+    let k1_channels = evt.channels();
 
     let box_ranges: [(&str, u8, u8); 3] = [("A", 0, 5), ("B", 6, 11), ("C", 12, 17)];
     let lo = met_min.unwrap_or(f64::NEG_INFINITY);
@@ -299,9 +300,10 @@ fn cmd_solve_1k(
             }
         }
         let mut n = 0u64;
-        for (t, d) in k1_times.iter().zip(k1_dets.iter()) {
-            if *d >= *d_lo && *d <= *d_hi && *t >= lo && *t <= hi {
-                println!("{},EVT,{:.6},{},0,0", bname, t, d);
+        for i in 0..k1_times.len() {
+            let (t, d, ch) = (k1_times[i], k1_dets[i], k1_channels[i]);
+            if d >= *d_lo && d <= *d_hi && t >= lo && t <= hi {
+                println!("{},EVT,{:.6},{},0,0", bname, t, ch);
                 n += 1;
             }
         }
