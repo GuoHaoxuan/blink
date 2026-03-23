@@ -62,12 +62,14 @@ def run_cli(epoch, subcmd, trigger=None, before=10, after=100, box_filter=None):
     mets = []
     channels = []
     box_labels = []
+    sec_mets = []  # SEC event times for confidence marking
     for line in proc.stdout:
         parts = line.strip().split(",")
         if len(parts) < 4 or parts[0] == "box":
             continue
         box_name, typ, met_str, ch_str = parts[0], parts[1], parts[2], parts[3]
         if typ == "SEC":
+            sec_mets.append(float(met_str))
             continue
         mets.append(float(met_str))
         channels.append(int(ch_str))
@@ -79,7 +81,7 @@ def run_cli(epoch, subcmd, trigger=None, before=10, after=100, box_filter=None):
         for line in stderr.strip().split("\n"):
             print(f"  {line}", file=sys.stderr)
 
-    return np.array(mets), np.array(channels), box_labels
+    return np.array(mets), np.array(channels), box_labels, np.array(sec_mets)
 
 
 def main():
@@ -96,18 +98,18 @@ def main():
 
     # Load 1B data
     print("Loading 1B (new two-pass algorithm)...", file=sys.stderr)
-    met_1b, ch_1b, box_1b = run_cli(args.epoch, "solve", trigger=args.trigger,
-                                     before=args.before, after=args.after,
-                                     box_filter=args.box_filter)
+    met_1b, ch_1b, box_1b, sec_mets_1b = run_cli(args.epoch, "solve", trigger=args.trigger,
+                                                    before=args.before, after=args.after,
+                                                    box_filter=args.box_filter)
 
     # Load 1K data
     met_1k, ch_1k, box_1k = np.array([]), np.array([]), []
     if not args.no_1k:
         print("Loading 1K reference...", file=sys.stderr)
         try:
-            met_1k, ch_1k, box_1k = run_cli(args.epoch, "solve1k", trigger=args.trigger,
-                                              before=args.before, after=args.after,
-                                              box_filter=args.box_filter)
+            met_1k, ch_1k, box_1k, _ = run_cli(args.epoch, "solve1k", trigger=args.trigger,
+                                                  before=args.before, after=args.after,
+                                                  box_filter=args.box_filter)
         except Exception as e:
             print(f"  1K not available: {e}", file=sys.stderr)
 
@@ -122,10 +124,26 @@ def main():
     t_ref = parse_met_or_utc(args.trigger) if args.trigger else np.median(all_mets)
     t_min, t_max = all_mets.min(), all_mets.max()
 
+    # ── Compute uncertain regions (SEC gaps > WRAP_PERIOD) ──
+    WRAP_PERIOD = 1.048576
+    uncertain_intervals = []  # list of (start, stop) in MET
+    if len(sec_mets_1b) >= 2:
+        sec_sorted = np.sort(sec_mets_1b)
+        for i in range(len(sec_sorted) - 1):
+            gap = sec_sorted[i + 1] - sec_sorted[i]
+            if gap > WRAP_PERIOD:
+                uncertain_intervals.append((sec_sorted[i], sec_sorted[i + 1]))
+
     # ── Figure: 3 rows (light curve, residual, scatter) ──
     fig, (ax_lc, ax_res, ax_ch) = plt.subplots(
         3, 1, figsize=(24, 18), sharex=True,
         gridspec_kw={"height_ratios": [2, 1, 2], "hspace": 0.06})
+
+    # ── Shade uncertain regions on all panels ──
+    for start, stop in uncertain_intervals:
+        for ax in (ax_lc, ax_res, ax_ch):
+            ax.axvspan(start - t_ref, stop - t_ref,
+                       color="#FFF3E0", alpha=0.5, zorder=0)
 
     # ── Panel 1: Light curve ──
     bin_width = args.bin
