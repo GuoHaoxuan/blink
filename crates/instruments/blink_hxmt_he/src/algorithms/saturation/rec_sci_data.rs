@@ -3,6 +3,21 @@ use crate::io::level_1b::SciFile;
 use crate::types::HxmtHe;
 use blink_core::types::MissionElapsedTime;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 常量
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PTIME_MOD: u64 = 1 << 19; // 524288
+const WRAP_PERIOD: f64 = PTIME_MOD as f64 * 2e-6; // 1.048576s
+
+/// 1B→1K 经验时间校正 (秒)。
+/// 通过 GRB 200415A 和 GRB 221009A 交叉验证确定。
+const MET_CORRECTION: f64 = 4.0;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CCSDS 包解析
+// ─────────────────────────────────────────────────────────────────────────────
+
 enum Pack {
     Event {
         ptime: u64,
@@ -14,31 +29,6 @@ enum Pack {
         ptime: u64,
     },
     Error,
-}
-
-/// 每个 CCSDS 包的时间范围
-struct PackInfo {
-    min_time: f64,
-    max_time: f64,
-}
-
-const PTIME_MOD: u64 = 1 << 19; // 524288
-const WRAP_PERIOD: f64 = PTIME_MOD as f64 * 2e-6; // 1.048576s
-
-/// 1B→1K 经验时间校正 (秒)。
-/// 通过 GRB 200415A 和 GRB 221009A 交叉验证确定。
-const MET_CORRECTION: f64 = 4.0;
-
-/// Floor-based per-event wrap computation (retained for diagnostics only).
-#[inline]
-fn compute_met(ptime: u64, anchor_ptime: u64, anchor: f64, utc_tail: f64) -> f64 {
-    let raw_delta = ptime as i64 - anchor_ptime as i64;
-    let raw_delta_seconds = raw_delta as f64 * 2e-6;
-    let n_wraps = ((utc_tail - anchor - WRAP_PERIOD - raw_delta_seconds) / WRAP_PERIOD)
-        .floor()
-        .max(0.0) as i64;
-    let total_ticks = n_wraps * PTIME_MOD as i64 + raw_delta;
-    anchor + total_ticks as f64 * 2e-6 + MET_CORRECTION
 }
 
 /// 解析单个 CCSDS 包中所有事例
@@ -86,739 +76,11 @@ fn get_utc_tail(ccsds: &[u8]) -> f64 {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Two-pass reconstruction structures
+// 时间重建（待重新设计，见 DESIGN.md）
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// SEC anchor found during pass 1.
-struct AnchorInfo {
-    pkt_idx: usize,
-    #[allow(dead_code)]
-    evt_idx: usize,
-    met: f64,
-    ptime: u64,
-}
-
-/// Pass 1 output: anchors, confidence, rough METs.
-struct Pass1Result {
-    anchors: Vec<AnchorInfo>,
-    anchor_is_clean: Vec<bool>,
-    confident: Vec<Vec<bool>>,
-    rough_mets: Vec<Vec<f64>>,
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Pass 1 helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Detect disruption at packet boundary.
-/// Returns true if a FIFO reset (utc_tail jump > 3s) is detected.
-#[inline]
-fn detect_disruption(prev_utc_tail: f64, cur_utc_tail: f64) -> bool {
-    prev_utc_tail > 0.0 && cur_utc_tail - prev_utc_tail > 3.0
-}
-
-/// Estimate wrap count across a disruption using utc_tail best-of-3.
-/// Given an anchor (met, ptime) and a target event ptime + utc_tail,
-/// find the wrap count that best matches the utc_tail reference.
-fn estimate_wrap_count(
-    anc_met: f64,
-    anc_ptime: u64,
-    target_ptime: u64,
-    target_utc_tail: f64,
-) -> i64 {
-    let raw_delta = target_ptime as i64 - anc_ptime as i64;
-    let elapsed = target_utc_tail + 0.5 - anc_met;
-    let n_est = ((elapsed - raw_delta as f64 * 2e-6) / WRAP_PERIOD).round() as i64;
-
-    let target_met = target_utc_tail + MET_CORRECTION + 0.5;
-    let mut best_n = n_est;
-    let mut best_err = f64::MAX;
-    for n in [n_est - 1, n_est, n_est + 1] {
-        let met = anc_met + (raw_delta + n * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION;
-        let err = (met - target_met).abs();
-        if err < best_err {
-            best_err = err;
-            best_n = n;
-        }
-    }
-    best_n
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Pass 1: Forward scan + aggressive saturation detection
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn pass1_scan(sci_data: &SciFile, offset: f64, debug: bool) -> Pass1Result {
-    let n_packets = sci_data.ccsds.len();
-    let mut anchors: Vec<AnchorInfo> = Vec::new();
-    let mut anchor_is_clean: Vec<bool> = Vec::new();
-    let mut confident: Vec<Vec<bool>> = Vec::with_capacity(n_packets);
-    let mut rough_mets: Vec<Vec<f64>> = Vec::with_capacity(n_packets);
-
-    // Streaming state
-    let mut wrap_count: i64 = 0;
-    let mut prev_ptime: Option<u64> = None;
-    let mut anc_met: Option<f64> = None;
-    let mut anc_ptime: u64 = 0;
-    let mut is_confident = false; // no anchor yet → not confident
-    let mut prev_utc_tail: f64 = 0.0;
-    let mut last_accepted_stime: Option<u64> = None;
-
-    // For inter-packet interval check (aggressive saturation detection)
-    let mut prev_pkt_met_max: Option<f64> = None;
-    let mut baseline_interval: Option<f64> = None;
-
-    for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
-        let utc_tail = get_utc_tail(ccsds);
-        let events = parse_events(ccsds);
-
-        // ── Count n_error ──
-        let mut n_error: usize = 0;
-        for e in &events {
-            if matches!(e, Pack::Error) {
-                n_error += 1;
-            }
-        }
-
-        // ── Disruption detection ──
-        let is_disruption = detect_disruption(prev_utc_tail, utc_tail);
-        if is_disruption {
-            // Reset wrap tracking across disruption
-            if let Some(am) = anc_met {
-                // Find first valid ptime in this packet for wrap estimation
-                let first_valid_ptime = events.iter().find_map(|e| match e {
-                    Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => Some(*ptime),
-                    _ => None,
-                });
-                if let Some(fp) = first_valid_ptime {
-                    wrap_count = estimate_wrap_count(am, anc_ptime, fp, utc_tail);
-                    // After disruption, prev_ptime chain is broken
-                    prev_ptime = None;
-                }
-            }
-            is_confident = false;
-            if debug {
-                eprintln!(
-                    "PASS1 disruption (FIFO reset) at pkt={} utc_jump={:.1}",
-                    pkt_idx, utc_tail - prev_utc_tail
-                );
-            }
-        }
-
-        // ── Process events: wrap tracking + SEC extraction + rough MET ──
-        let mut pkt_confident: Vec<bool> = Vec::with_capacity(events.len());
-        let mut pkt_mets: Vec<f64> = Vec::with_capacity(events.len());
-
-        // Track ptime gaps within this packet for silent-drop detection
-        let mut pkt_ptime_gaps: Vec<i64> = Vec::new();
-
-        // Pre-scan for ghost events in this packet
-        let is_ghost = ghost_prescan(&events, prev_ptime);
-        if debug {
-            for (gi, &g) in is_ghost.iter().enumerate() {
-                if g {
-                    if let Pack::Event { ptime, .. } | Pack::Second { ptime, .. } = &events[gi] {
-                        eprintln!("PASS1 ghost_prescan pkt={} evt={} ptime={}", pkt_idx, gi, ptime);
-                    }
-                }
-            }
-        }
-
-        for (evt_idx, event) in events.iter().enumerate() {
-            match event {
-                Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => {
-                    // ── Ghost handling: compute MET but skip wrap tracking ──
-                    if is_ghost[evt_idx] {
-                        if let Some(am) = anc_met {
-                            let raw_delta = *ptime as i64 - anc_ptime as i64;
-                            let total = raw_delta + wrap_count * PTIME_MOD as i64;
-                            pkt_mets.push(am + total as f64 * 2e-6 + MET_CORRECTION);
-                        } else {
-                            pkt_mets.push(f64::NAN);
-                        }
-                        pkt_confident.push(is_confident);
-                        // Do NOT update prev_ptime for ghost events
-                        continue;
-                    }
-
-                    // ── Wrap detection (ghosts already excluded) ──
-                    if let Some(prev) = prev_ptime {
-                        let diff = *ptime as i64 - prev as i64;
-                        if diff < 0 {
-                            wrap_count += 1;
-                        }
-                        pkt_ptime_gaps.push(diff);
-                    }
-
-                    // ── SEC anchor check ──
-                    if let Pack::Second { stime, ptime: sec_ptime } = event {
-                        let met = *stime as f64 + offset;
-                        let normal_accept = (met - utc_tail).abs() < 2.0;
-                        let continuity_accept = last_accepted_stime.map_or(false, |prev_st| {
-                            *stime > prev_st && *stime <= prev_st + 60
-                        });
-                        if normal_accept || continuity_accept {
-                            // Re-anchor: reset wrap_count
-                            let old_anc_met = anc_met;
-                            let old_anc_ptime = anc_ptime;
-                            anc_met = Some(met);
-                            anc_ptime = *sec_ptime;
-                            let old_wrap = wrap_count;
-                            wrap_count = 0;
-                            last_accepted_stime = Some(*stime);
-
-                            // Events in this packet before the SEC that were
-                            // computed with a different wrap_count will be fixed
-                            // by the SEC bracket post-correction at the end of pass1.
-
-                            // A SEC is clean if its packet is not corrupted (CRC ok).
-                            // SEC provides absolute time reference via stime,
-                            // so it doesn't need prior confidence to be trustworthy.
-                            let crc_clean = (n_error as f64) < 109.0 * 0.5;
-
-                            anchors.push(AnchorInfo {
-                                pkt_idx,
-                                evt_idx,
-                                met,
-                                ptime: *sec_ptime,
-                            });
-                            anchor_is_clean.push(crc_clean);
-
-                            // Any valid SEC in a non-corrupted packet restores confidence
-                            if crc_clean {
-                                is_confident = true;
-                            }
-
-                            if debug && continuity_accept && !normal_accept {
-                                eprintln!(
-                                    "PASS1 SEC_CONT pkt={} stime={} accepted via continuity",
-                                    pkt_idx, stime
-                                );
-                            }
-                        }
-                    }
-
-                    // ── Compute rough MET ──
-                    if let Some(am) = anc_met {
-                        let raw_delta = *ptime as i64 - anc_ptime as i64;
-                        let total = raw_delta + wrap_count * PTIME_MOD as i64;
-                        let met = am + total as f64 * 2e-6 + MET_CORRECTION;
-                        pkt_mets.push(met);
-                    } else {
-                        pkt_mets.push(f64::NAN);
-                    }
-
-                    pkt_confident.push(is_confident);
-                    prev_ptime = Some(*ptime);
-                }
-                Pack::Error => {
-                    // CRC errors don't contribute to wrap tracking
-                }
-            }
-        }
-
-        // ── Aggressive saturation detection (packet-level) ──
-        let mut is_saturated = false;
-
-        // 1. CRC error rate > 50%
-        if n_error as f64 > 109.0 * 0.5 {
-            is_saturated = true;
-            if debug {
-                eprintln!(
-                    "PASS1 saturated (CRC) pkt={} n_error={}/109",
-                    pkt_idx, n_error
-                );
-            }
-        }
-
-        // 2. Inter-packet interval anomaly
-        if !is_saturated && !pkt_mets.is_empty() {
-            let pkt_met_min = pkt_mets.iter().copied().filter(|m| !m.is_nan()).fold(f64::INFINITY, f64::min);
-            let pkt_met_max_cur = pkt_mets.iter().copied().filter(|m| !m.is_nan()).fold(f64::NEG_INFINITY, f64::max);
-
-            if let Some(prev_max) = prev_pkt_met_max {
-                let gap = pkt_met_min - prev_max;
-                if gap > 0.0 {
-                    // Update baseline as running average of normal intervals
-                    if let Some(bl) = baseline_interval {
-                        if gap < bl * 100.0 {
-                            // Normal gap → update baseline (exponential moving average)
-                            baseline_interval = Some(bl * 0.9 + gap * 0.1);
-                        } else {
-                            // Anomalous gap → saturation
-                            is_saturated = true;
-                            if debug {
-                                eprintln!(
-                                    "PASS1 saturated (gap) pkt={} gap={:.6} baseline={:.6}",
-                                    pkt_idx, gap, bl
-                                );
-                            }
-                        }
-                    } else {
-                        baseline_interval = Some(gap);
-                    }
-                }
-            }
-
-            if pkt_met_max_cur.is_finite() {
-                prev_pkt_met_max = Some(pkt_met_max_cur);
-            }
-        }
-
-        // 3. Poisson anomaly: large ptime gap within packet
-        if !is_saturated && pkt_ptime_gaps.len() >= 2 {
-            // Use ptime gaps (in ticks) to check for anomalous intervals
-            let positive_gaps: Vec<f64> = pkt_ptime_gaps.iter()
-                .map(|&g| {
-                    // Normalize: if gap is negative (wrap), add PTIME_MOD
-                    let normalized = if g < 0 { g + PTIME_MOD as i64 } else { g };
-                    normalized as f64 * 2e-6 // convert to seconds
-                })
-                .filter(|&g| g > 0.0 && g < WRAP_PERIOD)
-                .collect();
-
-            if positive_gaps.len() >= 2 {
-                // Estimate lambda from filtered gaps (exclude outliers)
-                let mut sorted_gaps = positive_gaps.clone();
-                sorted_gaps.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                let median_gap = sorted_gaps[sorted_gaps.len() / 2];
-                let lambda = 1.0 / median_gap;
-
-                for &dt in &positive_gaps {
-                    let log_p = -lambda * dt / std::f64::consts::LN_10;
-                    if log_p < -10.0 {
-                        is_saturated = true;
-                        if debug {
-                            eprintln!(
-                                "PASS1 saturated (Poisson) pkt={} dt={:.6} log10p={:.1}",
-                                pkt_idx, dt, log_p
-                            );
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-        // If saturated, mark all subsequent events as not confident
-        if is_saturated {
-            is_confident = false;
-            // Also mark events in THIS packet as not confident
-            for c in pkt_confident.iter_mut() {
-                *c = false;
-            }
-        }
-
-        confident.push(pkt_confident);
-        rough_mets.push(pkt_mets);
-        prev_utc_tail = utc_tail;
-    }
-
-    if debug {
-        let n_clean = anchor_is_clean.iter().filter(|&&c| c).count();
-        eprintln!(
-            "PASS1 complete: {} anchors ({} clean), {} packets",
-            anchors.len(), n_clean, n_packets
-        );
-    }
-
-    // ── SEC intra-packet post-correction ──
-    // When a ptime wrap occurs BEFORE a SEC in the same packet, events
-    // between the wrap and the SEC are computed with wrap_count=N (from
-    // the old anchor), but they should be close to the SEC's time.
-    // For each SEC, check events in the SAME PACKET: if any event's MET
-    // is ~1 wrap above the SEC's MET, subtract one WRAP_PERIOD.
-    // Also serves as safety net for ghost-induced errors near SECs.
-    {
-        let mut n_corrections = 0u32;
-        for anc in &anchors {
-            let sec_met = anc.met + MET_CORRECTION;
-            for met in rough_mets[anc.pkt_idx].iter_mut() {
-                if met.is_nan() {
-                    continue;
-                }
-                let diff = *met - sec_met;
-                // Event should be within ±0.5 wrap of the SEC (same packet ≈ same time).
-                // If it's ~1 wrap too high, correct it.
-                if diff > WRAP_PERIOD * 0.5 {
-                    let n = (diff / WRAP_PERIOD).round() as i64;
-                    if n > 0 && n <= 2 {
-                        *met -= n as f64 * WRAP_PERIOD;
-                        n_corrections += 1;
-                    }
-                } else if diff < -WRAP_PERIOD * 0.5 {
-                    let n = (-diff / WRAP_PERIOD).round() as i64;
-                    if n > 0 && n <= 2 {
-                        *met += n as f64 * WRAP_PERIOD;
-                        n_corrections += 1;
-                    }
-                }
-            }
-        }
-        if debug && n_corrections > 0 {
-            eprintln!(
-                "PASS1 sec_intra_pkt: {} event corrections applied",
-                n_corrections
-            );
-        }
-    }
-
-    Pass1Result {
-        anchors,
-        anchor_is_clean,
-        confident,
-        rough_mets,
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Pass 2: Bidirectional anchor reconstruction
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn pass2_reconstruct(
-    sci_data: &SciFile,
-    pass1: &Pass1Result,
-    offset: f64,
-    debug: bool,
-) -> Vec<Vec<f64>> {
-    let n_packets = sci_data.ccsds.len();
-    let mut result: Vec<Vec<f64>> = vec![Vec::new(); n_packets];
-
-    if pass1.anchors.is_empty() {
-        return result;
-    }
-
-    // Collect clean anchor indices
-    let clean_indices: Vec<usize> = pass1.anchor_is_clean.iter()
-        .enumerate()
-        .filter(|&(_, c)| *c)
-        .map(|(i, _)| i)
-        .collect();
-
-    // If no clean anchors, fall back to all anchors (mark as suspicious)
-    let working_indices = if clean_indices.is_empty() {
-        if debug {
-            eprintln!("PASS2 WARNING: no clean anchors, falling back to all anchors");
-        }
-        (0..pass1.anchors.len()).collect::<Vec<_>>()
-    } else {
-        clean_indices
-    };
-
-    // Pre-parse all packets (events needed for both forward and backward passes)
-    let all_events: Vec<Vec<Pack>> = sci_data.ccsds.iter().map(|c| parse_events(c)).collect();
-
-    // For each packet, find the best anchor and compute MET via directional wrap tracking.
-    // Strategy: for each packet, find the nearest clean anchor on each side,
-    // then use the closer one (or both for cross-validation on uncertain events).
-
-    // Build a sorted list of (pkt_idx, anchor_index_in_working) for binary search
-    let anchor_pkts: Vec<usize> = working_indices.iter().map(|&i| pass1.anchors[i].pkt_idx).collect();
-
-    for pkt_idx in 0..n_packets {
-        let n_evt = pass1.rough_mets[pkt_idx].len();
-        if n_evt == 0 {
-            continue;
-        }
-
-        // Pass1's streaming with ghost rejection + SEC intra-packet correction
-        // is reliable for all non-NaN events. Only fall through to pass2
-        // for events that have no anchor (NaN rough_mets).
-        if pass1.rough_mets[pkt_idx].iter().all(|m| !m.is_nan()) {
-            result[pkt_idx] = pass1.rough_mets[pkt_idx].clone();
-            continue;
-        }
-
-        // Find nearest clean anchors (left and right)
-        let pos = anchor_pkts.partition_point(|&p| p <= pkt_idx);
-        let left_anchor = if pos > 0 { Some(working_indices[pos - 1]) } else { None };
-        let right_anchor = if pos < working_indices.len() { Some(working_indices[pos]) } else { None };
-
-        // If this packet contains an anchor, prefer it
-        let self_anchor = if pos > 0 && pass1.anchors[working_indices[pos - 1]].pkt_idx == pkt_idx {
-            Some(working_indices[pos - 1])
-        } else if pos < working_indices.len() && pass1.anchors[working_indices[pos]].pkt_idx == pkt_idx {
-            Some(working_indices[pos])
-        } else {
-            None
-        };
-
-        // Choose primary anchor: self > nearer side
-        let primary = self_anchor.or_else(|| {
-            match (left_anchor, right_anchor) {
-                (Some(l), Some(r)) => {
-                    let ld = pkt_idx - pass1.anchors[l].pkt_idx;
-                    let rd = pass1.anchors[r].pkt_idx - pkt_idx;
-                    if ld <= rd { Some(l) } else { Some(r) }
-                }
-                (Some(l), None) => Some(l),
-                (None, Some(r)) => Some(r),
-                (None, None) => None,
-            }
-        });
-
-        let Some(primary_idx) = primary else {
-            continue;
-        };
-
-        let anc = &pass1.anchors[primary_idx];
-        let is_forward = anc.pkt_idx <= pkt_idx; // anchor is to the left → scan forward
-
-        // Compute MET via directional wrap tracking from anchor to this packet
-        let pkt_mets = if is_forward {
-            forward_wrap_track(sci_data, &all_events, anc, pkt_idx, offset)
-        } else {
-            backward_wrap_track(sci_data, &all_events, anc, pkt_idx, offset)
-        };
-
-        // Cross-validate with secondary anchor for uncertain events
-        let secondary = if is_forward { right_anchor } else { left_anchor };
-        if let Some(sec_idx) = secondary {
-            if sec_idx != primary_idx {
-                let sec_anc = &pass1.anchors[sec_idx];
-                let sec_is_forward = sec_anc.pkt_idx <= pkt_idx;
-                let sec_mets = if sec_is_forward {
-                    forward_wrap_track(sci_data, &all_events, sec_anc, pkt_idx, offset)
-                } else {
-                    backward_wrap_track(sci_data, &all_events, sec_anc, pkt_idx, offset)
-                };
-
-                // Check consistency for uncertain events
-                if debug && pkt_mets.len() == sec_mets.len() {
-                    for (i, (m1, m2)) in pkt_mets.iter().zip(sec_mets.iter()).enumerate() {
-                        if !m1.is_nan() && !m2.is_nan() {
-                            let diff = (m1 - m2).abs();
-                            if diff > 10e-6 {
-                                eprintln!(
-                                    "PASS2 XCHECK pkt={} evt={} fwd={:.6} bwd={:.6} diff={:.6}",
-                                    pkt_idx, i, m1, m2, diff
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        result[pkt_idx] = pkt_mets.into_iter().filter(|m| !m.is_nan()).collect();
-    }
-
-    result
-}
-
-/// Pre-scan a packet's events to identify ghost events (CRC collisions with
-/// random ptime that break strict ascending order). An event is ghost if
-/// removing it restores ascending between its neighbors.
-fn ghost_prescan(events: &[Pack], prev_ptime_external: Option<u64>) -> Vec<bool> {
-    let mut is_ghost = vec![false; events.len()];
-    let valid: Vec<(usize, u64)> = events.iter().enumerate()
-        .filter_map(|(i, e)| match e {
-            Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => Some((i, *ptime)),
-            _ => None,
-        })
-        .collect();
-
-    for j in 0..valid.len() {
-        let (idx, pt) = valid[j];
-        let pt_prev = if j > 0 { Some(valid[j - 1].1) } else { prev_ptime_external };
-        let pt_next = if j + 1 < valid.len() { Some(valid[j + 1].1) } else { None };
-        let (Some(prev), Some(next)) = (pt_prev, pt_next) else { continue };
-        let breaks_from_prev = (pt as i64 - prev as i64) < 0;
-        let breaks_to_next = (next as i64 - pt as i64) < 0;
-        let neighbors_ascending = (next as i64 - prev as i64) >= 0;
-        if (breaks_from_prev || breaks_to_next) && neighbors_ascending {
-            is_ghost[idx] = true;
-        }
-    }
-    is_ghost
-}
-
-/// Forward wrap tracking: from anchor to target packet, scanning left→right.
-/// Re-anchors on valid SEC events and rejects ghost-induced false wraps.
-fn forward_wrap_track(
-    sci_data: &SciFile,
-    all_events: &[Vec<Pack>],
-    anchor: &AnchorInfo,
-    target_pkt: usize,
-    offset: f64,
-) -> Vec<f64> {
-    let mut wrap_count: i64 = 0;
-    let mut prev_ptime: Option<u64> = None;
-    let mut anc_met = anchor.met;
-    let mut anc_ptime = anchor.ptime;
-
-    let start_pkt = anchor.pkt_idx;
-    let mut target_mets: Vec<f64> = Vec::new();
-
-    for pkt_idx in start_pkt..=target_pkt {
-        let events = &all_events[pkt_idx];
-        let utc_tail = get_utc_tail(&sci_data.ccsds[pkt_idx]);
-
-        if pkt_idx > start_pkt {
-            let prev_ut = get_utc_tail(&sci_data.ccsds[pkt_idx - 1]);
-            if detect_disruption(prev_ut, utc_tail) {
-                let first_ptime = events.iter().find_map(|e| match e {
-                    Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => Some(*ptime),
-                    _ => None,
-                });
-                if let Some(fp) = first_ptime {
-                    wrap_count = estimate_wrap_count(anc_met, anc_ptime, fp, utc_tail);
-                    prev_ptime = None;
-                }
-            }
-        }
-
-        let is_target = pkt_idx == target_pkt;
-        let pkt_ghost = ghost_prescan(events, prev_ptime);
-
-        for (evt_idx, event) in events.iter().enumerate() {
-            match event {
-                Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => {
-                    // Skip ghosts for wrap tracking (but still compute MET)
-                    if pkt_ghost[evt_idx] {
-                        if is_target {
-                            let raw_delta = *ptime as i64 - anc_ptime as i64;
-                            let total = raw_delta + wrap_count * PTIME_MOD as i64;
-                            target_mets.push(anc_met + total as f64 * 2e-6 + MET_CORRECTION);
-                        }
-                        // Do NOT update prev_ptime for ghost events
-                        continue;
-                    }
-
-                    // Wrap detection (ghosts already excluded)
-                    if let Some(prev) = prev_ptime {
-                        let diff = *ptime as i64 - prev as i64;
-                        if diff < 0 {
-                            wrap_count += 1;
-                        }
-                    }
-
-                    // Re-anchor on valid SEC
-                    if let Pack::Second { stime, ptime: sec_ptime } = event {
-                        let met = *stime as f64 + offset;
-                        if (met - utc_tail).abs() < 2.0 {
-                            anc_met = met;
-                            anc_ptime = *sec_ptime;
-                            wrap_count = 0;
-                        }
-                    }
-
-                    if is_target {
-                        let raw_delta = *ptime as i64 - anc_ptime as i64;
-                        let total = raw_delta + wrap_count * PTIME_MOD as i64;
-                        target_mets.push(anc_met + total as f64 * 2e-6 + MET_CORRECTION);
-                    }
-
-                    prev_ptime = Some(*ptime);
-                }
-                Pack::Error => {}
-            }
-        }
-    }
-
-    target_mets
-}
-
-/// Backward wrap tracking: from anchor to target packet, scanning right→left.
-/// Re-anchors on valid SEC events and rejects ghost-induced false wraps.
-fn backward_wrap_track(
-    sci_data: &SciFile,
-    all_events: &[Vec<Pack>],
-    anchor: &AnchorInfo,
-    target_pkt: usize,
-    offset: f64,
-) -> Vec<f64> {
-    let mut wrap_count: i64 = 0;
-    let mut next_ptime: Option<u64> = None;
-    let mut anc_met = anchor.met;
-    let mut anc_ptime = anchor.ptime;
-
-    let start_pkt = anchor.pkt_idx;
-    let mut target_mets: Vec<f64> = Vec::new();
-
-    for pkt_idx in (target_pkt..=start_pkt).rev() {
-        let events = &all_events[pkt_idx];
-        let utc_tail = get_utc_tail(&sci_data.ccsds[pkt_idx]);
-
-        if pkt_idx < start_pkt {
-            let next_ut = get_utc_tail(&sci_data.ccsds[pkt_idx + 1]);
-            if detect_disruption(utc_tail, next_ut) {
-                let last_ptime = events.iter().rev().find_map(|e| match e {
-                    Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => Some(*ptime),
-                    _ => None,
-                });
-                if let Some(lp) = last_ptime {
-                    wrap_count = estimate_wrap_count(anc_met, anc_ptime, lp, utc_tail);
-                    next_ptime = None;
-                }
-            }
-        }
-
-        let is_target = pkt_idx == target_pkt;
-        let pkt_ghost = ghost_prescan(events, None);
-
-        let mut pkt_mets_rev: Vec<f64> = Vec::new();
-        for (evt_idx, event) in events.iter().enumerate().rev() {
-            match event {
-                Pack::Event { ptime, .. } | Pack::Second { ptime, .. } => {
-                    // Skip ghosts for wrap tracking (but still compute MET)
-                    if pkt_ghost[evt_idx] {
-                        if is_target {
-                            let raw_delta = *ptime as i64 - anc_ptime as i64;
-                            let total = raw_delta + wrap_count * PTIME_MOD as i64;
-                            pkt_mets_rev.push(anc_met + total as f64 * 2e-6 + MET_CORRECTION);
-                        }
-                        // Do NOT update next_ptime for ghost events
-                        continue;
-                    }
-
-                    // Backward wrap detection (ghosts already excluded)
-                    if let Some(next) = next_ptime {
-                        let diff = next as i64 - *ptime as i64;
-                        if diff < 0 {
-                            wrap_count -= 1;
-                        }
-                    }
-
-                    // Re-anchor on valid SEC
-                    if let Pack::Second { stime, ptime: sec_ptime } = event {
-                        let met = *stime as f64 + offset;
-                        if (met - utc_tail).abs() < 2.0 {
-                            anc_met = met;
-                            anc_ptime = *sec_ptime;
-                            wrap_count = 0;
-                        }
-                    }
-
-                    if is_target {
-                        let raw_delta = *ptime as i64 - anc_ptime as i64;
-                        let total = raw_delta + wrap_count * PTIME_MOD as i64;
-                        pkt_mets_rev.push(anc_met + total as f64 * 2e-6 + MET_CORRECTION);
-                    }
-
-                    next_ptime = Some(*ptime);
-                }
-                Pack::Error => {}
-            }
-        }
-
-        if is_target {
-            pkt_mets_rev.reverse();
-            target_mets = pkt_mets_rev;
-        }
-    }
-
-    target_mets
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Public API
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// SEC-anchored 时间重建。
-///
-/// 使用两阶段方法：先预扫描找出所有 SEC 锚点和间隔异常，
-/// 然后对每段事件选可信方向的锚点 + ptime 单调性计 wrap，一次算对。
+/// 时间重建主函数：输入 CCSDS 包序列，输出每包每事件的 MET。
+/// NaN 表示无法确定的事件。
 pub fn reconstruct_with_wrap_tracking(sci_data: &SciFile, offset: f64) -> Vec<Vec<f64>> {
     reconstruct_with_wrap_tracking_labeled(sci_data, offset, "")
 }
@@ -835,18 +97,438 @@ pub fn reconstruct_with_wrap_tracking_labeled(
         return Vec::new();
     }
 
-    // Pass 1: Forward scan — extract anchors, confidence, rough METs
-    let pass1 = pass1_scan(sci_data, offset, debug);
+    // =====================================================================
+    // Step 1: 解析所有包，CRC 过滤
+    // =====================================================================
+    // 每个 CCSDS 包 109 个 slot，通过 CRC 的为 EVT 或 SEC，不通过的为 Error。
+    // 只保留通过 CRC 的事件，记录其 (pkt_idx, evt_idx, ptime, 类型)。
 
-    if pass1.anchors.is_empty() {
-        return vec![Vec::new(); n_packets];
+    let mut n_evt_total = 0u64;
+    let mut n_sec_total = 0u64;
+    let mut n_err_total = 0u64;
+
+    // parsed[pkt_idx] = Vec of (evt_idx, ptime, is_second, channel, raw_bytes)
+    // 只包含通过 CRC 的事件
+    struct ParsedEvent {
+        ptime: u64,
+        is_second: bool,
+        stime: Option<u64>,  // SEC 才有
+        channel: u8,
+        raw_bytes: [u8; 8],
     }
 
-    // Pass 2: Bidirectional anchor reconstruction
-    let result = pass2_reconstruct(sci_data, &pass1, offset, debug);
+    let mut parsed: Vec<Vec<ParsedEvent>> = Vec::with_capacity(n_packets);
+
+    for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
+        let events = parse_events(ccsds);
+        let mut pkt_events: Vec<ParsedEvent> = Vec::new();
+
+        for event in &events {
+            match event {
+                Pack::Event { ptime, channel, raw_bytes } => {
+                    pkt_events.push(ParsedEvent {
+                        ptime: *ptime,
+                        is_second: false,
+                        stime: None,
+                        channel: *channel,
+                        raw_bytes: *raw_bytes,
+                    });
+                    n_evt_total += 1;
+                }
+                Pack::Second { stime, ptime } => {
+                    pkt_events.push(ParsedEvent {
+                        ptime: *ptime,
+                        is_second: true,
+                        stime: Some(*stime),
+                        channel: 0,
+                        raw_bytes: [0; 8],
+                    });
+                    n_sec_total += 1;
+                }
+                Pack::Error => {
+                    n_err_total += 1;
+                }
+            }
+        }
+
+        parsed.push(pkt_events);
+    }
+
+    if debug {
+        eprintln!(
+            "STEP1 CRC filter: {} EVT + {} SEC = {} pass, {} error ({:.1}%)",
+            n_evt_total, n_sec_total, n_evt_total + n_sec_total, n_err_total,
+            100.0 * n_err_total as f64 / (n_evt_total + n_sec_total + n_err_total) as f64
+        );
+    }
+
+    // =====================================================================
+    // Step 2: 找出所有有效 SEC，过滤幽灵 SEC
+    // =====================================================================
+    // SEC 提供绝对时间锚点 (stime, ptime)，但 CRC 碰撞会产生幽灵 SEC。
+    //
+    // 有效 SEC 满足：(ptime - stime × 500000) mod 524288 ≈ 常数（硬件相位）
+    // 幽灵 SEC 的相位随机分布在 0~524287。
+    //
+    // 算法：
+    //   Phase 1: 排序+滑动窗口找最大相位簇
+    //   Phase 2: 逐对验证 stime-ptime 一致性，踢掉混入的 ghost
+
+    const TICKS_PER_SEC: i64 = 500000; // 1s / 2μs
+    const PHASE_TOLERANCE: i64 = 200;  // ±200 ticks (±0.4ms)，覆盖硬件抖动
+
+    struct SecEvent {
+        pkt_idx: usize,
+        evt_idx: usize,  // 在 parsed[pkt_idx] 中的下标
+        stime: u64,
+        ptime: u64,
+        met: f64,
+    }
+
+    // 收集所有 SEC 候选
+    let mut all_secs: Vec<SecEvent> = Vec::new();
+    for (pkt_idx, pkt) in parsed.iter().enumerate() {
+        for (local_idx, evt) in pkt.iter().enumerate() {
+            if let Some(stime) = evt.stime {
+                all_secs.push(SecEvent {
+                    pkt_idx,
+                    evt_idx: local_idx,
+                    stime,
+                    ptime: evt.ptime,
+                    met: stime as f64 + offset,
+                });
+            }
+        }
+    }
+
+    // Phase 1: 排序+滑动窗口找最大相位簇
+    // 计算每个 SEC 的相位
+    let phases: Vec<i64> = all_secs.iter()
+        .map(|s| ((s.ptime as i64 - s.stime as i64 * TICKS_PER_SEC) % PTIME_MOD as i64 + PTIME_MOD as i64) % PTIME_MOD as i64)
+        .collect();
+
+    // 按 phase 排序的下标
+    let mut sorted_idx: Vec<usize> = (0..phases.len()).collect();
+    sorted_idx.sort_by_key(|&i| phases[i]);
+
+    // 滑动窗口：找包含最多点的窗口（宽度 = 2 × PHASE_TOLERANCE）
+    let window_width = 2 * PHASE_TOLERANCE;
+    let mut best_start = 0usize;
+    let mut best_count = 0usize;
+    let mut left = 0usize;
+
+    for right in 0..sorted_idx.len() {
+        // 收缩左边界，保持窗口宽度
+        while phases[sorted_idx[right]] - phases[sorted_idx[left]] > window_width {
+            left += 1;
+        }
+        let count = right - left + 1;
+        if count > best_count {
+            best_count = count;
+            best_start = left;
+        }
+    }
+
+    // 标记簇内的 SEC
+    let mut in_cluster = vec![false; all_secs.len()];
+    for i in best_start..(best_start + best_count) {
+        in_cluster[sorted_idx[i]] = true;
+    }
+
+    if debug {
+        let cluster_phases: Vec<i64> = (best_start..(best_start + best_count))
+            .map(|i| phases[sorted_idx[i]])
+            .collect();
+        eprintln!(
+            "STEP2 phase cluster: {} SECs, phase range {}~{} (span={})",
+            best_count,
+            cluster_phases.first().unwrap_or(&0),
+            cluster_phases.last().unwrap_or(&0),
+            cluster_phases.last().unwrap_or(&0) - cluster_phases.first().unwrap_or(&0),
+        );
+    }
+
+    // Phase 2: 逐对验证 stime-ptime 一致性
+    // 按打包顺序（pkt_idx, evt_idx）排序簇内的 SEC
+    // 这是事件通过 FIFO 的物理顺序
+    let mut cluster_indices: Vec<usize> = (0..all_secs.len())
+        .filter(|&i| in_cluster[i])
+        .collect();
+    cluster_indices.sort_by_key(|&i| (all_secs[i].pkt_idx, all_secs[i].evt_idx));
+
+    // Phase 2: stime 升序检查（LIS）
+    // FIFO 保序 → 打包顺序中 stime 必须严格递增。
+    // Ghost SEC 的 stime 是垃圾值，会打破升序。
+    // 用 LIS 找主序列，不在 LIS 中的是 ghost。
+    let mut is_valid = vec![false; all_secs.len()];
+
+    if cluster_indices.len() > 1 {
+        let vals: Vec<u64> = cluster_indices.iter()
+            .map(|&i| all_secs[i].stime)
+            .collect();
+
+        let n = vals.len();
+        let mut tails: Vec<u64> = Vec::new();
+        let mut tail_pos: Vec<usize> = Vec::new();
+        let mut parent: Vec<Option<usize>> = vec![None; n];
+
+        for i in 0..n {
+            let pos = tails.partition_point(|&t| t < vals[i]);
+            if pos == tails.len() {
+                tails.push(vals[i]);
+                tail_pos.push(i);
+            } else {
+                tails[pos] = vals[i];
+                tail_pos[pos] = i;
+            }
+            parent[i] = if pos > 0 { Some(tail_pos[pos - 1]) } else { None };
+        }
+
+        let mut in_lis = vec![false; n];
+        let mut idx = *tail_pos.last().unwrap();
+        loop {
+            in_lis[idx] = true;
+            match parent[idx] {
+                Some(p) => idx = p,
+                None => break,
+            }
+        }
+
+        for (k, &ci) in cluster_indices.iter().enumerate() {
+            if in_lis[k] {
+                is_valid[ci] = true;
+            }
+        }
+    } else if cluster_indices.len() == 1 {
+        is_valid[cluster_indices[0]] = true;
+    }
+
+    // 收集有效 SEC
+    let valid_secs: Vec<&SecEvent> = all_secs.iter()
+        .enumerate()
+        .filter(|&(i, _)| is_valid[i])
+        .map(|(_, s)| s)
+        .collect();
+
+    let n_valid_sec = valid_secs.len();
+    let n_ghost_sec = all_secs.len() - n_valid_sec;
+
+    if debug {
+        eprintln!(
+            "STEP2 SEC validated: {} valid, {} ghost (total {})",
+            n_valid_sec, n_ghost_sec, all_secs.len()
+        );
+
+        if let (Some(first), Some(last)) = (valid_secs.first(), valid_secs.last()) {
+            eprintln!(
+                "  stime range: {} ~ {} ({} seconds)",
+                first.stime, last.stime, last.stime - first.stime
+            );
+            eprintln!(
+                "  pkt range: {} ~ {}",
+                valid_secs.iter().map(|s| s.pkt_idx).min().unwrap(),
+                valid_secs.iter().map(|s| s.pkt_idx).max().unwrap(),
+            );
+
+            // stime gap 分布
+            let mut gap1 = 0u32;
+            let mut gap2 = 0u32;
+            let mut gap_other = Vec::new();
+            for w in valid_secs.windows(2) {
+                let gap = w[1].stime as i64 - w[0].stime as i64;
+                match gap {
+                    1 => gap1 += 1,
+                    2 => gap2 += 1,
+                    _ => gap_other.push((w[0].stime, w[1].stime, gap, w[0].pkt_idx, w[1].pkt_idx)),
+                }
+            }
+            eprintln!("  stime gaps: {}×1s, {}×2s, {}×other", gap1, gap2, gap_other.len());
+            for (s1, s2, gap, p1, p2) in &gap_other {
+                let t_rel = *s1 as f64 + offset - 339945422.0;
+                eprintln!("    stime {}→{} (gap={}s) pkt {}→{} T+{:.0}", s1, s2, gap, p1, p2, t_rel);
+            }
+        }
+    }
+
+    // =====================================================================
+    // Step 3: 对间隔 1s 的相邻 SEC 对，解算中间所有事件的 MET
+    // =====================================================================
+    // 两个 SEC 间隔 1s → ptime 前进 500000 ticks < PTIME_MOD。
+    //
+    // 算法：
+    //   1. 对每个事件算 elapsed_fwd = (ptime - SEC1.ptime) mod PTIME_MOD
+    //      这把 ptime 从环形空间展开到线性空间 [0, PTIME_MOD)
+    //   2. elapsed_fwd 在 [0, 500000] 内 → 事件在两个 SEC 之间
+    //      elapsed_fwd 在 (500000, 524288) → 事件不在区间内（死区）→ ghost
+    //   3. 在 elapsed_fwd 空间中检查升序：
+    //      FIFO 保序 → elapsed_fwd 严格升序
+    //      Ghost 的 elapsed_fwd 随机 → 打破升序
+    //   4. MET 从两个 SEC 分别计算，取平均
+
+    let mut result: Vec<Vec<f64>> = parsed.iter().map(|pkt| vec![f64::NAN; pkt.len()]).collect();
+    let mut n_resolved = 0u64;
+    let mut n_ghost_deadzone = 0u64;
+    let mut n_ghost_order = 0u64;
+    let mut n_sec_pairs = 0u64;
+
+    // 有效 SEC 按打包顺序排列的索引
+    let mut valid_indices: Vec<usize> = (0..all_secs.len())
+        .filter(|&i| is_valid[i])
+        .collect();
+    valid_indices.sort_by_key(|&i| (all_secs[i].pkt_idx, all_secs[i].evt_idx));
+
+    // 给 SEC 事件本身赋值 MET
+    for &vi in &valid_indices {
+        let sec = &all_secs[vi];
+        result[sec.pkt_idx][sec.evt_idx] = sec.met + MET_CORRECTION;
+    }
+
+    // 对每对相邻有效 SEC
+    for w in valid_indices.windows(2) {
+        let sec1 = &all_secs[w[0]];
+        let sec2 = &all_secs[w[1]];
+        let ds = sec2.stime as i64 - sec1.stime as i64;
+
+        if ds != 1 {
+            continue;
+        }
+        n_sec_pairs += 1;
+
+        let met1 = sec1.met + MET_CORRECTION;
+        let met2 = sec2.met + MET_CORRECTION;
+        let pt1 = sec1.ptime as i64;
+        let pt2 = sec2.ptime as i64;
+
+        // 两个 SEC 之间 ptime 的实际前进量（自动包含 SEC 抖动）
+        let actual_advance = (pt2 - pt1).rem_euclid(PTIME_MOD as i64);
+
+        // 收集两个 SEC 之间的所有事件及其 elapsed_fwd
+        let pkt_a = sec1.pkt_idx;
+        let evt_a = sec1.evt_idx;
+        let pkt_b = sec2.pkt_idx;
+        let evt_b = sec2.evt_idx;
+
+        struct Candidate {
+            pkt_idx: usize,
+            local_idx: usize,
+            elapsed_fwd: i64,
+        }
+
+        let mut candidates: Vec<Candidate> = Vec::new();
+        for pkt_idx in pkt_a..=pkt_b {
+            let start = if pkt_idx == pkt_a { evt_a + 1 } else { 0 };
+            let end = if pkt_idx == pkt_b { evt_b } else { parsed[pkt_idx].len() };
+            for local_idx in start..end {
+                let pt = parsed[pkt_idx][local_idx].ptime as i64;
+                let elapsed_fwd = (pt - pt1).rem_euclid(PTIME_MOD as i64);
+                candidates.push(Candidate { pkt_idx, local_idx, elapsed_fwd });
+            }
+        }
+
+        // Pass 1: 死区检查 — elapsed_fwd 必须在 [0, actual_advance]
+        // 死区 = (actual_advance, 524288)，对应不在这 1 秒区间内的 ptime
+        let mut alive: Vec<bool> = candidates.iter()
+            .map(|c| c.elapsed_fwd <= actual_advance)
+            .collect();
+
+        // Pass 2: 升序检查 — elapsed_fwd 在 FIFO 序中必须严格递增
+        // Ghost 的 elapsed_fwd 随机，会打破升序。
+        // 用最长递增子序列（LIS）识别主序列，不在 LIS 中的是 ghost。
+        // Patience sorting 算法，O(n log n)。
+        {
+            // 只对通过死区检查的事件做 LIS
+            let alive_indices: Vec<usize> = (0..candidates.len())
+                .filter(|&i| alive[i])
+                .collect();
+
+            if alive_indices.len() > 1 {
+                let vals: Vec<i64> = alive_indices.iter()
+                    .map(|&i| candidates[i].elapsed_fwd)
+                    .collect();
+
+                // Patience sorting: tails[k] = 长度为 k+1 的递增子序列的最小末尾值
+                // tail_pos[k] = 对应的在 vals 中的下标
+                // parent[i] = vals[i] 在 LIS 中的前驱在 vals 中的下标
+                let n = vals.len();
+                let mut tails: Vec<i64> = Vec::new();
+                let mut tail_pos: Vec<usize> = Vec::new();
+                let mut parent: Vec<Option<usize>> = vec![None; n];
+
+                for i in 0..n {
+                    // 二分查找：找 tails 中第一个 >= vals[i] 的位置
+                    let pos = tails.partition_point(|&t| t < vals[i]);
+                    if pos == tails.len() {
+                        tails.push(vals[i]);
+                        tail_pos.push(i);
+                    } else {
+                        tails[pos] = vals[i];
+                        tail_pos[pos] = i;
+                    }
+                    parent[i] = if pos > 0 { Some(tail_pos[pos - 1]) } else { None };
+                }
+
+                // 回溯找 LIS 成员
+                let mut in_lis = vec![false; n];
+                let mut idx = *tail_pos.last().unwrap();
+                loop {
+                    in_lis[idx] = true;
+                    match parent[idx] {
+                        Some(p) => idx = p,
+                        None => break,
+                    }
+                }
+
+                // 不在 LIS 中的 → ghost
+                for (k, &ai) in alive_indices.iter().enumerate() {
+                    if !in_lis[k] {
+                        alive[ai] = false;
+                    }
+                }
+            }
+        }
+
+        // 赋值 MET
+        for (i, c) in candidates.iter().enumerate() {
+            if alive[i] {
+                let elapsed_bwd = (pt2 - parsed[c.pkt_idx][c.local_idx].ptime as i64)
+                    .rem_euclid(PTIME_MOD as i64);
+                let met_fwd = met1 + c.elapsed_fwd as f64 * 2e-6;
+                let met_bwd = met2 - elapsed_bwd as f64 * 2e-6;
+                result[c.pkt_idx][c.local_idx] = (met_fwd + met_bwd) / 2.0;
+                n_resolved += 1;
+            } else if c.elapsed_fwd > actual_advance {
+                n_ghost_deadzone += 1;
+            } else {
+                n_ghost_order += 1;
+            }
+        }
+    }
+
+    if debug {
+        let n_total_events: usize = parsed.iter().map(|p| p.len()).sum();
+        let n_nan = result.iter().flat_map(|p| p.iter()).filter(|m| m.is_nan()).count();
+        eprintln!(
+            "STEP3 1s-SEC pairs: {} pairs, {} events resolved",
+            n_sec_pairs, n_resolved
+        );
+        eprintln!(
+            "  ghosts: {} dead-zone + {} order-violation = {} total",
+            n_ghost_deadzone, n_ghost_order, n_ghost_deadzone + n_ghost_order
+        );
+        eprintln!(
+            "  coverage: {}/{} events have MET ({:.1}%), {} NaN",
+            n_total_events - n_nan, n_total_events,
+            100.0 * (n_total_events - n_nan) as f64 / n_total_events as f64,
+            n_nan
+        );
+    }
 
     result
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 公共接口（供 CLI 和其他模块调用）
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// 提取所有秒事例（Second event）的重建 MET 时间。
 pub fn extract_second_event_times(sci_data: &SciFile, offset: f64) -> Vec<f64> {
@@ -855,16 +537,16 @@ pub fn extract_second_event_times(sci_data: &SciFile, offset: f64) -> Vec<f64> {
     for ccsds in sci_data.ccsds.iter() {
         let utc_tail = get_utc_tail(ccsds);
         let events = parse_events(ccsds);
-
         for event in &events {
             if let Pack::Second { stime, .. } = event {
                 let met = *stime as f64 + offset;
                 if (met - utc_tail).abs() < 2.0 {
-                    second_times.push(met + MET_CORRECTION);
+                    second_times.push(met);
                 }
             }
         }
     }
+
     second_times
 }
 
@@ -874,202 +556,6 @@ pub fn reconstruct_met_times(sci_data: &SciFile, offset: f64) -> Vec<f64> {
         .into_iter()
         .flatten()
         .collect()
-}
-
-/// 扫描单个机箱一小时的科学数据，返回饱和时间段列表。
-fn scan_saturation_intervals_impl(sci_data: &SciFile, offset: f64) -> Vec<(f64, f64)> {
-    const GAP_THRESHOLD: f64 = 6.9e-3; // 6.9ms
-
-    let packet_times = reconstruct_with_wrap_tracking(sci_data, offset);
-
-    let mut packs: Vec<PackInfo> = Vec::new();
-    for times in &packet_times {
-        if times.is_empty() {
-            continue;
-        }
-
-        let min_t = *times
-            .iter()
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        let max_t = *times
-            .iter()
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-
-        packs.push(PackInfo {
-            min_time: min_t,
-            max_time: max_t,
-        });
-    }
-
-    // 按时间排序，确保 gap 计算正确
-    packs.sort_by(|a, b| a.min_time.partial_cmp(&b.min_time).unwrap());
-
-    let mut intervals: Vec<(f64, f64)> = Vec::new();
-
-    for window in packs.windows(2) {
-        let gap = window[1].min_time - window[0].max_time;
-
-        if gap > GAP_THRESHOLD {
-            let start = window[0].max_time;
-            let stop = window[1].min_time;
-            intervals.push((start, stop));
-        }
-    }
-
-    intervals
-}
-
-/// 扫描饱和区间，直接返回原始 MET 秒数。
-pub fn scan_saturation_intervals_raw(sci_data: &SciFile, offset: f64) -> Vec<(f64, f64)> {
-    scan_saturation_intervals_impl(sci_data, offset)
-}
-
-/// 以下部分为对原有未走交叉验证管道的调试辅助函数保持接口不变
-pub fn print_diagnose_packets(sci_data: &SciFile, offset: f64, pkt_min: usize, pkt_max: usize) {
-    let mut met_anchor: Option<f64> = None;
-    let mut anchor_ptime: u64 = 0;
-
-    let _ptime_mod = 524288;
-    let wrap_period = 1.048576;
-    let met_correction = 4.0;
-
-    for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
-        if pkt_idx < pkt_min || pkt_idx > pkt_max {
-            continue;
-        }
-
-        let utc_tail = get_utc_tail(ccsds);
-        let events = parse_events(ccsds);
-
-        let mut second_count = 0;
-        let mut event_count = 0;
-        let mut error_count = 0;
-
-        for event in &events {
-            match event {
-                Pack::Second { .. } => second_count += 1,
-                Pack::Event { .. } => event_count += 1,
-                Pack::Error => error_count += 1,
-            }
-        }
-
-        println!("\n==========================================");
-        println!(
-            "Packet {}: utc_tail = {}, events = {} (SEC: {}, EVT: {}, ERR: {})",
-            pkt_idx,
-            utc_tail,
-            events.len(),
-            second_count,
-            event_count,
-            error_count
-        );
-
-        for (evt_idx, event) in events.iter().enumerate() {
-            match event {
-                Pack::Second { stime, ptime } => {
-                    let met = *stime as f64 + offset;
-                    println!(
-                        "  [{}] SEC: stime={}, ptime={} => met={}, anchor updated",
-                        evt_idx, stime, ptime, met
-                    );
-
-                    if (met - utc_tail).abs() < 2.0 {
-                        met_anchor = Some(met);
-                        anchor_ptime = *ptime;
-                    }
-                }
-                Pack::Event { channel, ptime, .. } => {
-                    if let Some(anchor) = met_anchor {
-                        let raw_delta = *ptime as f64 * 2e-6 - anchor_ptime as f64 * 2e-6;
-                        let time_since_anchor = utc_tail - anchor - met_correction;
-                        let wraps = ((time_since_anchor - raw_delta) / wrap_period).floor();
-
-                        println!(
-                            "  [{}] EVT: ch={:3}, ptime={:7} | raw_delta={:+.6}, need={:+.6} => wrap={:>2.0}, comp_met={:.6}",
-                            evt_idx, channel, ptime, raw_delta, time_since_anchor, wraps,
-                            compute_met(*ptime, anchor_ptime, anchor, utc_tail)
-                        );
-                    } else {
-                        println!("  [{}] EVT: ch={:3}, ptime={:7} | NO ANCHOR", evt_idx, channel, ptime);
-                    }
-                }
-                Pack::Error => {
-                    println!("  [{}] ERR: CRC mismatch or malformed", evt_idx);
-                }
-            }
-        }
-    }
-}
-
-/// 打印从指定包开始的所有事例的时钟漂移详情。
-pub fn dump_ptime_utc(sci_data: &SciFile, offset: f64, pkt_min: usize, pkt_max: usize) {
-    let mut met_anchor: Option<f64> = None;
-    let mut anchor_ptime: u64 = 0;
-
-    println!("pkt_index,evt_index,type,ptime,n_wraps,anchor_ptime,utc_tail,anchor_met,met");
-
-    for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
-        if pkt_idx < pkt_min || pkt_idx > pkt_max {
-            continue;
-        }
-
-        let utc_tail = get_utc_tail(ccsds);
-        let events = parse_events(ccsds);
-
-        for (evt_idx, event) in events.iter().enumerate() {
-            match event {
-                Pack::Second { stime, ptime } => {
-                    let met = *stime as f64 + offset;
-                    if (met - utc_tail).abs() < 2.0 {
-                        met_anchor = Some(met);
-                        anchor_ptime = *ptime;
-                        if let Some(anchor) = met_anchor {
-                            let n_wraps = ((utc_tail - anchor - 4.0
-                                - (*ptime as f64 * 2e-6 - anchor_ptime as f64 * 2e-6))
-                                / 1.048576)
-                                .floor()
-                                .max(0.0) as i64;
-                            println!(
-                                "pkt={},evt={},SEC,ptime={},n_wraps={},anchor_pt={},utc_tail={:.0},anchor_met={:.6},met={:.6}",
-                                pkt_idx,
-                                evt_idx,
-                                ptime,
-                                n_wraps,
-                                anchor_ptime,
-                                utc_tail,
-                                anchor,
-                                compute_met(*ptime, anchor_ptime, anchor, utc_tail)
-                            );
-                        }
-                    }
-                }
-                Pack::Event { ptime, .. } => {
-                    if let Some(_anchor) = met_anchor {
-                        if let Some(anchor) = met_anchor {
-                            let n_wraps = ((utc_tail - anchor - 4.0
-                                - (*ptime as f64 * 2e-6 - anchor_ptime as f64 * 2e-6))
-                                / 1.048576)
-                                .floor()
-                                .max(0.0) as i64;
-                            println!(
-                                "pkt={},evt={},EVT,ptime={},n_wraps={},anchor_pt={},utc_tail={:.0},met={:.6}",
-                                pkt_idx,
-                                evt_idx,
-                                ptime,
-                                n_wraps,
-                                anchor_ptime,
-                                utc_tail,
-                                compute_met(*ptime, anchor_ptime, anchor, utc_tail)
-                            );
-                        }
-                    }
-                }
-                Pack::Error => {}
-            }
-        }
-    }
 }
 
 /// 单个事例的详细信息（用于 dump-events 调试）。
@@ -1235,19 +721,58 @@ pub fn scan_saturation_intervals(
     sci_data: &SciFile,
     offset: f64,
 ) -> Vec<(MissionElapsedTime<HxmtHe>, MissionElapsedTime<HxmtHe>)> {
-    scan_saturation_intervals_impl(sci_data, offset)
-        .into_iter()
-        .map(|(start, stop)| {
-            (
-                MissionElapsedTime::new(start),
-                MissionElapsedTime::new(stop),
-            )
-        })
-        .collect()
+    // 依赖时间重建，暂时返回空
+    Vec::new()
+}
+
+/// 扫描饱和区间，直接返回原始 MET 秒数。
+pub fn scan_saturation_intervals_raw(sci_data: &SciFile, offset: f64) -> Vec<(f64, f64)> {
+    Vec::new()
+}
+
+/// 诊断：打印包信息。
+pub fn print_diagnose_packets(sci_data: &SciFile, offset: f64, pkt_min: usize, pkt_max: usize) {
+    let diags = diagnose_packets(sci_data, offset);
+    for d in &diags {
+        if d.pkt_index >= pkt_min && d.pkt_index <= pkt_max {
+            println!(
+                "pkt={} evt={} sec={} err={} sec_valid={} out={} drop={} anchor={} utc={:.0} met=[{}, {}]",
+                d.pkt_index, d.n_event, d.n_second, d.n_error, d.n_second_valid,
+                d.n_output, d.n_dropped, d.has_anchor, d.utc_tail,
+                d.met_min.map_or("?".to_string(), |v| format!("{:.6}", v)),
+                d.met_max.map_or("?".to_string(), |v| format!("{:.6}", v)),
+            );
+        }
+    }
+}
+
+/// 打印 ptime/utc 诊断信息。
+pub fn dump_ptime_utc(sci_data: &SciFile, offset: f64, pkt_min: usize, pkt_max: usize) {
+    println!("pkt,evt_idx,type,ptime,stime,utc_tail,met");
+    for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
+        if pkt_idx < pkt_min || pkt_idx > pkt_max {
+            continue;
+        }
+        let utc_tail = get_utc_tail(ccsds);
+        let events = parse_events(ccsds);
+        for (evt_idx, event) in events.iter().enumerate() {
+            match event {
+                Pack::Event { ptime, .. } => {
+                    println!("{},{},EVT,{},,,{:.0}", pkt_idx, evt_idx, ptime, utc_tail);
+                }
+                Pack::Second { stime, ptime } => {
+                    let met = *stime as f64 + offset;
+                    println!("{},{},SEC,{},{},{:.0},{:.6}", pkt_idx, evt_idx, ptime, stime, utc_tail, met);
+                }
+                Pack::Error => {
+                    println!("{},{},ERR,,,,", pkt_idx, evt_idx);
+                }
+            }
+        }
+    }
 }
 
 /// 诊断：对每个 CCSDS 包尝试 0~7 字节偏移，输出各偏移下的 CRC 通过数。
-/// 用于验证高错误率包是否因字节错位导致。
 pub fn check_byte_offsets(sci_data: &SciFile, pkt_min: usize, pkt_max: usize) {
     println!("pkt,utc_tail,off0,off1,off2,off3,off4,off5,off6,off7");
     for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
@@ -1257,9 +782,9 @@ pub fn check_byte_offsets(sci_data: &SciFile, pkt_min: usize, pkt_max: usize) {
         let utc_tail = get_utc_tail(ccsds);
         let mut pass_counts = [0u32; 8];
 
-        for offset in 0..8usize {
-            let start = 6 + offset;
-            let end = 878; // payload ends at 878
+        for byte_offset in 0..8usize {
+            let start = 6 + byte_offset;
+            let end = 878;
             if start >= end {
                 continue;
             }
@@ -1270,7 +795,7 @@ pub fn check_byte_offsets(sci_data: &SciFile, pkt_min: usize, pkt_max: usize) {
                     row[i] = *byte as u64;
                 }
                 if crc_check(&row) == row[7] & 0x0F {
-                    pass_counts[offset] += 1;
+                    pass_counts[byte_offset] += 1;
                 }
             }
         }
@@ -1281,149 +806,5 @@ pub fn check_byte_offsets(sci_data: &SciFile, pkt_min: usize, pkt_max: usize) {
             pass_counts[0], pass_counts[1], pass_counts[2], pass_counts[3],
             pass_counts[4], pass_counts[5], pass_counts[6], pass_counts[7],
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_streaming_wrap_tracking_no_wrap() {
-        // Simulate a sequence of increasing ptimes with no wrap
-        let ptimes = [100, 200, 300, 400, 500];
-        let anc_met = 292.0;
-        let anc_ptime = 100u64;
-
-        let mut wrap_count: i64 = 0;
-        let mut prev_ptime: Option<u64> = None;
-        let mut mets = Vec::new();
-
-        for &ptime in &ptimes {
-            if let Some(prev) = prev_ptime {
-                if (ptime as i64 - prev as i64) < 0 {
-                    wrap_count += 1;
-                }
-            }
-            let raw_delta = ptime as i64 - anc_ptime as i64;
-            let total = raw_delta + wrap_count * PTIME_MOD as i64;
-            mets.push(anc_met + total as f64 * 2e-6 + MET_CORRECTION);
-            prev_ptime = Some(ptime);
-        }
-
-        // No wraps, so MET should be strictly increasing
-        for i in 1..mets.len() {
-            assert!(mets[i] > mets[i - 1], "MET should be increasing");
-        }
-        assert_eq!(wrap_count, 0);
-
-        // First event (ptime=100) is anchor itself → delta=0
-        let expected_first = anc_met + MET_CORRECTION;
-        assert!((mets[0] - expected_first).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_streaming_wrap_tracking_with_wrap() {
-        // Simulate ptime wrap: 524000 → 200 (drop > MOD/2 = 262144)
-        let ptimes = [100000u64, 200000, 400000, 524000, 200];
-        let anc_met = 292.0;
-        let anc_ptime = 100000u64;
-
-        let mut wrap_count: i64 = 0;
-        let mut prev_ptime: Option<u64> = None;
-        let mut mets = Vec::new();
-
-        for &ptime in &ptimes {
-            if let Some(prev) = prev_ptime {
-                if (ptime as i64 - prev as i64) < 0 {
-                    wrap_count += 1;
-                }
-            }
-            let raw_delta = ptime as i64 - anc_ptime as i64;
-            let total = raw_delta + wrap_count * PTIME_MOD as i64;
-            mets.push(anc_met + total as f64 * 2e-6 + MET_CORRECTION);
-            prev_ptime = Some(ptime);
-        }
-
-        assert_eq!(wrap_count, 1, "should detect one wrap");
-        // MET should still be monotonically increasing
-        for i in 1..mets.len() {
-            assert!(mets[i] > mets[i - 1], "MET should be increasing after wrap at i={}", i);
-        }
-
-        // Last event: ptime=200, wrap_count=1
-        // delta = 200 - 100000 + 1*524288 = 424488
-        let expected_last = anc_met + 424488.0 * 2e-6 + MET_CORRECTION;
-        assert!((mets[4] - expected_last).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_bidirectional_wrap_consistency() {
-        // Forward: anchor at ptime=100000, events ascending then wrapping
-        let ptimes = [100000u64, 200000, 400000, 524000, 200, 100000];
-        let anc_met = 292.0;
-        let anc_ptime = 100000u64;
-
-        // Forward pass
-        let mut fwd_wraps: i64 = 0;
-        let mut prev: Option<u64> = None;
-        let mut fwd_mets = Vec::new();
-        for &ptime in &ptimes {
-            if let Some(p) = prev {
-                if (ptime as i64 - p as i64) < 0 {
-                    fwd_wraps += 1;
-                }
-            }
-            let raw = ptime as i64 - anc_ptime as i64;
-            fwd_mets.push(anc_met + (raw + fwd_wraps * PTIME_MOD as i64) as f64 * 2e-6 + MET_CORRECTION);
-            prev = Some(ptime);
-        }
-
-        // Backward pass from the last event (use it as reverse anchor)
-        // The last event's MET from forward is known
-        let last_met = fwd_mets[ptimes.len() - 1];
-        let last_ptime = ptimes[ptimes.len() - 1];
-
-        let mut bwd_wraps: i64 = 0;
-        let mut next: Option<u64> = None;
-        let mut bwd_mets = vec![0.0f64; ptimes.len()];
-        for i in (0..ptimes.len()).rev() {
-            let ptime = ptimes[i];
-            if let Some(n) = next {
-                if (n as i64 - ptime as i64) < 0 {
-                    bwd_wraps -= 1;
-                }
-            }
-            let raw = ptime as i64 - last_ptime as i64;
-            bwd_mets[i] = last_met + (raw + bwd_wraps * PTIME_MOD as i64) as f64 * 2e-6;
-            next = Some(ptime);
-        }
-
-        // Forward and backward should agree within floating-point tolerance
-        for i in 0..ptimes.len() {
-            let diff = (fwd_mets[i] - bwd_mets[i]).abs();
-            assert!(diff < 1e-9, "fwd/bwd mismatch at i={}: fwd={:.9} bwd={:.9} diff={:.9}", i, fwd_mets[i], bwd_mets[i], diff);
-        }
-    }
-
-    #[test]
-    fn test_estimate_wrap_count_basic() {
-        let anc_met = 100.0;
-        let anc_ptime = 100000u64;
-        // Target is ~2 wrap periods later, same ptime → 2 wraps
-        let target_ptime = 100000u64;
-        // Expected MET = 100 + (0 + 2*524288)*2e-6 + 4.0 = 106.097152
-        // utc_tail ≈ MET - MET_CORRECTION - 0.5
-        let target_utc_tail = anc_met + 2.0 * WRAP_PERIOD - 0.5;
-
-        let n = estimate_wrap_count(anc_met, anc_ptime, target_ptime, target_utc_tail);
-        assert_eq!(n, 2, "should estimate 2 wraps");
-    }
-
-    #[test]
-    fn test_detect_disruption() {
-        assert!(!detect_disruption(0.0, 100.0)); // prev=0 → no check
-        assert!(!detect_disruption(100.0, 101.0)); // small jump
-        assert!(detect_disruption(100.0, 104.0)); // >3s jump
     }
 }
