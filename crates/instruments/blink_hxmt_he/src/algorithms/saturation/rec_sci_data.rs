@@ -351,19 +351,10 @@ pub fn reconstruct_with_wrap_tracking_labeled(
     }
 
     // =====================================================================
-    // Step 3: 对间隔 1s 的相邻 SEC 对，解算中间所有事件的 MET
+    // Step 3: 对所有相邻 SEC 对，解算中间事件的 MET
     // =====================================================================
-    // 两个 SEC 间隔 1s → ptime 前进 500000 ticks < PTIME_MOD。
-    //
-    // 算法：
-    //   1. 对每个事件算 elapsed_fwd = (ptime - SEC1.ptime) mod PTIME_MOD
-    //      这把 ptime 从环形空间展开到线性空间 [0, PTIME_MOD)
-    //   2. elapsed_fwd 在 [0, 500000] 内 → 事件在两个 SEC 之间
-    //      elapsed_fwd 在 (500000, 524288) → 事件不在区间内（死区）→ ghost
-    //   3. 在 elapsed_fwd 空间中检查升序：
-    //      FIFO 保序 → elapsed_fwd 严格升序
-    //      Ghost 的 elapsed_fwd 随机 → 打破升序
-    //   4. MET 从两个 SEC 分别计算，取平均
+    // Δstime=1: elapsed_fwd 唯一 (k=0)，直接对 elapsed_fwd 求 LIS
+    // Δstime>1: 保持贪心+LIS（待改进）
 
     let mut result: Vec<Vec<f64>> = parsed.iter().map(|pkt| vec![f64::NAN; pkt.len()]).collect();
     let mut n_resolved = 0u64;
@@ -389,7 +380,16 @@ pub fn reconstruct_with_wrap_tracking_labeled(
         let sec2 = &all_secs[w[1]];
         let ds = sec2.stime as i64 - sec1.stime as i64;
 
-        if ds != 1 {
+        if ds <= 0 {
+            continue;
+        }
+
+        // 环境变量控制最大 gap：MAX_SEC_GAP=1 只处理 1s 对
+        let max_gap: i64 = std::env::var("MAX_SEC_GAP")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(i64::MAX);
+        if ds > max_gap {
             continue;
         }
         n_sec_pairs += 1;
@@ -397,12 +397,11 @@ pub fn reconstruct_with_wrap_tracking_labeled(
         let met1 = sec1.met + MET_CORRECTION;
         let met2 = sec2.met + MET_CORRECTION;
         let pt1 = sec1.ptime as i64;
-        let pt2 = sec2.ptime as i64;
 
-        // 两个 SEC 之间 ptime 的实际前进量（自动包含 SEC 抖动）
-        let actual_advance = (pt2 - pt1).rem_euclid(PTIME_MOD as i64);
+        // 两个 SEC 之间 ptime 的总前进量
+        let total_ticks = ds * TICKS_PER_SEC;  // ds 秒 × 500000 ticks/s
 
-        // 收集两个 SEC 之间的所有事件及其 elapsed_fwd
+        // 收集两个 SEC 之间的所有事件
         let pkt_a = sec1.pkt_idx;
         let evt_a = sec1.evt_idx;
         let pkt_b = sec2.pkt_idx;
@@ -411,7 +410,7 @@ pub fn reconstruct_with_wrap_tracking_labeled(
         struct Candidate {
             pkt_idx: usize,
             local_idx: usize,
-            elapsed_fwd: i64,
+            elapsed_fwd: i64,  // mod PTIME_MOD
         }
 
         let mut candidates: Vec<Candidate> = Vec::new();
@@ -425,37 +424,38 @@ pub fn reconstruct_with_wrap_tracking_labeled(
             }
         }
 
-        // Pass 1: 死区检查 — elapsed_fwd 必须在 [0, actual_advance]
-        // 死区 = (actual_advance, 524288)，对应不在这 1 秒区间内的 ptime
-        let mut alive: Vec<bool> = candidates.iter()
-            .map(|c| c.elapsed_fwd <= actual_advance)
-            .collect();
+        let pmod = PTIME_MOD as i64;
+        let mut alive = vec![false; candidates.len()];
+        let mut actual_elapsed = vec![0i64; candidates.len()];
 
-        // Pass 2: 升序检查 — elapsed_fwd 在 FIFO 序中必须严格递增
-        // Ghost 的 elapsed_fwd 随机，会打破升序。
-        // 用最长递增子序列（LIS）识别主序列，不在 LIS 中的是 ghost。
-        // Patience sorting 算法，O(n log n)。
-        {
-            // 只对通过死区检查的事件做 LIS
-            let alive_indices: Vec<usize> = (0..candidates.len())
-                .filter(|&i| alive[i])
-                .collect();
+        if ds == 1 {
+            // ─── Δstime=1: 直接 LIS ───
+            // elapsed_fwd 唯一（k=0），过滤 dead zone 后对 ef 求 LIS
+            // LIS 自动排除幽灵事件（随机 ptime 打破升序），不会级联丢失
 
-            if alive_indices.len() > 1 {
-                let vals: Vec<i64> = alive_indices.iter()
-                    .map(|&i| candidates[i].elapsed_fwd)
+            // 收集有效候选（非 dead zone）的下标
+            let mut valid_idx: Vec<usize> = Vec::new();
+            for (i, c) in candidates.iter().enumerate() {
+                if c.elapsed_fwd <= total_ticks {
+                    actual_elapsed[i] = c.elapsed_fwd;
+                    valid_idx.push(i);
+                } else {
+                    n_ghost_deadzone += 1;
+                }
+            }
+
+            // 对有效候选的 elapsed_fwd 求 LIS
+            if valid_idx.len() > 1 {
+                let vals: Vec<i64> = valid_idx.iter()
+                    .map(|&i| actual_elapsed[i])
                     .collect();
 
-                // Patience sorting: tails[k] = 长度为 k+1 的递增子序列的最小末尾值
-                // tail_pos[k] = 对应的在 vals 中的下标
-                // parent[i] = vals[i] 在 LIS 中的前驱在 vals 中的下标
                 let n = vals.len();
                 let mut tails: Vec<i64> = Vec::new();
                 let mut tail_pos: Vec<usize> = Vec::new();
                 let mut parent: Vec<Option<usize>> = vec![None; n];
 
                 for i in 0..n {
-                    // 二分查找：找 tails 中第一个 >= vals[i] 的位置
                     let pos = tails.partition_point(|&t| t < vals[i]);
                     if pos == tails.len() {
                         tails.push(vals[i]);
@@ -467,7 +467,7 @@ pub fn reconstruct_with_wrap_tracking_labeled(
                     parent[i] = if pos > 0 { Some(tail_pos[pos - 1]) } else { None };
                 }
 
-                // 回溯找 LIS 成员
+                // 回溯 LIS
                 let mut in_lis = vec![false; n];
                 let mut idx = *tail_pos.last().unwrap();
                 loop {
@@ -478,10 +478,88 @@ pub fn reconstruct_with_wrap_tracking_labeled(
                     }
                 }
 
-                // 不在 LIS 中的 → ghost
-                for (k, &ai) in alive_indices.iter().enumerate() {
-                    if !in_lis[k] {
-                        alive[ai] = false;
+                for (k, &vi) in valid_idx.iter().enumerate() {
+                    if in_lis[k] {
+                        alive[vi] = true;
+                    } else {
+                        n_ghost_order += 1;
+                    }
+                }
+            } else if valid_idx.len() == 1 {
+                alive[valid_idx[0]] = true;
+            }
+        } else {
+            // ─── Δstime>1: 贪心+LIS（原逻辑） ───
+            let mut prev: i64 = -1;
+
+            for (i, c) in candidates.iter().enumerate() {
+                let k_min = if prev + 1 > c.elapsed_fwd {
+                    (prev + 1 - c.elapsed_fwd + pmod - 1) / pmod
+                } else {
+                    0
+                };
+                let best = c.elapsed_fwd + k_min * pmod;
+
+                if best <= total_ticks {
+                    alive[i] = true;
+                    actual_elapsed[i] = best;
+                    prev = best;
+                }
+            }
+
+            // LIS 验证
+            {
+                let alive_indices: Vec<usize> = (0..candidates.len())
+                    .filter(|&i| alive[i])
+                    .collect();
+
+                if alive_indices.len() > 1 {
+                    let vals: Vec<i64> = alive_indices.iter()
+                        .map(|&i| actual_elapsed[i])
+                        .collect();
+
+                    let n = vals.len();
+                    let mut tails: Vec<i64> = Vec::new();
+                    let mut tail_pos: Vec<usize> = Vec::new();
+                    let mut parent: Vec<Option<usize>> = vec![None; n];
+
+                    for i in 0..n {
+                        let pos = tails.partition_point(|&t| t < vals[i]);
+                        if pos == tails.len() {
+                            tails.push(vals[i]);
+                            tail_pos.push(i);
+                        } else {
+                            tails[pos] = vals[i];
+                            tail_pos[pos] = i;
+                        }
+                        parent[i] = if pos > 0 { Some(tail_pos[pos - 1]) } else { None };
+                    }
+
+                    let mut in_lis = vec![false; n];
+                    let mut idx = *tail_pos.last().unwrap();
+                    loop {
+                        in_lis[idx] = true;
+                        match parent[idx] {
+                            Some(p) => idx = p,
+                            None => break,
+                        }
+                    }
+
+                    for (k, &ai) in alive_indices.iter().enumerate() {
+                        if !in_lis[k] {
+                            alive[ai] = false;
+                            n_ghost_order += 1;
+                        }
+                    }
+                }
+            }
+
+            // 统计 dead zone
+            for (i, c) in candidates.iter().enumerate() {
+                if !alive[i] {
+                    let k_max = (total_ticks - c.elapsed_fwd) / pmod;
+                    if k_max < 0 || c.elapsed_fwd < 0 {
+                        n_ghost_deadzone += 1;
                     }
                 }
             }
@@ -490,16 +568,11 @@ pub fn reconstruct_with_wrap_tracking_labeled(
         // 赋值 MET
         for (i, c) in candidates.iter().enumerate() {
             if alive[i] {
-                let elapsed_bwd = (pt2 - parsed[c.pkt_idx][c.local_idx].ptime as i64)
-                    .rem_euclid(PTIME_MOD as i64);
-                let met_fwd = met1 + c.elapsed_fwd as f64 * 2e-6;
-                let met_bwd = met2 - elapsed_bwd as f64 * 2e-6;
+                let met_fwd = met1 + actual_elapsed[i] as f64 * 2e-6;
+                let remaining = total_ticks - actual_elapsed[i];
+                let met_bwd = met2 - remaining as f64 * 2e-6;
                 result[c.pkt_idx][c.local_idx] = (met_fwd + met_bwd) / 2.0;
                 n_resolved += 1;
-            } else if c.elapsed_fwd > actual_advance {
-                n_ghost_deadzone += 1;
-            } else {
-                n_ghost_order += 1;
             }
         }
     }
