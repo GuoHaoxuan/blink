@@ -185,6 +185,18 @@ for each event (in file order):
 
 **为什么能正确消歧 wrap**：真实事件在时间上密集排列（μs 级间距），错误的 wrap 分配将事件位移 ~1.05s，破坏与邻近事件的单调性。LIS 自然选出正确 wrap 的事件（它们形成最长递增链），错误 wrap 被排除。
 
+##### UTC tail 约束
+
+每个 CCSDS 包的 4 字节 UTC 尾记录 MCU 打包时的 GPS 时间。由于事件先进 FIFO 再被 MCU 读出打包，事件产生时间 ≤ 包的 UTC tail。转化为 elapsed 上界：
+
+```
+max_elapsed = (utc_tail + 1 - sec1.met) / 2μs
+```
+
+（+1 因为 UTC tail 为整秒截断）。此约束在分组 LIS 前剪枝：早期包的候选 wrap 数从 k 大幅缩减（如 Δstime=19 的间隙中，UTC=T+246 的包从 18 wrap 缩减到 1 wrap）。后期包由于 UTC 接近 SEC2，约束较松。
+
+实测中 LIS 已在 UTC 约束范围内选择，输出不变。约束作为安全护栏防止极端情况下的 wrap 误选。
+
 ##### 实测验证
 
 旧算法（贪心+LIS）在 GRB 221009A T+220~270 产生三个 Box 完全不相关的光变曲线。分组 LIS 后三个 Box 的光变曲线形状相关，整体包络跟踪 1K。GRB 260226A Box A 残差保持 3 events（与 Δstime=1 直接 LIS 一致）。

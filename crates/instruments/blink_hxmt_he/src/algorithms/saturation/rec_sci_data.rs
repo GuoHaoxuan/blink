@@ -411,16 +411,28 @@ pub fn reconstruct_with_wrap_tracking_labeled(
             pkt_idx: usize,
             local_idx: usize,
             elapsed_fwd: i64,  // mod PTIME_MOD
+            utc_max_elapsed: i64,  // UTC tail 约束：elapsed 上界
         }
 
         let mut candidates: Vec<Candidate> = Vec::new();
+        let mut last_pkt_idx: usize = usize::MAX;
+        let mut cached_utc_max: i64 = total_ticks;
         for pkt_idx in pkt_a..=pkt_b {
+            // 每个包计算一次 UTC tail 约束
+            if pkt_idx != last_pkt_idx {
+                let utc_tail = get_utc_tail(&sci_data.ccsds[pkt_idx]);
+                // elapsed ≤ (utc_tail + 1 - sec1.met) / 2μs
+                // +1 因为 UTC tail 是整秒截断
+                let utc_ticks = ((utc_tail + 1.0 - sec1.met) / 2e-6) as i64;
+                cached_utc_max = utc_ticks.clamp(0, total_ticks);
+                last_pkt_idx = pkt_idx;
+            }
             let start = if pkt_idx == pkt_a { evt_a + 1 } else { 0 };
             let end = if pkt_idx == pkt_b { evt_b } else { parsed[pkt_idx].len() };
             for local_idx in start..end {
                 let pt = parsed[pkt_idx][local_idx].ptime as i64;
                 let elapsed_fwd = (pt - pt1).rem_euclid(PTIME_MOD as i64);
-                candidates.push(Candidate { pkt_idx, local_idx, elapsed_fwd });
+                candidates.push(Candidate { pkt_idx, local_idx, elapsed_fwd, utc_max_elapsed: cached_utc_max });
             }
         }
 
@@ -502,7 +514,7 @@ pub fn reconstruct_with_wrap_tracking_labeled(
             for (event_idx, c) in candidates.iter().enumerate() {
                 let mut cands: Vec<i64> = (0..ds)
                     .map(|w| c.elapsed_fwd + w * pmod)
-                    .filter(|&e| e >= 0 && e <= total_ticks)
+                    .filter(|&e| e >= 0 && e <= total_ticks && e <= c.utc_max_elapsed)
                     .collect();
                 cands.sort_unstable_by(|a, b| b.cmp(a)); // 降序
 
@@ -542,7 +554,7 @@ pub fn reconstruct_with_wrap_tracking_labeled(
                 if !alive[i] {
                     let has_valid = (0..ds).any(|w| {
                         let e = c.elapsed_fwd + w * pmod;
-                        e >= 0 && e <= total_ticks
+                        e >= 0 && e <= total_ticks && e <= c.utc_max_elapsed
                     });
                     if has_valid {
                         n_ghost_order += 1;
