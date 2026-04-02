@@ -360,7 +360,6 @@ pub fn reconstruct_with_wrap_tracking_labeled(
     let mut n_resolved = 0u64;
     let mut n_ghost_deadzone = 0u64;
     let mut n_ghost_order = 0u64;
-    let mut n_ambiguous = 0u64;
     let mut n_sec_pairs = 0u64;
 
     // 有效 SEC 按打包顺序排列的索引
@@ -439,7 +438,6 @@ pub fn reconstruct_with_wrap_tracking_labeled(
 
         let pmod = PTIME_MOD as i64;
         let mut alive = vec![false; candidates.len()];
-        let mut is_ambiguous = vec![false; candidates.len()];
         let mut actual_elapsed = vec![0i64; candidates.len()];
 
         if ds == 1 {
@@ -551,73 +549,9 @@ pub fn reconstruct_with_wrap_tracking_labeled(
                 }
             }
 
-            // 歧义检测：尝试跳过 wrap 0（min_elapsed = PMOD），
-            // 如果 LIS 长度不变 → 边界事件整体可移 +1 wrap → 标记为歧义
-            {
-                let lis_len = tails.len();
-
-                // 重跑 LIS，强制 elapsed >= pmod（跳过 wrap 0）
-                let mut tails2: Vec<i64> = Vec::new();
-                for (event_idx, c) in candidates.iter().enumerate() {
-                    let mut cands: Vec<i64> = (0..ds)
-                        .map(|w| c.elapsed_fwd + w * pmod)
-                        .filter(|&e| e >= pmod && e <= total_ticks && e <= c.utc_max_elapsed)
-                        .collect();
-                    cands.sort_unstable_by(|a, b| b.cmp(a));
-                    for elapsed in cands {
-                        let pos = tails2.partition_point(|&t| t < elapsed);
-                        if pos == tails2.len() {
-                            tails2.push(elapsed);
-                        } else {
-                            tails2[pos] = elapsed;
-                        }
-                    }
-                }
-
-                if tails2.len() == lis_len {
-                    // 跳过 wrap 0 不减少 LIS → wrap 0 事件有歧义
-                    for (i, _) in candidates.iter().enumerate() {
-                        if alive[i] && actual_elapsed[i] < pmod {
-                            alive[i] = false;
-                            is_ambiguous[i] = true;
-                            n_ambiguous += 1;
-                        }
-                    }
-                }
-
-                // 同理检测尾部：强制 elapsed <= total_ticks - pmod
-                let mut tails3: Vec<i64> = Vec::new();
-                for (event_idx, c) in candidates.iter().enumerate() {
-                    let mut cands: Vec<i64> = (0..ds)
-                        .map(|w| c.elapsed_fwd + w * pmod)
-                        .filter(|&e| e >= 0 && e <= total_ticks - pmod && e <= c.utc_max_elapsed)
-                        .collect();
-                    cands.sort_unstable_by(|a, b| b.cmp(a));
-                    for elapsed in cands {
-                        let pos = tails3.partition_point(|&t| t < elapsed);
-                        if pos == tails3.len() {
-                            tails3.push(elapsed);
-                        } else {
-                            tails3[pos] = elapsed;
-                        }
-                    }
-                }
-
-                if tails3.len() == lis_len {
-                    // 跳过最后一个 wrap 不减少 LIS → 尾部事件有歧义
-                    for (i, _) in candidates.iter().enumerate() {
-                        if alive[i] && actual_elapsed[i] > total_ticks - pmod {
-                            alive[i] = false;
-                            is_ambiguous[i] = true;
-                            n_ambiguous += 1;
-                        }
-                    }
-                }
-            }
-
             // 统计未选中事件
             for (i, c) in candidates.iter().enumerate() {
-                if !alive[i] && !is_ambiguous[i] {
+                if !alive[i] {
                     let has_valid = (0..ds).any(|w| {
                         let e = c.elapsed_fwd + w * pmod;
                         e >= 0 && e <= total_ticks && e <= c.utc_max_elapsed
@@ -651,9 +585,8 @@ pub fn reconstruct_with_wrap_tracking_labeled(
             n_sec_pairs, n_resolved
         );
         eprintln!(
-            "  ghosts: {} dead-zone + {} order-violation + {} ambiguous = {} total",
-            n_ghost_deadzone, n_ghost_order, n_ambiguous,
-            n_ghost_deadzone + n_ghost_order + n_ambiguous
+            "  ghosts: {} dead-zone + {} order-violation = {} total",
+            n_ghost_deadzone, n_ghost_order, n_ghost_deadzone + n_ghost_order
         );
         eprintln!(
             "  coverage: {}/{} events have MET ({:.1}%), {} NaN",
