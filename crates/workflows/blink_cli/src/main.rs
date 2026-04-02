@@ -331,9 +331,10 @@ fn cmd_detect(
         let packets = extract_packet_infos(sci, *offset);
         let packet_events: Vec<Vec<f64>> = reconstruct_with_wrap_tracking(sci, *offset)
             .into_iter()
-            .map(|mut t| {
-                t.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                t
+            .map(|t| {
+                let mut valid: Vec<f64> = t.into_iter().filter(|x| !x.is_nan()).collect();
+                valid.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                valid
             })
             .collect();
 

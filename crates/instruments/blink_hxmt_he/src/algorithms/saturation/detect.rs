@@ -83,16 +83,17 @@ pub fn detect_fifo_reset_intervals(sci_data: &SciFile, offset: f64) -> Vec<Satur
 
     let mut summaries: Vec<PacketTimeSummary> = Vec::new();
     for (pkt_idx, times) in packet_times.iter().enumerate() {
-        if times.is_empty() {
+        let valid: Vec<f64> = times.iter().copied().filter(|t| !t.is_nan()).collect();
+        if valid.is_empty() {
             continue;
         }
-        let min_met = times.iter().cloned().reduce(f64::min).unwrap();
-        let max_met = times.iter().cloned().reduce(f64::max).unwrap();
+        let min_met = valid.iter().cloned().reduce(f64::min).unwrap();
+        let max_met = valid.iter().cloned().reduce(f64::max).unwrap();
         summaries.push(PacketTimeSummary {
             pkt_idx,
             min_met,
             max_met,
-            n_events: times.len(),
+            n_events: valid.len(),
         });
     }
 
@@ -189,16 +190,17 @@ pub fn extract_packet_infos(sci_data: &SciFile, offset: f64) -> Vec<PacketInfo> 
         .iter()
         .enumerate()
         .filter_map(|(pkt_idx, times)| {
-            if times.is_empty() {
+            let valid: Vec<f64> = times.iter().copied().filter(|t| !t.is_nan()).collect();
+            if valid.is_empty() {
                 return None;
             }
-            let min_met = times.iter().cloned().reduce(f64::min).unwrap();
-            let max_met = times.iter().cloned().reduce(f64::max).unwrap();
+            let min_met = valid.iter().cloned().reduce(f64::min).unwrap();
+            let max_met = valid.iter().cloned().reduce(f64::max).unwrap();
             Some(PacketInfo {
                 pkt_idx,
                 min_met,
                 max_met,
-                n_events: times.len(),
+                n_events: valid.len(),
             })
         })
         .collect();
