@@ -489,76 +489,64 @@ pub fn reconstruct_with_wrap_tracking_labeled(
                 alive[valid_idx[0]] = true;
             }
         } else {
-            // ─── Δstime>1: 贪心+LIS（原逻辑） ───
-            let mut prev: i64 = -1;
+            // ─── Δstime>1: 分组 LIS ───
+            // 每个事件有 ds 个候选 elapsed = elapsed_fwd + w × PTIME_MOD, w ∈ [0, ds)
+            // 全局求解：每个事件最多选一个候选，使选出的 elapsed 严格递增
+            // 同一事件的候选按降序处理，避免同组候选互相"抬轿"
 
-            for (i, c) in candidates.iter().enumerate() {
-                let k_min = if prev + 1 > c.elapsed_fwd {
-                    (prev + 1 - c.elapsed_fwd + pmod - 1) / pmod
-                } else {
-                    0
-                };
-                let best = c.elapsed_fwd + k_min * pmod;
+            let mut entries: Vec<(usize, i64)> = Vec::new(); // (event_idx, elapsed)
+            let mut tails: Vec<i64> = Vec::new();
+            let mut tail_entry: Vec<usize> = Vec::new();
+            let mut lis_parent: Vec<Option<usize>> = Vec::new();
 
-                if best <= total_ticks {
-                    alive[i] = true;
-                    actual_elapsed[i] = best;
-                    prev = best;
-                }
-            }
-
-            // LIS 验证
-            {
-                let alive_indices: Vec<usize> = (0..candidates.len())
-                    .filter(|&i| alive[i])
+            for (event_idx, c) in candidates.iter().enumerate() {
+                let mut cands: Vec<i64> = (0..ds)
+                    .map(|w| c.elapsed_fwd + w * pmod)
+                    .filter(|&e| e >= 0 && e <= total_ticks)
                     .collect();
+                cands.sort_unstable_by(|a, b| b.cmp(a)); // 降序
 
-                if alive_indices.len() > 1 {
-                    let vals: Vec<i64> = alive_indices.iter()
-                        .map(|&i| actual_elapsed[i])
-                        .collect();
+                for elapsed in cands {
+                    let eidx = entries.len();
+                    entries.push((event_idx, elapsed));
 
-                    let n = vals.len();
-                    let mut tails: Vec<i64> = Vec::new();
-                    let mut tail_pos: Vec<usize> = Vec::new();
-                    let mut parent: Vec<Option<usize>> = vec![None; n];
+                    let pos = tails.partition_point(|&t| t < elapsed);
+                    lis_parent.push(if pos > 0 { Some(tail_entry[pos - 1]) } else { None });
 
-                    for i in 0..n {
-                        let pos = tails.partition_point(|&t| t < vals[i]);
-                        if pos == tails.len() {
-                            tails.push(vals[i]);
-                            tail_pos.push(i);
-                        } else {
-                            tails[pos] = vals[i];
-                            tail_pos[pos] = i;
-                        }
-                        parent[i] = if pos > 0 { Some(tail_pos[pos - 1]) } else { None };
-                    }
-
-                    let mut in_lis = vec![false; n];
-                    let mut idx = *tail_pos.last().unwrap();
-                    loop {
-                        in_lis[idx] = true;
-                        match parent[idx] {
-                            Some(p) => idx = p,
-                            None => break,
-                        }
-                    }
-
-                    for (k, &ai) in alive_indices.iter().enumerate() {
-                        if !in_lis[k] {
-                            alive[ai] = false;
-                            n_ghost_order += 1;
-                        }
+                    if pos == tails.len() {
+                        tails.push(elapsed);
+                        tail_entry.push(eidx);
+                    } else {
+                        tails[pos] = elapsed;
+                        tail_entry[pos] = eidx;
                     }
                 }
             }
 
-            // 统计 dead zone
+            // 回溯标记 LIS 成员
+            if !tails.is_empty() {
+                let mut idx = *tail_entry.last().unwrap();
+                loop {
+                    let (ev, el) = entries[idx];
+                    alive[ev] = true;
+                    actual_elapsed[ev] = el;
+                    match lis_parent[idx] {
+                        Some(p) => idx = p,
+                        None => break,
+                    }
+                }
+            }
+
+            // 统计未选中事件
             for (i, c) in candidates.iter().enumerate() {
                 if !alive[i] {
-                    let k_max = (total_ticks - c.elapsed_fwd) / pmod;
-                    if k_max < 0 || c.elapsed_fwd < 0 {
+                    let has_valid = (0..ds).any(|w| {
+                        let e = c.elapsed_fwd + w * pmod;
+                        e >= 0 && e <= total_ticks
+                    });
+                    if has_valid {
+                        n_ghost_order += 1;
+                    } else {
                         n_ghost_deadzone += 1;
                     }
                 }
