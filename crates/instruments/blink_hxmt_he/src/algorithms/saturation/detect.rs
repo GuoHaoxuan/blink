@@ -610,36 +610,26 @@ pub fn detect_silent_drops(data: &BoxReconstructionData) -> Vec<SilentDrop> {
             continue;
         }
 
-        // 跳过紧邻不可信区间的包（SAA 关机 / FIFO reset 边界）
+        // 跳过宽包（SAA 关机/FIFO 拥塞导致的跨度异常大的包）
         // 这些包的事件率在急剧变化，用邻居率估算 λ 会产生大量误报
-        let pkt_start = *times.first().unwrap();
-        let pkt_end = *times.last().unwrap();
-        let near_unreliable = data.unreliable.iter().any(|u| {
-            // 包的时间范围与不可信区间重叠或紧邻（间隔 < 0.1s）
-            pkt_start < u.stop + 0.1 && pkt_end > u.start - 0.1
-        });
-        if near_unreliable {
+        let is_wide_packet = span > median_span * SPAN_RATIO_THRESHOLD;
+        if is_wide_packet {
             continue;
         }
 
-        // 判断是否需要检测
+        // 只检测高事件率的包（FIFO 有溢出风险）
         let rate = times.len() as f64 / span;
-        let is_wide_packet = span > median_span * SPAN_RATIO_THRESHOLD;
         let is_high_rate = rate > neighbor_rate * 0.5;
 
-        if !is_wide_packet && !is_high_rate {
+        if !is_high_rate {
             continue;
         }
 
         // 计算间隔
         let intervals: Vec<f64> = times.windows(2).map(|w| w[1] - w[0]).collect();
 
-        // 估算 λ：
-        // - 拥塞宽包：用邻居事件率（包自身率被丢数拉低了）
-        // - 普通高率包：用包内过滤间隔
-        let lambda = if is_wide_packet {
-            neighbor_rate
-        } else {
+        // 估算 λ：用包内小间隔（< 1ms）的平均值
+        let lambda = {
             let filtered: Vec<f64> = intervals.iter().copied().filter(|&dt| dt < 1e-3).collect();
             if filtered.is_empty() {
                 continue;
