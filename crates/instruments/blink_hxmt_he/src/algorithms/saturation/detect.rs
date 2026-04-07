@@ -610,6 +610,18 @@ pub fn detect_silent_drops(data: &BoxReconstructionData) -> Vec<SilentDrop> {
             continue;
         }
 
+        // 跳过紧邻不可信区间的包（SAA 关机 / FIFO reset 边界）
+        // 这些包的事件率在急剧变化，用邻居率估算 λ 会产生大量误报
+        let pkt_start = *times.first().unwrap();
+        let pkt_end = *times.last().unwrap();
+        let near_unreliable = data.unreliable.iter().any(|u| {
+            // 包的时间范围与不可信区间重叠或紧邻（间隔 < 0.1s）
+            pkt_start < u.stop + 0.1 && pkt_end > u.start - 0.1
+        });
+        if near_unreliable {
+            continue;
+        }
+
         // 判断是否需要检测
         let rate = times.len() as f64 / span;
         let is_wide_packet = span > median_span * SPAN_RATIO_THRESHOLD;
