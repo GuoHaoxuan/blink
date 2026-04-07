@@ -604,24 +604,10 @@ pub fn detect_silent_drops(data: &BoxReconstructionData) -> Vec<SilentDrop> {
         let median_span = sorted_spans[sorted_spans.len() / 2];
         let neighbor_rate = EVENTS_PER_PKT / median_span;
 
-        // 深度饱和区：所有邻居都是拥塞包，无法可靠估算 R_true/lambda
-        // 跳过静默丢数检测（由 FIFO reset 重建或粗粒度修正处理）
-        if neighbor_rate < MCU_READ_RATE_FLOOR {
-            continue;
-        }
-
         // 跳过宽包（SAA 关机/FIFO 拥塞导致的跨度异常大的包）
-        // 这些包的事件率在急剧变化，用邻居率估算 λ 会产生大量误报
+        // 这些包的事件率在急剧变化，用包内 λ 估算不可靠
         let is_wide_packet = span > median_span * SPAN_RATIO_THRESHOLD;
         if is_wide_packet {
-            continue;
-        }
-
-        // 只检测高事件率的包（FIFO 有溢出风险）
-        let rate = times.len() as f64 / span;
-        let is_high_rate = rate > neighbor_rate * 0.5;
-
-        if !is_high_rate {
             continue;
         }
 
