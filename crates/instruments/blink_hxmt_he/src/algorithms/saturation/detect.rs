@@ -543,6 +543,9 @@ pub struct ReconstructedSilentDrop {
 }
 
 const LOG10_P_THRESHOLD: f64 = -10.0;
+/// 静默丢数的最大间隔（秒）。理论上限由 MCU 打包间隙决定（~1-3ms），
+/// 超过此阈值的间隔不是静默丢数（可能是 SAA 关机或 FIFO 拥塞导致的 SEC 间隔）。
+const MAX_SILENT_DROP_GAP: f64 = 0.010; // 10ms
 const SPAN_RATIO_THRESHOLD: f64 = 3.0; // 包跨时 > 邻居中位数 × 3 → 拥塞包
 
 /// 检测包内静默丢数（泊松方法 + 拥塞包检测）。
@@ -634,6 +637,11 @@ pub fn detect_silent_drops(data: &BoxReconstructionData) -> Vec<SilentDrop> {
 
         // 检测异常间隔
         for (j, &dt) in intervals.iter().enumerate() {
+            // 超过 MAX_SILENT_DROP_GAP 的间隔不是静默丢数
+            // （可能是 SAA 关机期间的 SEC 间隔或 FIFO 拥塞）
+            if dt > MAX_SILENT_DROP_GAP {
+                continue;
+            }
             let log_p = -lambda * dt / std::f64::consts::LN_10;
             if log_p < LOG10_P_THRESHOLD {
                 let n_lost = (lambda * dt - 1.0).round().max(1.0) as usize;
