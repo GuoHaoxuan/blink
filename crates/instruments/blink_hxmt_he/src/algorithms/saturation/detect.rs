@@ -321,8 +321,6 @@ pub struct ReconstructedGap {
     pub gap_idx: usize,
     /// 补全的事件 MET 时间
     pub filled_events: Vec<f64>,
-    /// 估算的 R_true
-    pub r_true: f64,
     /// N_lost
     pub n_lost: usize,
     /// 是否使用了交叉参考
@@ -335,10 +333,11 @@ const SHAPE_BIN_WIDTH: f64 = 0.001; // 1ms
 /// 对单个 box 的 FIFO reset gap 进行光变曲线重建。
 ///
 /// 算法：
-/// 1. 对每个 gap，用 post-reset 包 span 估算 R_true
-/// 2. N_lost = R_true × gap_duration
-/// 3. 用参考 box 的事件分布构建形状函数
-/// 4. 归一化到 N_lost 后分配事件
+/// 1. 用参考 box 的事件分布构建校准后的形状函数（1ms bin）
+/// 2. N_lost = shape 总和（校准后的参考计数直接给出丢失事件数）
+/// 3. 按形状分配事件到各 bin
+///
+/// 当参考 box 不可用（所有 box 同时饱和）时，退化为 post-reset 包率估算 + 均匀分配。
 pub fn reconstruct_gaps(
     target: &BoxReconstructionData,
     references: &[&BoxReconstructionData],
@@ -353,20 +352,12 @@ pub fn reconstruct_gaps(
             continue;
         }
 
-        // 步骤一：估算 R_true（从 post-reset 包的 span）
-        let r_true = estimate_r_true_for_gap(gap, &target.packets, &target.packet_events);
-        let n_lost = (r_true * gap_dur).round() as usize;
-        if n_lost == 0 {
-            continue;
-        }
-
-        // 步骤二：构建形状 bin
+        // 步骤一：构建形状 bin
         let n_sbins = ((gap_dur / SHAPE_BIN_WIDTH).ceil() as usize).max(1);
         let actual_sbin = gap_dur / n_sbins as f64;
         let mut shape = vec![0.0f64; n_sbins];
 
         // 汇总所有参考 box 的事件，统一构建形状函数
-        // （避免参考 box 之间的先后顺序影响结果）
         let mut has_ref = false;
         for (si, s) in shape.iter_mut().enumerate() {
             let bin_lo = gap_start + si as f64 * actual_sbin;
@@ -377,19 +368,19 @@ pub fn reconstruct_gaps(
             let mut n_valid_refs = 0;
 
             for ref_data in references {
-                // 跳过参考 box 在此处饱和的情况
                 if is_in_unreliable(bin_mid, &ref_data.unreliable) {
                     continue;
                 }
 
-                // 参考 box 在此 bin 内的事件数
                 let lo_idx = ref_data.events.partition_point(|&t| t < bin_lo);
                 let hi_idx = ref_data.events.partition_point(|&t| t < bin_hi);
                 let count = (hi_idx - lo_idx) as f64;
 
                 if count > 0.0 {
                     let k = calibrate_ratio_sorted(
-                        &target.events, &ref_data.events, gap_start, gap_stop, 0.5,
+                        &target.events, &ref_data.events,
+                        &target.unreliable, &ref_data.unreliable,
+                        gap_start, gap_stop, 0.5,
                     );
                     total_ref_count += count * k;
                     n_valid_refs += 1;
@@ -397,22 +388,35 @@ pub fn reconstruct_gaps(
             }
 
             if n_valid_refs > 0 {
-                // 多个参考 box 取平均
                 *s = total_ref_count / n_valid_refs as f64;
                 has_ref = true;
             }
-            // 无参考时留空，给插值处理
         }
 
-        // 参考覆盖率检查：如果 > 70% 的 bin 没有参考，直接均匀分配
-        let n_filled = shape.iter().filter(|&&v| v > 0.0).count();
-        if n_filled == 0 || n_filled * 100 / n_sbins < 30 {
-            shape.iter_mut().for_each(|v| *v = 1.0);
+        // 步骤二：确定 N_lost
+        let n_lost;
+        if has_ref {
+            let n_filled = shape.iter().filter(|&&v| v > 0.0).count();
+            if n_filled * 100 / n_sbins >= 30 {
+                // 参考覆盖充分：用 shape 总和作为 N_lost
+                interpolate_empty_bins(&mut shape);
+                n_lost = shape.iter().sum::<f64>().round() as usize;
+            } else {
+                // 参考覆盖不足：退化为 pre/post 率线性插值
+                fill_shape_fallback(&mut shape, gap, &target.packets);
+                n_lost = (shape.iter().sum::<f64>() * actual_sbin).round() as usize;
+            }
         } else {
-            interpolate_empty_bins(&mut shape);
+            // 无参考：pre/post 率线性插值
+            fill_shape_fallback(&mut shape, gap, &target.packets);
+            n_lost = (shape.iter().sum::<f64>() * actual_sbin).round() as usize;
         }
 
-        // 步骤三：归一化到 N_lost 并分配事件
+        if n_lost == 0 {
+            continue;
+        }
+
+        // 步骤三：按形状分配事件
         let total: f64 = shape.iter().sum();
         if total <= 0.0 {
             continue;
@@ -434,7 +438,6 @@ pub fn reconstruct_gaps(
         results.push(ReconstructedGap {
             gap_idx,
             filled_events,
-            r_true,
             n_lost,
             has_cross_ref: has_ref,
         });
@@ -443,220 +446,160 @@ pub fn reconstruct_gaps(
     results
 }
 
-fn estimate_r_true_for_gap(
-    gap: &SaturationInterval,
-    packets: &[PacketInfo],
-    packet_events: &[Vec<f64>],
-) -> f64 {
-    // 用 post-reset 包估算
-    let post_info = packets.iter().find(|p| p.pkt_idx == gap.next_pkt_idx);
-    let post_rate = post_info.and_then(|info| {
+/// 从包的 span 估算事件率。
+fn packet_rate(packets: &[PacketInfo], pkt_idx: usize) -> Option<f64> {
+    packets.iter().find(|p| p.pkt_idx == pkt_idx).and_then(|info| {
         let span = info.span();
         if span > 1e-9 { Some(EVENTS_PER_PKT / span) } else { None }
-    });
-
-    // 如果 post-reset 包率 >= MCU 读速率（非深度饱和），直接用
-    if let Some(rate) = post_rate {
-        if rate >= MCU_READ_RATE_FLOOR {
-            return rate;
-        }
-    }
-
-    // 深度饱和区：用邻近包的 burst rate 估算 R_true
-    // 检查 gap 附近的包，找 burst rate
-    for pkt_idx in [gap.next_pkt_idx, gap.prev_pkt_idx] {
-        let times = &packet_events[pkt_idx];
-        if times.len() < 10 {
-            continue;
-        }
-        let intervals: Vec<f64> = times.windows(2).map(|w| w[1] - w[0]).collect();
-        let burst_duration: f64 = intervals.iter().filter(|&&dt| dt < 1e-3).sum();
-        let burst_n: usize = intervals.iter().filter(|&&dt| dt < 1e-3).count() + 1;
-        if burst_duration > 1e-9 && burst_n > 5 {
-            return burst_n as f64 / burst_duration;
-        }
-    }
-
-    // fallback
-    post_rate.unwrap_or(15797.0)
+    })
 }
 
+/// 无参考时的 fallback：用 pre/post-reset 包的率线性插值构建 shape。
+fn fill_shape_fallback(
+    shape: &mut [f64],
+    gap: &SaturationInterval,
+    packets: &[PacketInfo],
+) {
+    let r_pre = packet_rate(packets, gap.prev_pkt_idx);
+    let r_post = packet_rate(packets, gap.next_pkt_idx);
+    let n = shape.len();
+
+    match (r_pre, r_post) {
+        (Some(rp), Some(rn)) => {
+            for (i, s) in shape.iter_mut().enumerate() {
+                let t = (i as f64 + 0.5) / n as f64;
+                *s = rp * (1.0 - t) + rn * t;
+            }
+        }
+        (Some(r), None) | (None, Some(r)) => {
+            shape.iter_mut().for_each(|v| *v = r);
+        }
+        (None, None) => {
+            shape.iter_mut().for_each(|v| *v = MCU_READ_RATE_FLOOR);
+        }
+    }
+}
+
+/// 计算 target/ref 的事件率比值，用于将参考 box 的计数换算为 target box 的计数。
+///
+/// 在 gap 前后各 margin 秒的窗口内统计双方的事件率（events/有效秒），
+/// 排除各自的 unreliable 区间。
 fn calibrate_ratio_sorted(
     target_events: &[f64],
     ref_events: &[f64],
+    target_unreliable: &[UnreliableInterval],
+    ref_unreliable: &[UnreliableInterval],
     gap_start: f64,
     gap_stop: f64,
     margin: f64,
 ) -> f64 {
-    let count_in_range = |events: &[f64], lo: f64, hi: f64| -> usize {
-        let a = events.partition_point(|&t| t < lo);
-        let b = events.partition_point(|&t| t < hi);
-        b - a
-    };
-    let n_target = count_in_range(target_events, gap_start - margin, gap_start)
-        + count_in_range(target_events, gap_stop, gap_stop + margin);
-    let n_ref = count_in_range(ref_events, gap_start - margin, gap_start)
-        + count_in_range(ref_events, gap_stop, gap_stop + margin);
-    if n_ref > 10 {
-        n_target as f64 / n_ref as f64
+    let windows = [
+        (gap_start - margin, gap_start),
+        (gap_stop, gap_stop + margin),
+    ];
+
+    let mut target_count = 0usize;
+    let mut ref_count = 0usize;
+    let mut target_effective = 0.0f64;
+    let mut ref_effective = 0.0f64;
+
+    for &(win_lo, win_hi) in &windows {
+        // target 侧：排除 target 的 unreliable 区间
+        let t_eff = effective_duration(win_lo, win_hi, target_unreliable);
+        if t_eff > 1e-6 {
+            let a = target_events.partition_point(|&t| t < win_lo);
+            let b = target_events.partition_point(|&t| t < win_hi);
+            // 只计落在可信时段内的事件
+            let cnt = target_events[a..b]
+                .iter()
+                .filter(|&&t| !is_in_unreliable(t, target_unreliable))
+                .count();
+            target_count += cnt;
+            target_effective += t_eff;
+        }
+
+        // ref 侧：排除 ref 的 unreliable 区间
+        let r_eff = effective_duration(win_lo, win_hi, ref_unreliable);
+        if r_eff > 1e-6 {
+            let a = ref_events.partition_point(|&t| t < win_lo);
+            let b = ref_events.partition_point(|&t| t < win_hi);
+            let cnt = ref_events[a..b]
+                .iter()
+                .filter(|&&t| !is_in_unreliable(t, ref_unreliable))
+                .count();
+            ref_count += cnt;
+            ref_effective += r_eff;
+        }
+    }
+
+    // 用事件率比值（而非事件数比值），补偿双方有效时长不同
+    if ref_effective > 1e-6 && ref_count > 10 && target_effective > 1e-6 {
+        let target_rate = target_count as f64 / target_effective;
+        let ref_rate = ref_count as f64 / ref_effective;
+        target_rate / ref_rate
     } else {
         1.0
     }
+}
+
+/// 计算窗口 [lo, hi] 内排除 unreliable 区间后的有效时长。
+fn effective_duration(lo: f64, hi: f64, unreliable: &[UnreliableInterval]) -> f64 {
+    let mut excluded = 0.0;
+    for iv in unreliable {
+        let overlap_lo = iv.start.max(lo);
+        let overlap_hi = iv.stop.min(hi);
+        if overlap_hi > overlap_lo {
+            excluded += overlap_hi - overlap_lo;
+        }
+    }
+    (hi - lo - excluded).max(0.0)
 }
 
 
 const LOG10_P_THRESHOLD: f64 = -10.0;
 const SPAN_RATIO_THRESHOLD: f64 = 3.0; // 包跨时 > 邻居中位数 × 3 → 拥塞包
 
-/// 深度饱和包级重建结果
-#[derive(Debug, Clone)]
-pub struct ReconstructedDeepSat {
-    pub pkt_idx: usize,
-    /// 补全的事件 MET 时间
-    pub filled_events: Vec<f64>,
-    /// 丢失事件数
-    pub n_lost: usize,
-}
 
-/// 深度饱和包级修正。
-///
-/// 对深度饱和区的每个拥塞包，用包内 burst 部分的计数率填充空白区域。
-/// Burst = 包内事件密集的部分（MCU 读取期间），Gap = 无事件的部分。
-/// 用 burst 的计数率作为整个包的真实率，在 gap 中补全缺失的事件。
-pub fn reconstruct_deep_saturation(
-    target: &BoxReconstructionData,
-) -> Vec<ReconstructedDeepSat> {
-    let mut results = Vec::new();
-
-    let spans: Vec<(usize, f64)> = target
-        .packet_events
-        .iter()
-        .enumerate()
-        .filter_map(|(i, times)| {
-            if times.len() < 2 {
-                return None;
-            }
-            let span = times.last().unwrap() - times.first().unwrap();
-            if span > 1e-9 { Some((i, span)) } else { None }
-        })
-        .collect();
-
-    for pkt in &target.packets {
-        let span = pkt.span();
-        if span < 1e-6 {
-            continue;
-        }
-
-        // 判断是否在深度饱和区
-        let si = match spans.binary_search_by(|&(idx, _)| idx.cmp(&pkt.pkt_idx)) {
-            Ok(i) => i,
-            Err(_) => continue,
-        };
-
-        let mut neighbor_spans: Vec<f64> = Vec::new();
-        for offset in 1..=5_usize {
-            if si >= offset { neighbor_spans.push(spans[si - offset].1); }
-            if si + offset < spans.len() { neighbor_spans.push(spans[si + offset].1); }
-        }
-        if neighbor_spans.is_empty() {
-            continue;
-        }
-        neighbor_spans.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let median_span = neighbor_spans[neighbor_spans.len() / 2];
-        let neighbor_rate = EVENTS_PER_PKT / median_span;
-
-        if neighbor_rate >= MCU_READ_RATE_FLOOR {
-            continue; // 不在深度饱和区
-        }
-
-        // 计算 burst 的计数率
-        let times = &target.packet_events[pkt.pkt_idx];
-        if times.len() < 10 {
-            continue;
-        }
-
-        // Burst = 事件密集部分。找包内过滤间隔（<1ms）的总持续时间作为 burst duration
-        let intervals: Vec<f64> = times.windows(2).map(|w| w[1] - w[0]).collect();
-        let burst_duration: f64 = intervals.iter().filter(|&&dt| dt < 1e-3).sum();
-        if burst_duration < 1e-9 {
-            continue;
-        }
-        let burst_n: usize = intervals.iter().filter(|&&dt| dt < 1e-3).count() + 1;
-        let burst_rate = burst_n as f64 / burst_duration;
-
-        // 额外判据：burst rate 必须显著高于表观率，证明确实是 MCU 瓶颈
-        // 而不是源率本来就低。真正的深度饱和包：burst rate >> 表观率（因为 MCU
-        // 在 burst 期间以接近硬件极限速度读取）。非饱和包：burst rate ≈ 表观率。
-        let apparent_rate = times.len() as f64 / span;
-        if burst_rate < apparent_rate * 2.0 || burst_rate < MCU_READ_RATE_FLOOR as f64 {
-            continue; // burst rate 不够高，不是真正的深度饱和
-        }
-
-        // 额外判据：包内必须有显著的 gap（> 总时长的 30%），表明 MCU 确实有空闲期
-        let gap_duration = span - burst_duration;
-        if gap_duration < span * 0.3 {
-            continue; // gap 占比太小，不像深度饱和的 burst + idle 模式
-        }
-
-        if gap_duration < 1e-6 {
-            continue;
-        }
-        let n_fill = (burst_rate * gap_duration).round() as usize;
-        if n_fill == 0 {
-            continue;
-        }
-
-        // 找 gap 区域（包内 > 1ms 的大间隔）并在其中均匀分配事件
-        let mut filled_events = Vec::with_capacity(n_fill);
-        let total_gap: f64 = intervals.iter().filter(|&&dt| dt >= 1e-3).sum();
-        if total_gap < 1e-9 {
-            continue;
-        }
-
-        for (j, &dt) in intervals.iter().enumerate() {
-            if dt < 1e-3 {
-                continue; // burst 间隔，跳过
-            }
-            // 这个间隔分配的事件数按比例
-            let n_in_gap = (n_fill as f64 * dt / total_gap).round() as usize;
-            if n_in_gap == 0 {
-                continue;
-            }
-            let gap_start = times[j];
-            let gap_stop = times[j + 1];
-            let step = (gap_stop - gap_start) / (n_in_gap + 1) as f64;
-            for k in 0..n_in_gap {
-                filled_events.push(gap_start + (k as f64 + 1.0) * step);
-            }
-        }
-
-        if !filled_events.is_empty() {
-            results.push(ReconstructedDeepSat {
-                pkt_idx: pkt.pkt_idx,
-                filled_events,
-                n_lost: n_fill,
-            });
-        }
-    }
-
-    results
-}
-
+/// 空 bin 插值：从最近的有值 bin 做线性插值，边缘用最近有值 bin 常数外推。
 fn interpolate_empty_bins(shape: &mut [f64]) {
     let n = shape.len();
     if n == 0 {
         return;
     }
-    let filled_vals: Vec<f64> = shape.iter().copied().filter(|&v| v > 0.0).collect();
-    if filled_vals.is_empty() || filled_vals.len() == n {
-        return;
+
+    // 预计算每个位置左边和右边最近的有值 bin 索引
+    let mut left_filled: Vec<Option<usize>> = vec![None; n];
+    let mut right_filled: Vec<Option<usize>> = vec![None; n];
+
+    let mut last = None;
+    for i in 0..n {
+        if shape[i] > 0.0 {
+            last = Some(i);
+        }
+        left_filled[i] = last;
     }
-    // 空 bin 用有值 bin 的均值填充（均匀分布假设）
-    // 避免线性插值产生的斜坡伪影
-    let mean_val = filled_vals.iter().sum::<f64>() / filled_vals.len() as f64;
-    for s in shape.iter_mut() {
-        if *s <= 0.0 {
-            *s = mean_val;
+
+    last = None;
+    for i in (0..n).rev() {
+        if shape[i] > 0.0 {
+            last = Some(i);
+        }
+        right_filled[i] = last;
+    }
+
+    for i in 0..n {
+        if shape[i] > 0.0 {
+            continue;
+        }
+        match (left_filled[i], right_filled[i]) {
+            (Some(l), Some(r)) => {
+                // 两侧都有值：线性插值
+                let t = (i - l) as f64 / (r - l) as f64;
+                shape[i] = shape[l] * (1.0 - t) + shape[r] * t;
+            }
+            (Some(l), None) => shape[i] = shape[l],   // 右侧无值：常数外推
+            (None, Some(r)) => shape[i] = shape[r],   // 左侧无值：常数外推
+            (None, None) => {}                          // 全空，不应到达此处
         }
     }
 }

@@ -1,7 +1,7 @@
 use blink_hxmt_he::algorithms::saturation::{
     check_byte_offsets, detect_fifo_reset_intervals, diagnose_packets,
     dump_event_details, dump_ptime_utc, extract_packet_infos, extract_second_event_times, solve_events,
-    reconstruct_deep_saturation, reconstruct_gaps, reconstruct_met_times,
+    reconstruct_gaps, reconstruct_met_times,
     reconstruct_with_wrap_tracking,
     reconstruct_with_wrap_tracking_labeled,
     scan_saturation_intervals_raw, BoxReconstructionData, detect_unreliable_intervals,
@@ -372,6 +372,7 @@ fn cmd_reconstruct(
         let packet_events: Vec<Vec<f64>> = reconstruct_with_wrap_tracking(sci, *offset)
             .into_iter()
             .map(|mut times| {
+                times.retain(|t| !t.is_nan());
                 times.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 times
             })
@@ -402,8 +403,7 @@ fn cmd_reconstruct(
         .map(|(name, data)| (name.clone(), data.events.clone()))
         .collect();
 
-    eprintln!("Reconstructing (deep saturation + FIFO reset gaps)...");
-    let mut all_ds_filled: Vec<(String, Vec<f64>)> = Vec::new();
+    eprintln!("Reconstructing (FIFO reset gaps)...");
     let mut all_filled: Vec<(String, Vec<f64>)> = Vec::new();
 
     for i in 0..box_data.len() {
@@ -423,26 +423,14 @@ fn cmd_reconstruct(
             .collect();
         gap_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-        let ds_results = reconstruct_deep_saturation(&box_data[i].1);
-        let n_ds_count = ds_results.len();
-        let n_ds_filled: usize = ds_results.iter().map(|r| r.n_lost).sum();
-        let mut ds_events: Vec<f64> = ds_results
-            .into_iter()
-            .flat_map(|r| r.filled_events)
-            .collect();
-        ds_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
         eprintln!(
-            "  Box {}: deep_sat={} ({} evt) | gaps={} ({} evt, {} ref)",
+            "  Box {}: gaps={} ({} evt, {} ref)",
             box_data[i].0,
-            n_ds_count,
-            n_ds_filled,
             box_data[i].1.gaps.len(),
             n_gap_filled,
             n_gap_ref,
         );
 
-        all_ds_filled.push((box_data[i].0.clone(), ds_events));
         all_filled.push((box_data[i].0.clone(), gap_events));
     }
 
@@ -459,11 +447,6 @@ fn cmd_reconstruct(
             .find(|(n, _)| n == box_name)
             .map(|(_, f)| f.as_slice())
             .unwrap_or(&[]);
-        let ds_events = all_ds_filled
-            .iter()
-            .find(|(n, _)| n == box_name)
-            .map(|(_, f)| f.as_slice())
-            .unwrap_or(&[]);
 
         if let Some(fb) = filter_box {
             if !box_name.eq_ignore_ascii_case(fb) {
@@ -473,7 +456,6 @@ fn cmd_reconstruct(
 
         let mut n_obs = 0u64;
         let mut n_gap = 0u64;
-        let mut n_ds = 0u64;
 
         for &t in obs_events {
             if t >= met_min && t <= met_max {
@@ -487,16 +469,10 @@ fn cmd_reconstruct(
                 n_gap += 1;
             }
         }
-        for &t in ds_events {
-            if t >= met_min && t <= met_max {
-                println!("{},FILL_DS,{:.6},0,-1,-1", box_name, t);
-                n_ds += 1;
-            }
-        }
 
         eprintln!(
-            "  Box {}: {} observed, {} gap-filled, {} deep-sat-filled",
-            box_name, n_obs, n_gap, n_ds,
+            "  Box {}: {} observed, {} gap-filled",
+            box_name, n_obs, n_gap,
         );
     }
 }

@@ -5,9 +5,9 @@ pub mod rec_sci_data;
 pub use crc_check::crc_check;
 pub use detect::{
     detect_fifo_reset_intervals, detect_unreliable_intervals,
-    extract_packet_infos, reconstruct_deep_saturation, reconstruct_gaps,
+    extract_packet_infos, reconstruct_gaps,
     BoxReconstructionData,
-    PacketInfo, ReconstructedDeepSat, ReconstructedGap, SaturationInterval, SaturationType,
+    PacketInfo, ReconstructedGap, SaturationInterval, SaturationType,
     UnreliableInterval,
 };
 pub use rec_sci_data::dump_ptime_utc;
