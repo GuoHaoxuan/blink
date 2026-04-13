@@ -230,12 +230,12 @@ pub struct BoxReconstructionData {
     pub unreliable: Vec<UnreliableInterval>,
 }
 
-/// 检测不可信时间区间：FIFO reset gap + 拥塞宽包 + 含静默丢数的包。
+/// 检测不可信时间区间：FIFO reset gap + 拥塞宽包 + 包内异常间隔。
 ///
 /// 三种来源：
 /// 1. FIFO reset gap：整包丢失的时间段
 /// 2. 拥塞宽包：包跨时 > 邻居中位跨时 × 3
-/// 3. 含静默丢数的包：包内有泊松异常间隔，整个包的事件分布不可信
+/// 3. 包内有泊松异常间隔，整个包的事件分布不可信
 pub fn detect_unreliable_intervals(
     gaps: &[SaturationInterval],
     packets: &[PacketInfo],
@@ -505,236 +505,17 @@ fn calibrate_ratio_sorted(
 }
 
 
-// ── 静默丢数检测与重建 ──────────────────────────────────────────────────────
+const LOG10_P_THRESHOLD: f64 = -10.0;
+const SPAN_RATIO_THRESHOLD: f64 = 3.0; // 包跨时 > 邻居中位数 × 3 → 拥塞包
 
-/// 包内异常间隔（静默丢数候选）
+/// 深度饱和包级重建结果
 #[derive(Debug, Clone)]
-pub struct SilentDrop {
-    /// 包索引
+pub struct ReconstructedDeepSat {
     pub pkt_idx: usize,
-    /// 间隔起始事件在包内的索引
-    pub evt_idx: usize,
-    /// 间隔起始 MET
-    pub start_met: f64,
-    /// 间隔结束 MET
-    pub stop_met: f64,
-    /// 间隔持续时间（秒）
-    pub dt: f64,
-    /// 包内正常事件率 λ (evt/s)
-    pub lambda: f64,
-    /// log₁₀(泊松概率)
-    pub log10_p: f64,
-    /// 估算丢失事件数
-    pub n_lost: usize,
-}
-
-/// 静默丢数重建结果
-#[derive(Debug, Clone)]
-pub struct ReconstructedSilentDrop {
-    /// 对应的 SilentDrop
-    pub pkt_idx: usize,
-    pub evt_idx: usize,
     /// 补全的事件 MET 时间
     pub filled_events: Vec<f64>,
     /// 丢失事件数
     pub n_lost: usize,
-    /// 是否使用了交叉参考
-    pub has_cross_ref: bool,
-}
-
-const LOG10_P_THRESHOLD: f64 = -10.0;
-/// 静默丢数的最大间隔（秒）。理论上限由 MCU 打包间隙决定（~1-3ms），
-/// 超过此阈值的间隔不是静默丢数（可能是 SAA 关机或 FIFO 拥塞导致的 SEC 间隔）。
-const MAX_SILENT_DROP_GAP: f64 = 0.010; // 10ms
-const SPAN_RATIO_THRESHOLD: f64 = 3.0; // 包跨时 > 邻居中位数 × 3 → 拥塞包
-
-/// 检测包内静默丢数（泊松方法 + 拥塞包检测）。
-///
-/// 两种检测路径：
-/// 1. **高率包**：包内事件率 > 邻居事件率的一半时，用包内过滤间隔估算 λ
-/// 2. **拥塞宽包**：包跨时 > 邻居中位跨时 × 3 时，用邻居事件率估算 λ
-///
-/// 两种路径都用泊松概率 log₁₀(p) < -10 判定异常间隔。
-pub fn detect_silent_drops(data: &BoxReconstructionData) -> Vec<SilentDrop> {
-    let mut drops = Vec::new();
-
-    // 预计算所有包的跨时
-    let spans: Vec<(usize, f64)> = data
-        .packet_events
-        .iter()
-        .enumerate()
-        .filter_map(|(i, times)| {
-            if times.len() < 2 {
-                return None;
-            }
-            let span = times.last().unwrap() - times.first().unwrap();
-            if span > 1e-9 {
-                Some((i, span))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    for (pkt_idx, times) in data.packet_events.iter().enumerate() {
-        if times.len() < 2 {
-            continue;
-        }
-        let span = times.last().unwrap() - times.first().unwrap();
-        if span < 1e-9 {
-            continue;
-        }
-
-        // 计算邻居包的中位跨时和中位事件率（前后各 5 个包）
-        let neighbor_spans: Vec<f64> = spans
-            .iter()
-            .filter(|&&(idx, _)| {
-                let diff = if idx > pkt_idx { idx - pkt_idx } else { pkt_idx - idx };
-                diff > 0 && diff <= 5
-            })
-            .map(|&(_, s)| s)
-            .collect();
-
-        if neighbor_spans.is_empty() {
-            continue;
-        }
-
-        let mut sorted_spans = neighbor_spans.clone();
-        sorted_spans.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let median_span = sorted_spans[sorted_spans.len() / 2];
-        let neighbor_rate = EVENTS_PER_PKT / median_span;
-
-        // 跳过宽包（SAA 关机/FIFO 拥塞导致的跨度异常大的包）
-        // 这些包的事件率在急剧变化，用包内 λ 估算不可靠
-        let is_wide_packet = span > median_span * SPAN_RATIO_THRESHOLD;
-        if is_wide_packet {
-            continue;
-        }
-
-        // 计算间隔
-        let intervals: Vec<f64> = times.windows(2).map(|w| w[1] - w[0]).collect();
-
-        // 估算 λ：用包内小间隔（< 1ms）的平均值
-        let lambda = {
-            let filtered: Vec<f64> = intervals.iter().copied().filter(|&dt| dt < 1e-3).collect();
-            if filtered.is_empty() {
-                continue;
-            }
-            1.0 / (filtered.iter().sum::<f64>() / filtered.len() as f64)
-        };
-
-        // 检测异常间隔
-        for (j, &dt) in intervals.iter().enumerate() {
-            // 超过 MAX_SILENT_DROP_GAP 的间隔不是静默丢数
-            // （可能是 SAA 关机期间的 SEC 间隔或 FIFO 拥塞）
-            if dt > MAX_SILENT_DROP_GAP {
-                continue;
-            }
-            let log_p = -lambda * dt / std::f64::consts::LN_10;
-            if log_p < LOG10_P_THRESHOLD {
-                let n_lost = (lambda * dt - 1.0).round().max(1.0) as usize;
-                drops.push(SilentDrop {
-                    pkt_idx,
-                    evt_idx: j,
-                    start_met: times[j],
-                    stop_met: times[j + 1],
-                    dt,
-                    lambda,
-                    log10_p: log_p,
-                    n_lost,
-                });
-            }
-        }
-    }
-
-    drops
-}
-
-/// 对检测到的静默丢数进行重建（交叉参考填充）。
-pub fn reconstruct_silent_drops(
-    target: &BoxReconstructionData,
-    drops: &[SilentDrop],
-    references: &[&BoxReconstructionData],
-) -> Vec<ReconstructedSilentDrop> {
-    let mut results = Vec::new();
-
-    for drop in drops {
-        let gap_start = drop.start_met;
-        let gap_stop = drop.stop_met;
-        let n_lost = drop.n_lost;
-        if n_lost == 0 {
-            continue;
-        }
-
-        // 尝试用参考 box 的事件分布
-        let mut ref_events_in_gap = Vec::new();
-        let mut has_ref = false;
-
-        for ref_data in references {
-            // 检查参考 box 在此间隔内是否有事件且未饱和
-            if is_in_unreliable(
-                (gap_start + gap_stop) / 2.0,
-                &ref_data.unreliable,
-            ) {
-                continue;
-            }
-            let lo = ref_data.events.partition_point(|&t| t < gap_start);
-            let hi = ref_data.events.partition_point(|&t| t <= gap_stop);
-            if hi > lo {
-                ref_events_in_gap.extend_from_slice(&ref_data.events[lo..hi]);
-                has_ref = true;
-            }
-        }
-
-        // 用 shape bin 方法分配事件（和 FIFO reset 重建一致）
-        // 这样即使参考事件只覆盖部分间隔，空 bin 也会被插值填充
-        let gap_dur = gap_stop - gap_start;
-        let n_sbins = ((gap_dur / SHAPE_BIN_WIDTH).ceil() as usize).max(1);
-        let actual_sbin = gap_dur / n_sbins as f64;
-        let mut shape = vec![0.0f64; n_sbins];
-
-        if has_ref && !ref_events_in_gap.is_empty() {
-            // 用参考事件构建形状函数
-            for &t in &ref_events_in_gap {
-                let si = ((t - gap_start) / actual_sbin) as usize;
-                if si < n_sbins {
-                    shape[si] += 1.0;
-                }
-            }
-            // 对空 bin 做插值（防止参考事件集中在部分区域导致空洞）
-            interpolate_empty_bins(&mut shape);
-        }
-
-        // 如果形状全空（无参考），均匀分配
-        if shape.iter().all(|&v| v <= 0.0) {
-            shape.iter_mut().for_each(|v| *v = 1.0);
-        }
-
-        // 归一化到 n_lost 并分配事件
-        let total: f64 = shape.iter().sum();
-        let mut filled_events = Vec::with_capacity(n_lost);
-        for (si, &s) in shape.iter().enumerate() {
-            let n_in_bin = (s / total * n_lost as f64).round() as usize;
-            if n_in_bin > 0 {
-                let bin_lo = gap_start + si as f64 * actual_sbin;
-                let bin_hi = bin_lo + actual_sbin;
-                let step = (bin_hi - bin_lo) / n_in_bin as f64;
-                for j in 0..n_in_bin {
-                    filled_events.push(bin_lo + (j as f64 + 0.5) * step);
-                }
-            }
-        }
-
-        results.push(ReconstructedSilentDrop {
-            pkt_idx: drop.pkt_idx,
-            evt_idx: drop.evt_idx,
-            filled_events,
-            n_lost,
-            has_cross_ref: has_ref,
-        });
-    }
-
-    results
 }
 
 /// 深度饱和包级修正。
@@ -744,7 +525,7 @@ pub fn reconstruct_silent_drops(
 /// 用 burst 的计数率作为整个包的真实率，在 gap 中补全缺失的事件。
 pub fn reconstruct_deep_saturation(
     target: &BoxReconstructionData,
-) -> Vec<ReconstructedSilentDrop> {
+) -> Vec<ReconstructedDeepSat> {
     let mut results = Vec::new();
 
     let spans: Vec<(usize, f64)> = target
@@ -850,12 +631,10 @@ pub fn reconstruct_deep_saturation(
         }
 
         if !filled_events.is_empty() {
-            results.push(ReconstructedSilentDrop {
+            results.push(ReconstructedDeepSat {
                 pkt_idx: pkt.pkt_idx,
-                evt_idx: 0,
                 filled_events,
                 n_lost: n_fill,
-                has_cross_ref: false,
             });
         }
     }

@@ -1,8 +1,8 @@
 use blink_hxmt_he::algorithms::saturation::{
-    check_byte_offsets, detect_fifo_reset_intervals, detect_silent_drops, diagnose_packets,
+    check_byte_offsets, detect_fifo_reset_intervals, diagnose_packets,
     dump_event_details, dump_ptime_utc, extract_packet_infos, extract_second_event_times, solve_events,
     reconstruct_deep_saturation, reconstruct_gaps, reconstruct_met_times,
-    reconstruct_silent_drops, reconstruct_with_wrap_tracking,
+    reconstruct_with_wrap_tracking,
     reconstruct_with_wrap_tracking_labeled,
     scan_saturation_intervals_raw, BoxReconstructionData, detect_unreliable_intervals,
 };
@@ -326,17 +326,8 @@ fn cmd_detect(
 
     println!("box,type,start_met,stop_met,gap_s,pkt_idx,evt_idx,n_lost,log10p");
     for (box_name, sci, offset) in filtered_boxes {
-        let events = reconstruct_met_times(sci, *offset);
         let gaps = detect_fifo_reset_intervals(sci, *offset);
         let packets = extract_packet_infos(sci, *offset);
-        let packet_events: Vec<Vec<f64>> = reconstruct_with_wrap_tracking(sci, *offset)
-            .into_iter()
-            .map(|t| {
-                let mut valid: Vec<f64> = t.into_iter().filter(|x| !x.is_nan()).collect();
-                valid.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                valid
-            })
-            .collect();
 
         let mut n_fifo = 0;
         for iv in &gaps {
@@ -357,28 +348,7 @@ fn cmd_detect(
             n_fifo += 1;
         }
 
-        let unreliable = detect_unreliable_intervals(&gaps, &packets, &packet_events);
-        let box_data = BoxReconstructionData {
-            events,
-            gaps,
-            packets,
-            packet_events,
-            unreliable,
-        };
-        let drops = detect_silent_drops(&box_data);
-        let mut n_sd = 0;
-        for d in &drops {
-            if d.stop_met < lo || d.start_met > hi {
-                continue;
-            }
-            println!(
-                "{},SilentDrop,{:.6},{:.6},{:.6},{},{},{},{:.1}",
-                box_name, d.start_met, d.stop_met, d.dt, d.pkt_idx, d.evt_idx, d.n_lost,
-                d.log10_p,
-            );
-            n_sd += 1;
-        }
-        eprintln!("  Box {}: {} FIFO resets, {} silent drops", box_name, n_fifo, n_sd);
+        eprintln!("  Box {}: {} FIFO resets", box_name, n_fifo);
     }
 }
 
@@ -432,8 +402,8 @@ fn cmd_reconstruct(
         .map(|(name, data)| (name.clone(), data.events.clone()))
         .collect();
 
-    eprintln!("Reconstructing (silent drops + FIFO reset gaps, independent)...");
-    let mut all_sd_filled: Vec<(String, Vec<f64>)> = Vec::new();
+    eprintln!("Reconstructing (deep saturation + FIFO reset gaps)...");
+    let mut all_ds_filled: Vec<(String, Vec<f64>)> = Vec::new();
     let mut all_filled: Vec<(String, Vec<f64>)> = Vec::new();
 
     for i in 0..box_data.len() {
@@ -443,16 +413,6 @@ fn cmd_reconstruct(
             .filter(|&(j, _)| j != i)
             .map(|(_, (_, d))| d)
             .collect();
-
-        let drops = detect_silent_drops(&box_data[i].1);
-        let sd_results = reconstruct_silent_drops(&box_data[i].1, &drops, &refs);
-        let n_sd_filled: usize = sd_results.iter().map(|r| r.n_lost).sum();
-        let _n_sd_ref = sd_results.iter().filter(|r| r.has_cross_ref).count();
-        let mut sd_events: Vec<f64> = sd_results
-            .into_iter()
-            .flat_map(|r| r.filled_events)
-            .collect();
-        sd_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
         let gap_results = reconstruct_gaps(&box_data[i].1, &refs);
         let n_gap_filled: usize = gap_results.iter().map(|r| r.n_lost).sum();
@@ -472,14 +432,9 @@ fn cmd_reconstruct(
             .collect();
         ds_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-        sd_events.extend_from_slice(&ds_events);
-        sd_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
         eprintln!(
-            "  Box {}: sd={} ({} evt) | deep_sat={} ({} evt) | gaps={} ({} evt, {} ref)",
+            "  Box {}: deep_sat={} ({} evt) | gaps={} ({} evt, {} ref)",
             box_data[i].0,
-            drops.len(),
-            n_sd_filled,
             n_ds_count,
             n_ds_filled,
             box_data[i].1.gaps.len(),
@@ -487,7 +442,7 @@ fn cmd_reconstruct(
             n_gap_ref,
         );
 
-        all_sd_filled.push((box_data[i].0.clone(), sd_events));
+        all_ds_filled.push((box_data[i].0.clone(), ds_events));
         all_filled.push((box_data[i].0.clone(), gap_events));
     }
 
@@ -504,7 +459,7 @@ fn cmd_reconstruct(
             .find(|(n, _)| n == box_name)
             .map(|(_, f)| f.as_slice())
             .unwrap_or(&[]);
-        let sd_events = all_sd_filled
+        let ds_events = all_ds_filled
             .iter()
             .find(|(n, _)| n == box_name)
             .map(|(_, f)| f.as_slice())
@@ -518,7 +473,7 @@ fn cmd_reconstruct(
 
         let mut n_obs = 0u64;
         let mut n_gap = 0u64;
-        let mut n_sd = 0u64;
+        let mut n_ds = 0u64;
 
         for &t in obs_events {
             if t >= met_min && t <= met_max {
@@ -532,16 +487,16 @@ fn cmd_reconstruct(
                 n_gap += 1;
             }
         }
-        for &t in sd_events {
+        for &t in ds_events {
             if t >= met_min && t <= met_max {
-                println!("{},FILL_SD,{:.6},0,-1,-1", box_name, t);
-                n_sd += 1;
+                println!("{},FILL_DS,{:.6},0,-1,-1", box_name, t);
+                n_ds += 1;
             }
         }
 
         eprintln!(
-            "  Box {}: {} observed, {} gap-filled, {} sd-filled",
-            box_name, n_obs, n_gap, n_sd,
+            "  Box {}: {} observed, {} gap-filled, {} deep-sat-filled",
+            box_name, n_obs, n_gap, n_ds,
         );
     }
 }

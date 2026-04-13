@@ -4,11 +4,11 @@ pub mod rec_sci_data;
 
 pub use crc_check::crc_check;
 pub use detect::{
-    detect_fifo_reset_intervals, detect_silent_drops, detect_unreliable_intervals,
+    detect_fifo_reset_intervals, detect_unreliable_intervals,
     extract_packet_infos, reconstruct_deep_saturation, reconstruct_gaps,
-    reconstruct_silent_drops, BoxReconstructionData,
-    PacketInfo, ReconstructedGap, ReconstructedSilentDrop, SaturationInterval, SaturationType,
-    SilentDrop, UnreliableInterval,
+    BoxReconstructionData,
+    PacketInfo, ReconstructedDeepSat, ReconstructedGap, SaturationInterval, SaturationType,
+    UnreliableInterval,
 };
 pub use rec_sci_data::dump_ptime_utc;
 pub use rec_sci_data::extract_second_event_times;
