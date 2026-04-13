@@ -173,22 +173,26 @@ def main():
         2, 1, figsize=(16, 8), sharex=True,
         gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06})
 
-    # Background region shading
-    for a in (ax_lc, ax_ratio):
-        a.axvspan(t1, t2, color="#E0E0E0", alpha=0.3, zorder=0)
-        a.axvspan(t3, t4, color="#E0E0E0", alpha=0.3, zorder=0)
-
-    # HXMT net: observed
-    ax_lc.fill_between(x, net_hxmt_obs, step="post", color="#92C5DE", alpha=0.5, zorder=2)
-    ax_lc.step(x, net_hxmt_obs, where="post", color="#2166AC", lw=0.8,
-               label=f"HXMT/HE observed", zorder=3)
-    # HXMT net: filled on top
-    ax_lc.fill_between(x, net_hxmt_obs, net_hxmt_all, step="post",
-                       color="#F4A582", alpha=0.7, edgecolor="#B2182B", linewidth=0.6,
-                       zorder=4, label=f"HXMT/HE filled ({len(hxmt_fill):,})")
-    # GBM net scaled
-    ax_lc.step(x, net_gbm_scaled, where="post", color="#333333", lw=1.0, alpha=0.8,
-               label=f"Fermi/GBM {'+'.join(args.det)} (scaled ×{scale:.1f})", zorder=5)
+    C0, C1, C2 = plt.cm.tab10(0), plt.cm.tab10(1), plt.cm.tab10(2)
+    # 1) HXMT observed: // C0
+    ax_lc.fill_between(x, np.maximum(net_hxmt_obs, 0), step="post",
+                       facecolor="none", hatch="//", edgecolor=C0, alpha=0.5,
+                       linewidth=0, zorder=2,
+                       label=f"HXMT/HE observed")
+    ax_lc.step(x, net_hxmt_obs, where="post", color=C0, lw=1.0, zorder=3)
+    # 2) HXMT filled part only (between obs and total): // C1
+    ax_lc.fill_between(x, np.maximum(net_hxmt_obs, 0), np.maximum(net_hxmt_all, 0),
+                       step="post",
+                       facecolor="none", hatch="//", edgecolor=C1, alpha=0.5,
+                       linewidth=0, zorder=4,
+                       label=f"HXMT/HE filled (+{len(hxmt_fill):,})")
+    ax_lc.step(x, net_hxmt_all, where="post", color=C1, lw=1.0, zorder=5)
+    # 3) GBM: \\ C2
+    ax_lc.fill_between(x, np.maximum(net_gbm_scaled, 0), step="post",
+                       facecolor="none", hatch="\\\\", edgecolor=C2, alpha=0.5,
+                       linewidth=0, zorder=6,
+                       label=f"Fermi/GBM {'+'.join(args.det)} (×{scale:.1f})")
+    ax_lc.step(x, net_gbm_scaled, where="post", color=C2, lw=1.0, zorder=7)
 
     ax_lc.set_ylabel("Net count rate (evt/s)", fontsize=13)
     ax_lc.legend(loc="upper right", fontsize=10)
