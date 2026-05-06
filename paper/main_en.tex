@@ -570,11 +570,110 @@ time systems / 5.3.2 GBM / 5.3.3 SPI-ACS / 5.3.4 GECAM-C) /
 5.4 cross-box cross-correlation.
 
 \section{Discussion: Limits and Failure Modes}\label{sec:discussion}
-%% Task 14
-TBD --- $\sim$1.5 pages. Subsections 6.1 too bright / 6.2 too short /
-6.3 silent drops (mechanism real but undetectable) / 6.4 CRC-failed event
-recovery infeasibility. \textbf{Dead zone is NOT discussed here} ---
-it appears only in \S\ref{sec:method} as a boundary safeguard.
+
+The recovery pipeline has well-defined boundaries beyond which it is
+no longer reliable. We characterize them here in quantitative terms,
+both to set expectations for users of the recovered data and to point
+to where further methodological work would be needed.
+
+\subsection{Too bright: deep saturation and SEE-induced corruption}
+\label{sec:too_bright}
+
+The dominant failure mode at extreme luminosity has three components.
+First, in $\sim 8\%$ of FIFO-reset gaps for GRB~221009A all three boxes
+saturate simultaneously, leaving no cross-box reference; the
+degenerate fallback in Section~\ref{sec:cosat} recovers the integrated
+$N_{\rm lost}$ but flattens any sub-second structure. Second, when the
+SEC gap exceeds $\sim 10$~s the wrap-disambiguation uniqueness
+guarantee in Section~\ref{sec:lis_gt1} weakens: as the candidate space
+$k = \Delta s_{\rm time}$ grows, an increasing fraction of sub-windows
+contain no events at all (or only a handful), so the LIS solution
+remains unique by exclusion rather than by competition, and
+unrecoverable events accumulate as $\mathrm{NaN}$ in the output. In
+GRB~221009A the largest SEC gaps run to $\sim 19$~s and contribute the
+bulk of the $\sim 4\%$ uncovered fraction.
+
+Third, single-event effects (SEE) become non-negligible at
+GRB~221009A flux levels. We observe two empirical signatures of SEE
+contamination in 1B data. (a) The three boxes show simultaneous SEC
+dropouts of $10$--$20$~s near $T+249$~s post-trigger, with
+\textit{different} fine structure across boxes (Box~A a single $19$~s
+gap, Box~B a sequence of $2+3+3+2+8$~s gaps, Box~C a $3+16$~s split),
+indicating independent MCU-level disturbances rather than a common
+external cause. (b) The CCSDS payload byte-zero distribution shows the
+value \texttt{0x5A} rising from a baseline $0.39\%$ to $1.13\%$ during
+saturation; \texttt{0x5A} is the FIFO-A event start marker that the MCU
+strips during normal packing, so its appearance in the payload signals
+that the MCU's read pointer or address logic was momentarily corrupted
+and ingested raw FIFO bytes mid-event. We have not attempted to
+recover events from SEE-corrupted intervals: the corruption is
+non-stationary and the event-level integrity check (CRC) is too weak
+to discriminate corrupted from clean data at the rate needed.
+
+\subsection{Too short: sub-millisecond burst structure}\label{sec:too_short}
+
+The recovery resolution is set by the cross-box shape-function bin
+width, fixed at $1$~ms throughout this work. Bursts whose intrinsic
+structure varies on shorter timescales --- magnetar millisecond peaks,
+fast radio burst counterparts, gravitational-wave merger
+counterparts --- are not resolvable by our method even when the
+reference boxes have the underlying signal. We have verified this
+limitation against the ASIM/MXGS LED $1$~ms profile of the
+GRB~200415A magnetar giant flare \cite{roberts2021}: at $1$~ms binning
+the recovered HXMT/HE rate is $\sim 0.10$ of the ASIM peak, indicating
+that the method underestimates fluence by an order of magnitude in
+this regime. Pushing the bin width below $1$~ms is in principle
+possible, but in practice limited by the photon statistics in any
+single reference box at $\lesssim 1$~ms scales: the shape function
+becomes Poisson-noise-dominated and the calibration coefficient
+$k_b$ is no longer well-determined. We therefore do not recommend the
+recovered light curves for sub-millisecond science applications. At
+the $\ge 5$~ms binning relevant to most GRB peak analyses the method
+operates in its design regime.
+
+\subsection{Silent drops: real mechanism, undetectable in practice}
+\label{sec:silent_drop}
+
+Section~\ref{sec:loss_modes} introduced the silent-drop loss mode ---
+events lost while the MCU is inside \texttt{HandlePhysicalLVDS()} and
+FIFO~A is briefly full. We attempted to detect silent drops directly
+from the data using the in-packet Poisson-anomaly statistic of
+Section~\ref{sec:unreliable}, expecting that a short interval of
+unusually long inter-event spacings within a packet would mark a
+silent-drop episode. Manual inspection of the flagged intervals
+across all three target events showed the flag is dominated by false
+positives: the Poisson rate $\lambda$ varies on millisecond scales
+during a GRB peak (much faster than the $\sim 7$~ms packet duration
+itself), so an interval of low instantaneous rate driven by genuine
+source variation is statistically indistinguishable from one driven
+by silent drops. The packet-level statistic is too noisy to
+discriminate. Independently, the contribution of silent drops to total
+event loss is dominated by FIFO resets: a silent drop occurs only when
+FIFO~A is briefly at maximum fill, which under sustained saturation is
+rapidly followed by a full FIFO reset that loses an order of magnitude
+more events anyway. We therefore note silent drops as a mechanism
+present in the hardware but neither detected nor corrected in this
+work, with negligible impact on the recovered totals.
+
+\subsection{CRC-failed events: recovery is not worth the contamination}
+\label{sec:crc_recovery}
+
+A natural extension is to admit CRC-failed events into the LIS pool
+and let the monotonicity constraint reject the corrupt subset. We
+investigated this and decided against it. The argument is statistical:
+in deep saturation the CRC error rate reaches $\sim 50\%$, so we would
+admit $\sim 9\times 10^6$ candidate events alongside the $\sim 9\times
+10^6$ that pass CRC cleanly, and the typical inter-event spacing at
+peak rate is $\sim 50$~ticks $\approx 0.1$~ms. A truly random ptime
+value falls within this spacing with probability close to unity, so a
+substantial fraction of corrupt events would in fact slot into the
+LIS without violating monotonicity locally. The contamination would
+then be carried through the recovery and corrupt downstream analyses.
+The alternative gain is small: the GRB~260226A residual (3 events out
+of $\sim 5.5\times 10^5$) is dominated by structural causes
+(CRC false-rejection, $1$-tick boundary effects), not by recoverable
+CRC-failed events. The benefit-to-risk ratio does not justify the
+admission of CRC-failed events.
 
 \section{Conclusion}\label{sec:conclusion}
 %% Task 15
