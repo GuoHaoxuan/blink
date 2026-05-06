@@ -144,9 +144,122 @@ Section~\ref{sec:discussion} characterizes the method's failure modes; and
 Section~\ref{sec:conclusion} summarizes.
 
 \section{HE Data System and Saturation Mechanisms}\label{sec:instrument}
-%% Task 7
-TBD --- $\sim$1.5 pages. Subsections 2.1 hardware path / 2.2 packet \& time /
-2.3 saturation modes / 2.4 1B vs 1K. Includes Figure~\ref{fig:datapath}.
+
+This section describes the HE data acquisition chain at the level of detail
+relevant to the 1B reconstruction problem. Readers familiar with the HE
+hardware (see~\cite{liu2020he} for a full description) may skim this
+section and proceed to Section~\ref{sec:method}. The novel content here is
+the explicit characterization of the two saturation loss modes (Section~%
+\ref{sec:loss_modes}) and the contrast between 1B raw and 1K processed
+data products (Section~\ref{sec:1b_vs_1k}).
+
+\subsection{Hardware data path}\label{sec:datapath}
+
+HE comprises 18 NaI(Tl)/CsI(Na) phoswich detector modules grouped into
+three independent boxes (A, B, and C, six modules each) with separate
+front-end electronics, FPGAs, microcontrollers, and downlink paths%
+~\cite{liu2020he}. Figure~\ref{fig:datapath} traces an event from
+detection through downlink. After ASIC digitization, the FPGA writes each
+event into a hardware first-in-first-out (FIFO) buffer (FIFO~A, capacity
+$\sim 4096$~bytes, holding up to ${\sim}455$ events of 9~bytes each). FIFO~A
+is strictly order-preserving, and---critically---when full, additional
+writes from the FPGA side are blocked: \textit{the existing buffer
+contents are not overwritten and the new events are dropped without any
+hardware flag}. An 8051-architecture microcontroller (MCU) reads FIFO~A
+in a polling main loop. Each pass invokes \texttt{HandlePhysicalLVDS()},
+which extracts up to 109 events, packages them into one CCSDS packet (6-byte
+header, $109\times 8 = 872$-byte payload, 4-byte UTC tail; 882 bytes total),
+and writes the packet to FIFO~B. Each \texttt{HandlePhysicalLVDS()}
+invocation takes $\sim 7$~ms, so the steady-state throughput ceiling is
+${\sim}109/7~\mathrm{ms}\approx 15{,}600$ evt/s per box.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{f1_datapath.pdf}
+\caption{HE data path. Each of the three independent detector boxes
+(A, B, C) routes events through ASIC $\to$ FPGA $\to$ FIFO~A
+(${\sim}455$~event capacity, strictly FIFO-ordered, no overwrite when full)
+$\to$ MCU (8051 polling main loop) $\to$ FIFO~B $\to$ 1553B downlink.
+Saturation occurs when the source rate exceeds the MCU's
+$\sim 15{,}600$~evt/s readout ceiling, leading to either silent drops at
+the FIFO~A write port or full-FIFO resets initiated by the MCU when it
+detects sustained overflow.}
+\label{fig:datapath}
+\end{figure}
+
+\subsection{Event packet format and time stamps}\label{sec:event_format}
+
+Each 8-byte event slot in a CCSDS packet carries:
+(i)~event \textit{type} flags identifying physical events (EVT) versus
+hardware-injected second markers (SEC) versus error placeholders;
+(ii)~for EVT, a 7-bit detector identifier (which together with the box
+index determines the 18-detector global ID) and a 7-bit pulse-height
+channel; (iii)~for SEC, a 32-bit absolute MET second counter
+(\textit{stime}); and (iv)~a 19-bit hardware time counter (\textit{ptime})
+plus a 4-bit cyclic-redundancy code (CRC). The ptime counter increments at
+$\Delta t = 2~\mu$s per tick and wraps every $P_{\rm MOD} = 2^{19} = 524{,}288$
+ticks, i.e., $T_{\rm wrap} \approx 1.0486$~s. SEC events are injected by
+the FPGA exactly once per second and provide $(t_{\rm SEC}, p_{\rm SEC})$
+anchor pairs for absolute time reconstruction. Both EVT and SEC traverse
+the same FIFO~A, so they share its order-preservation and saturation
+behavior; in particular, SECs can be lost or corrupted under saturation
+just as EVTs can. The 4-byte UTC tail at the end of each packet records
+the GPS time at which the MCU \textit{completed} the packet---which can
+lag the events themselves by many seconds during deep saturation when
+FIFO~A drains slowly.
+
+The 4-bit CRC has a $1/16 \approx 6.3\%$ collision probability, so even
+when a transmission error corrupts an event byte, the corrupted value has
+a $6.3\%$ chance of passing CRC and being accepted as a valid event with
+random ptime and channel. Under nominal conditions this rate is negligible,
+but in deep saturation (notably GRB~221009A) the CRC error rate exceeds
+$50\%$, generating millions of these ``ghost events'' whose random ptime
+values are statistically guaranteed to fall in the gaps of any genuine
+event sequence. Section~\ref{sec:method} addresses this directly.
+
+\subsection{Saturation modes: FIFO resets and silent drops}\label{sec:loss_modes}
+
+When the source rate $r$ approaches or exceeds the MCU readout ceiling,
+two distinct loss mechanisms appear.
+
+\textbf{(i) FIFO reset (gap loss).} The MCU's main loop includes a
+\texttt{FIFOAFullReset()} check: after completing a packet write to FIFO~B,
+if FIFO~A is still at maximum fill, the MCU clears the entire FIFO~A
+buffer in a single hardware operation, discarding all queued events.
+This loses ${\sim}455$ events at once, producing a packet-to-packet gap
+in event time that is several times longer than the MCU's normal
+$\sim 7$~ms cadence. FIFO resets are detectable from the data because
+they leave a gap in MET between consecutive packets that exceeds the
+local rate by orders of magnitude---this is the basis of the gap detector
+in Section~\ref{sec:detect}.
+
+\textbf{(ii) Silent drop (instantaneous loss).} While the MCU is inside
+\texttt{HandlePhysicalLVDS()} for the $\sim 7$~ms required to extract 109
+events, FIFO~A briefly fills, the FPGA stops writing, and during this
+window any incoming event is dropped. When the MCU finishes the read and
+returns to the main loop, FIFO~A is no longer full, so the
+\texttt{FIFOAFullReset()} check does not trigger, and the silent drop
+leaves no hardware flag. We discuss in Section~\ref{sec:silent_drop} why
+silent drops cannot be reliably detected from the data alone, and why their
+contribution to total event loss is negligible compared with FIFO resets
+in deep saturation.
+
+\subsection{1B versus 1K data products}\label{sec:1b_vs_1k}
+
+The 1B data product is the lowest level of HE telemetry preserved by the
+mission archive: it consists of the raw CCSDS packets as downlinked from
+the spacecraft, with all CRC information, both EVT and SEC events, and the
+UTC tail intact. The 1K product is the standard science-grade output: it
+applies time reconstruction, CRC filtering, and conservative event-removal
+heuristics around saturation boundaries to yield a clean event list with
+absolute MET. The 1K time reconstruction is mature and accurate in
+non-saturated intervals, and we do not improve upon it there. What 1K
+discards, however, is precisely the population we wish to recover: events
+near FIFO-reset boundaries that the heuristics cannot confidently assign,
+and events in deep-saturation intervals where SEC anchors are themselves
+suspect. This work operates on 1B raw packets, performs an event-level
+time reconstruction tailored to the saturation regime, and recovers the
+events that 1K conservatively filters out.
 
 \section{Event-Level Time Reconstruction}\label{sec:method}
 %% Task 8
