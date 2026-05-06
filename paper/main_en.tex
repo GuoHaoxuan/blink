@@ -676,9 +676,43 @@ CRC-failed events. The benefit-to-risk ratio does not justify the
 admission of CRC-failed events.
 
 \section{Conclusion}\label{sec:conclusion}
-%% Task 15
-TBD --- $\sim$0.5 pages. Four-bullet summary mirroring contribution list,
-plus open-source pointer.
+
+We have presented an end-to-end pipeline for recovering events lost to
+FIFO-buffer saturation in Insight-HXMT/HE 1B raw telemetry. The four
+contributions of this work, in summary:
+
+\begin{itemize}
+\item An LIS-based time reconstruction that survives CRC-collision
+ghost contamination without thresholding or iteration, replacing
+greedy alternatives that fail catastrophically under deep saturation.
+
+\item A grouped-LIS extension with descending intra-event candidate
+ordering and a UTC-tail constraint, resolving the wrap ambiguity
+introduced by lost SECs with provable uniqueness for $\Delta s_{\rm time}
+\le 10$~s. Wrap uniqueness is independently confirmed by the
+skip-wrap-0 LIS-length test and by cross-box light-curve correlation.
+
+\item A cross-detector-box shape-function recovery for FIFO-reset gaps
+that exploits HE's three-box independence to provide a calibrated
+template from simultaneously-measured unsaturated boxes, with the
+shape and total-count estimators both derived from the same reference
+data for self-consistency.
+
+\item A multi-layer validation strategy that combines internal 1B/1K
+consistency, HE's own engineering-data event counters, and external
+cross-satellite light-curve matching against Fermi/GBM, GECAM-C, and
+INTEGRAL/SPI-ACS, together with an explicit quantitative
+characterization of the method's failure modes.
+\end{itemize}
+
+The pipeline is implemented in Rust and released under the MIT license;
+see the Code and Data Availability statement below for the repository
+and Zenodo DOI. The recovered event streams are suitable for GRB
+peak analyses at $\ge 5$~ms time resolution and have been used in this
+work to confirm consistency with independent instruments at the
+few-percent level for moderately bright events. We anticipate the
+method to extend straightforwardly to other instruments with similar
+FIFO-based readout architectures, including GECAM and SVOM~GRM.
 
 \section*{Code and Data Availability}
 %% Task 19
