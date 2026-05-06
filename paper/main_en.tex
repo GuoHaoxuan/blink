@@ -7,7 +7,12 @@
 %   picins.sty     (figure support)
 % Reference template (do not edit):
 %   scpma_template_reference.tex / .pdf
+%
+% NOTE: 2026SCGE.cls hard-codes hyperref's `dvipdfm' driver, which clashes
+% with pdfTeX. The override below forces `pdftex' driver before the cls
+% loads hyperref, so we can compile with the standard pdflatex toolchain.
 %-----------------------------------------------------------------------
+\PassOptionsToPackage{pdftex}{hyperref}
 \documentclass[fleqn]{2026SCGE}
 \setlength{\mathindent}{0cm}
 \usepackage{bm}
@@ -60,9 +65,83 @@ multi-layer cross-validation) / implication (open-source release).}
 \begin{multicols}{2}
 
 \section{Introduction}\label{sec:intro}
-%% Task 6
-TBD --- $\sim$1.5 pages. Hook + 1.1 HE in bright sources / 1.2 FIFO saturation
-\& 1K limits / 1.3 1B opportunity \& challenges / 1.4 four contributions.
+
+The High-Energy detector (HE) on board Insight-HXMT~\cite{zhang2020} provides
+$\sim 5100~\mathrm{cm^2}$ of effective area in the 20--250~keV band, which is
+among the largest in orbit and makes the instrument uniquely sensitive to
+bright hard X-ray and soft $\gamma$-ray transients.\Authorfootnote{} Through its mission HE has
+observed many of the brightest events of the past decade, including the
+magnetar giant flare GRB~200415A~\cite{roberts2021}, the FRB-associated burst
+from SGR~1935$+$2154~\cite{li2021frb}, and the brightest gamma-ray burst ever
+recorded, GRB~221009A~\cite{burns2023boat,an2023hxmt}. The same property that
+makes HE valuable for these observations---large effective area in a single
+collecting volume---also makes it especially prone to electronics-level
+saturation. When the photon rate exceeds the readout capacity of the front-end
+microcontroller, hardware FIFO buffers overflow, the FPGA side stops accepting
+new events, and a fraction of the burst photons are lost without any flag in
+the downlinked data.
+
+The standard 1K-level data pipeline accepts this loss as inherent and applies
+conservative event-filtering rules in saturated intervals to prevent timing
+artifacts from contaminating downstream science. This is appropriate for
+routine analysis but discards events that, given the right offline
+processing, can in fact be recovered. The lower-level 1B-level raw telemetry
+retains the complete CCSDS packet structure, the original 19-bit hardware
+time counter (\textit{ptime}), the second-tag events (SEC) used to anchor
+absolute time, and every event that passes a 4-bit CRC---including some that
+the 1K pipeline subsequently drops at the saturation boundaries.
+
+Reconstructing these events directly from 1B raw data presents two technical
+obstacles. First, the ptime counter wraps every $\sim 1.05$~s and the
+absolute MET assignment requires knowing how many wrap periods have elapsed
+since the most recent SEC anchor. In saturation, FIFO resets and corrupted
+SECs make this wrap count locally indeterminate. Second, the 4-bit CRC has a
+$1/16$ collision probability, so during long, dense saturation epochs a
+substantial fraction of corrupted bytes pass the CRC check and appear as
+``ghost events'' with random ptime values---values that, if accepted blindly,
+break the strict monotonicity of the underlying FIFO event order and
+catastrophically derail naive time-reconstruction algorithms.
+
+We address both obstacles with a single observation: the FIFO is strictly
+order-preserving, so the ptime values of \textit{real} events between two
+valid SECs must form a strictly increasing sequence under the correct wrap
+assignment. The longest increasing subsequence (LIS) of the observed ptime
+values therefore identifies the genuine event subset and excludes ghosts
+automatically, without thresholding or iterative refinement. Building on
+this, we recover events lost to FIFO resets by combining the reconstructed
+1B event stream from one detector box with simultaneous unsaturated data
+from the other two. The resulting pipeline is validated through three
+independent layers---internal 1B/1K consistency checks, comparison against
+HE's own engineering-data event counters, and cross-satellite light-curve
+matching against Fermi/GBM~\cite{meegan2009gbm},
+GECAM-C~\cite{li2022gecam}, and INTEGRAL/SPI-ACS~\cite{savchenko2017spiacs}.
+
+This work makes four contributions:
+\begin{itemize}
+\item An LIS-based event-level time reconstruction for 1B data that is
+intrinsically robust to CRC-collision ghost events, eliminating the cascade
+failures observed in greedy alternatives.
+\item A grouped-LIS extension with UTC-tail constraints that resolves the
+ptime wrap ambiguity introduced by lost SECs, with provable uniqueness for
+SEC gaps up to ${\sim}10$~s.
+\item A multi-layer validation strategy that exploits HE's three independent
+detector boxes and its in-flight engineering counters to bound systematic
+errors of the recovery without invoking external instruments.
+\item A quantitative characterization of the method's limits, identifying
+the failure modes (sub-millisecond burst structure, three-box co-saturation,
+and SEC gaps beyond ${\sim}10$~s) and giving the regime within which 1B
+recovery can be relied upon for science analyses.
+\end{itemize}
+
+The pipeline is implemented in Rust as an open-source command-line tool
+released under the MIT license; the corresponding repository is referenced
+in the Code and Data Availability statement. Section~\ref{sec:instrument}
+describes the HE data system and saturation mechanisms;
+Section~\ref{sec:method} details the time-reconstruction algorithm;
+Section~\ref{sec:recovery} covers FIFO-reset detection and light-curve
+recovery; Section~\ref{sec:validation} presents the three-layer validation;
+Section~\ref{sec:discussion} characterizes the method's failure modes; and
+Section~\ref{sec:conclusion} summarizes.
 
 \section{HE Data System and Saturation Mechanisms}\label{sec:instrument}
 %% Task 7
@@ -112,7 +191,5 @@ TBD --- statement to be filled with Zenodo DOI after release tag.
 \bibliography{refs_en}
 
 \end{multicols}
-
-\Authorfootnote
 
 \end{document}
