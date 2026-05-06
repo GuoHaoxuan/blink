@@ -262,11 +262,174 @@ time reconstruction tailored to the saturation regime, and recovers the
 events that 1K conservatively filters out.
 
 \section{Event-Level Time Reconstruction}\label{sec:method}
-%% Task 8
-TBD --- $\sim$2.5 pages. Opens with framing as prerequisite for
-Section~\ref{sec:recovery}.
-Subsections 3.1 problem / 3.2 SEC validation / 3.3 $\Delta s_{\rm time}=1$ direct LIS
-(includes dead-zone safeguard sentence) / 3.4 $\Delta s_{\rm time}>1$ grouped LIS.
+
+Time reconstruction in 1B raw data is the prerequisite, not the headline,
+of this work. The standard 1K pipeline already produces accurate event
+times in non-saturated intervals, and we do not propose to improve on it
+there. What we need from 1B is an event-level MET assignment that survives
+the conditions where 1K's heuristics give up---deep saturation, lost SECs,
+and CRC-collision contamination---so that we can subsequently feed the
+recovered event stream to the FIFO-reset gap reconstruction in
+Section~\ref{sec:recovery}. This section presents the algorithm.
+
+\subsection{Problem formulation}\label{sec:problem}
+
+Given a SEC anchor $(t_{\rm SEC}, p_{\rm SEC})$ and an event with
+ptime $p$, the absolute MET of the event is
+\begin{equation}\label{eq:met}
+t_{\rm MET} \;=\; t_{\rm SEC} \;+\;
+\bigl(p - p_{\rm SEC} + n\,P_{\rm MOD}\bigr)\,\Delta t \;+\; t_{\rm corr},
+\end{equation}
+where $\Delta t = 2~\mu$s, $P_{\rm MOD} = 524288$,
+$t_{\rm corr} = 4.0$~s is an empirical 1B-to-1K offset, and $n$ is the
+number of complete ptime wrap periods between the SEC and the event. The
+MET solution is unique provided $n$ is known. The wrap count $n$ can be
+determined unambiguously when the event sequence between consecutive valid
+SECs is complete: each ptime wrap must be witnessed by at least one event
+that crosses the boundary, so by tracking the modular ordering of ptime
+values one can count wraps directly. The difficulty is that under
+saturation, FIFO resets and silent drops break the local sequence, the
+CRC-collision ghost events inject random ptime values that mimic wrap
+crossings, and SECs themselves can be lost or corrupted. The wrap count
+becomes locally indeterminate.
+
+We therefore frame the problem as a global constraint-satisfaction one,
+not a local tracking one. Between any pair of consecutive valid SECs,
+$(\mathrm{SEC}_1, \mathrm{SEC}_2)$ separated by $\Delta s_{\rm time}$
+seconds, the FIFO ordering guarantees that the ptime values of genuine
+events read between the two SECs, when expanded into elapsed values
+$e_i$ relative to $\mathrm{SEC}_1$, must form a strictly increasing
+sequence. Within each $1$~s sub-window the elapsed value is unique
+($n$ is unique modulo $P_{\rm MOD}$); when SECs are lost
+($\Delta s_{\rm time} > 1$) the elapsed value has $\Delta s_{\rm time}$
+candidates, but the strict-monotonicity constraint over the file order
+of the events selects the correct one.
+
+\subsection{SEC validation}\label{sec:sec_validation}
+
+The first concrete step is to build a clean SEC anchor list. Two
+filters are applied in sequence.
+
+\paragraph{Phase clustering.} For every CRC-passed SEC, compute the
+modular phase
+\begin{equation}\label{eq:phase}
+\varphi \;=\; \bigl(p_{\rm SEC} - s_{\rm SEC}\!\cdot\! 500000\bigr)
+\bmod P_{\rm MOD}.
+\end{equation}
+For genuine SECs, the FPGA injects the SEC at a fixed point in the GPS
+1-Hz tick, so $\varphi$ is bounded within a narrow band whose
+width depends only on the FPGA injection jitter ($\sim 113$~ticks
+$=226~\mu$s in our data). For CRC-collision ghost SECs, $\varphi$ is
+uniformly distributed over $[0, P_{\rm MOD})$. Sliding a width-$W$ window
+across $\varphi$ space and selecting the largest cluster yields the
+candidate-genuine SEC pool. A conservative $W=400$~ticks accommodates
+the worst-case injection jitter we observe.
+
+\paragraph{stime-LIS purification.} Within the candidate pool, FIFO
+ordering further requires that SECs read in file order have strictly
+increasing $s_{\rm SEC}$ values (the absolute second counter cannot
+decrease). A small fraction of ghosts whose $\varphi$ happens to fall in
+the genuine band survives the phase filter; these are removed by computing
+the LIS of the $s_{\rm SEC}$ sequence and discarding any SEC outside the
+LIS. The output is the validated SEC list, and any pair of adjacent
+validated SECs defines a valid time window with
+$\Delta s_{\rm time} = s_{\rm SEC_2} - s_{\rm SEC_1} \ge 1$.
+
+\subsection{$\Delta s_{\rm time}=1$: direct LIS}\label{sec:lis_eq1}
+
+When the SEC pair has unit separation, every event between them belongs
+to a known 1-second window. For event $i$ define
+\begin{equation}
+e_i \;=\; \bigl(p_i - p_{\rm SEC_1}\bigr) \bmod P_{\rm MOD},
+\quad a \;=\; \bigl(p_{\rm SEC_2} - p_{\rm SEC_1}\bigr) \bmod P_{\rm MOD},
+\end{equation}
+where $a \approx 500{,}000$~ticks $= 1$~s. Valid genuine events have
+$e_i \in [0, a]$. Events with $e_i \in [a+1, P_{\rm MOD}-1]$ fall in the
+$\sim 48.6$~ms ptime range corresponding to no real time within the
+SEC pair (a structural consequence of $T_{\rm wrap} - 1\,\mathrm{s} \approx
+48.6$~ms): they cannot be genuine and are dropped. This $4.6\%$ of
+ptime space is a boundary safeguard, not a method limitation: real events
+do not land here, only CRC-collision ghosts do.
+
+The MET assignment then reduces to selecting, from the file-ordered list
+of valid-range $e_i$, the largest subset that is strictly increasing in
+$e_i$. The longest increasing subsequence of $\{e_i\}$ is exactly that
+subset. Events on the LIS are accepted and assigned MET via
+Eq.~\eqref{eq:met}; events off the LIS are CRC-collision ghosts and are
+flagged as such. The MET is computed from both ends and averaged for
+robustness:
+\begin{equation}\label{eq:met_avg}
+t_{\rm MET}^{(i)} = \tfrac{1}{2}\!\left[
+t_{\rm SEC_1} + e_i\,\Delta t \;+\;
+t_{\rm SEC_2} - (a - e_i)\,\Delta t
+\right] + t_{\rm corr}.
+\end{equation}
+
+\paragraph{LIS versus greedy.} A naive greedy alternative (scan events in
+file order, accept the next event whose $e_i$ exceeds the current
+``previous accepted'' value) fails catastrophically on ghost-contaminated
+sequences. A single ghost with anomalously large $e_i$ raises the greedy
+threshold above the next several genuine events, which are then rejected
+as ``out of order''---a cascade failure that can erase ${\sim}0.2$~s of
+data per ghost (Figure~\ref{fig:lis_vs_greedy}). The LIS algorithm by
+contrast considers all subsequences globally, so an isolated ghost with an
+anomalous ptime contributes only itself to no chosen subsequence and does
+not poison its neighbors. In our data, switching from greedy to LIS
+recovered ${\sim}24{,}000$ events in GRB~260226A Box~A alone.
+
+\subsection{$\Delta s_{\rm time}>1$: grouped LIS with UTC-tail
+constraint}\label{sec:lis_gt1}
+
+When SECs are lost ($\Delta s_{\rm time} = k$ for $k > 1$), each event
+acquires $k$ candidate elapsed values
+\begin{equation}\label{eq:cand}
+e_i^{(j)} = e_i + j\,P_{\rm MOD}, \qquad j = 0, 1, \ldots, k-1,
+\end{equation}
+corresponding to the $k$ possible wrap counts. The reconstruction problem
+becomes: choose at most one candidate per event, such that the chosen
+sequence is strictly increasing in file order, and the size of the chosen
+set is maximized. This is the grouped longest-increasing-subsequence
+problem.
+
+\paragraph{Algorithm.} We adopt a modified patience-sorting solver. Events
+are processed in file order; within each event, the $k$ candidates are
+processed in \textit{descending} order. Descending intra-event ordering
+is necessary: if candidates were processed ascending, a smaller candidate
+$e_i^{(j)}$ accepted into the patience-sort tail array could be later
+overtaken by the larger candidate $e_i^{(j+1)}$ from the same event,
+and patience-sort backtracking would then assemble a sequence containing
+both---which violates the at-most-one-per-event constraint. Descending
+order eliminates this: the larger candidate, processed first, lands in a
+later tail position, after which the smaller candidate either replaces a
+strictly earlier tail entry (legal, since tail entries on its left are
+all from prior events) or is discarded. Backtracking from any final tail
+entry then yields a chain of candidates each from a distinct event.
+
+\paragraph{UTC-tail constraint.} Each CCSDS packet carries a UTC tail
+$t_{\rm utc}$ that records the MCU's GPS time at packet completion. Events
+within the packet were inserted into FIFO~A no later than $t_{\rm utc}$,
+so any candidate elapsed value satisfies
+\begin{equation}\label{eq:utc_bound}
+e_i^{(j)} \;\le\;
+\frac{t_{\rm utc} + 1 - t_{\rm SEC_1}}{\Delta t},
+\end{equation}
+which bounds $j$ from above before the LIS solver runs. Without this
+constraint the solver may consider physically impossible large-$j$
+candidates that happen to satisfy the local monotonicity; with it, the
+candidate space is pruned to admissible values only.
+
+\paragraph{Wrap uniqueness.} The grouped-LIS solution is unique in our
+data, in the sense that disabling $j=0$ as a candidate (forcing every
+event to take at least one full wrap) strictly shortens the LIS. This
+holds for every $\Delta s_{\rm time}>1$ window we examined in
+GRB~221009A; the shortest empirical excess of LIS length under
+$j=0$-allowed versus $j=0$-disabled is $\sim 3{,}000$ events for a
+$\Delta s_{\rm time}=19$ window, far above any plausible counting noise.
+We further validate uniqueness against an independent constraint in
+Section~\ref{sec:cross_box}: the cross-correlation of Box A versus Box B
+light curves over the same time window has minimum residual at the LIS
+solution and grows by a factor $\sim 3$ when the wrap count is shifted by
+$\pm 1$.
 
 \section{FIFO Reset Detection and Light Curve Recovery}\label{sec:recovery}
 %% Task 10 --- HEADLINE SECTION
