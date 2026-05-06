@@ -432,11 +432,135 @@ solution and grows by a factor $\sim 3$ when the wrap count is shifted by
 $\pm 1$.
 
 \section{FIFO Reset Detection and Light Curve Recovery}\label{sec:recovery}
-%% Task 10 --- HEADLINE SECTION
-TBD --- $\sim$2 pages. Opens with ``With per-event times reconstructed, we
-address the headline problem''. Subsections 4.1 adaptive gap threshold /
-4.2 unreliable interval flagging / 4.3 cross-box shape function /
-4.4 three-box co-saturation degenerate case.
+
+With per-event times reconstructed in Section~\ref{sec:method}, we now
+address the headline problem: recovering the events lost to FIFO resets
+during deep saturation. Time reconstruction tells us when a FIFO reset
+occurred and what its surrounding 1B event stream looks like; what we
+need next is an estimate of how many events were dropped in each reset
+gap and how those events were distributed in time. Our strategy
+exploits the three-box independence of HE: when one box is saturated,
+the other two are almost always still operating in linear regime, and
+their event distributions provide a calibrated template for what the
+saturated box should have measured.
+
+\subsection{FIFO-reset gap detection}\label{sec:detect}
+
+After event-level time reconstruction, every CCSDS packet carries a
+recovered MET span $[t_p^{\rm start}, t_p^{\rm end}]$. A FIFO reset
+manifests as an anomalously long gap between the last event of packet
+$p$ and the first event of packet $p+1$. We compare the inter-packet
+gap $g$ against an adaptive threshold derived from the local event
+rate: with $T_{\rm base}$ defined as the smaller of the two
+neighbouring packets' mean inter-event interval, a reset is declared
+when
+\begin{equation}
+g \;>\; F_{\rm gap}\,T_{\rm base}, \qquad F_{\rm gap} = 100,
+\end{equation}
+\textit{and} the larger of the two neighbouring per-packet rates
+exceeds the MCU read floor $R_{\rm MCU} = 15{,}000$ evt/s
+(slightly below the theoretical
+$109/6.9\,\mathrm{ms} \approx 15{,}800$ evt/s ceiling). The rate
+condition removes false detections in genuinely quiet intervals where
+a long gap simply reflects a low source rate rather than a hardware
+overflow. In deep-saturation regions where two adjacent packets are
+both congested, the local event rate is depressed by the congestion
+itself; we therefore expand the rate-evaluation window to $\pm 5$
+packets and use the maximum, which restores sensitivity in continuous
+saturation episodes.
+
+\subsection{Unreliable-interval flagging}\label{sec:unreliable}
+
+Cross-box shape-function recovery requires reference data that
+faithfully tracks the source rate, so any time interval where the
+reference box is itself unreliable must be excluded. We identify three
+types of unreliable interval:
+
+(i) FIFO-reset gaps in the reference box itself --- handled
+trivially by the detector in Section~\ref{sec:detect};
+
+(ii) congestion-broadened packets, where the MCU has fallen behind and
+a single packet's MET span exceeds three times the local median packet
+duration --- the events within such a packet are temporally smeared
+toward the MCU's read cadence rather than reflecting the true source
+distribution;
+
+(iii) silently-dropped intervals within otherwise-normal packets, where
+the inter-event spacing contains an isolated long gap that is
+inconsistent with Poisson statistics at the local rate. We compute the
+Poisson probability of the longest in-packet gap given the local rate
+$\lambda$ estimated from neighbouring events, and flag any packet with
+$\log_{10}p < -10$.
+
+Time intervals overlapping any of these flags are excluded from the
+reference pool when reconstructing other boxes' light curves.
+
+\subsection{Cross-box shape-function reconstruction}\label{sec:crossbox}
+
+For each FIFO-reset gap in the target box, let $T_{\rm gap}$ denote the
+gap interval and $B_{\rm ref}$ the set of reference boxes whose data
+over $T_{\rm gap}$ are not flagged as unreliable. We bin both target
+and reference data on a 1~ms grid spanning $T_{\rm gap}$ and a $\pm
+500$~ms calibration window on either side.
+
+\paragraph{Calibration.} Within the calibration window, both the target
+and each reference are well-measured. The relative response is captured
+by a single multiplicative coefficient
+\begin{equation}
+k_b = \frac{C_{\rm tgt}^{\rm calib}}{C_b^{\rm calib}},
+\qquad b \in B_{\rm ref},
+\end{equation}
+where $C^{\rm calib}$ are total reliable counts in the calibration
+window. The coefficient absorbs effective-area, energy-response, and
+livetime differences between boxes for the time interval at hand.
+
+\paragraph{Shape function.} Within $T_{\rm gap}$, the predicted target
+count in 1~ms bin $i$ is
+\begin{equation}
+S_i = \frac{1}{|B_{\rm ref}|} \sum_{b \in B_{\rm ref}}
+k_b\,C_{b,i},
+\end{equation}
+where $C_{b,i}$ is reference box $b$'s reliable count in bin $i$.
+Bins where some reference boxes are flagged unreliable are filled by
+linear interpolation across the unflagged bins, followed by constant
+extrapolation at the gap edges. Empty bins beyond the gap edges
+inherit the rate of the nearest valid bin.
+
+\paragraph{Total recovered count.} The number of events lost in
+$T_{\rm gap}$ is
+\begin{equation}
+N_{\rm lost} = \mathrm{round}\!\left(\sum_i S_i\right).
+\end{equation}
+Because both the shape and the normalization are derived from the same
+reference data with the same calibration coefficient, the procedure is
+internally self-consistent: increasing the source rate by a factor
+$\alpha$ scales every $C_{b,i}$ by $\alpha$, scales $C_b^{\rm calib}$
+by $\alpha$ (leaving $k_b$ unchanged), and produces $\alpha N_{\rm lost}$
+recovered events --- as expected.
+
+\paragraph{Allocation.} Events are placed within each bin uniformly:
+the $i$-th bin receives $\mathrm{round}(S_i \cdot N_{\rm lost} / \sum S)$
+recovered events distributed at equal sub-bin spacing. The granularity
+of 1~ms is fine enough to preserve sub-second light-curve features
+present in the reference data (we revisit this resolution as the
+``too-short'' failure mode in Section~\ref{sec:discussion}).
+Figure~\ref{fig:crossbox_recovery} shows a worked example for a
+GRB~221009A FIFO reset, with the saturated Box~A gap filled from
+simultaneous Box~B data.
+
+\subsection{Three-box co-saturation: degenerate case}\label{sec:cosat}
+
+When all three boxes are simultaneously saturated, no reference is
+available and the cross-box approach fails by construction. In this
+regime we fall back to a pre-/post-reset rate interpolation: the
+mean event rate over $\pm 1$~s bracketing the gap, linearly
+interpolated across $T_{\rm gap}$ and integrated, yields a single
+$N_{\rm lost}$ estimate, with events distributed uniformly over
+$T_{\rm gap}$. This is a clearly inferior estimator (it cannot recover
+sub-second structure within the gap) and we report its prevalence
+explicitly: $\sim 8\%$ of GRB~221009A FIFO resets fall in this
+regime, defining one component of the method's quantified failure
+boundary (Section~\ref{sec:discussion}).
 
 \section{Validation}\label{sec:validation}
 %% Task 12
