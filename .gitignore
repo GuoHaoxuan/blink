@@ -74,6 +74,13 @@ dump_*.txt
 !saturation.csv
 !saturation_grb.csv
 !saturation_tgf.csv
+
+# Paper figures and template files: source-tracked despite generic LaTeX patterns
+!paper/figures/*.pdf
+!paper/figures/*.png
+!paper/figures/*.eps
+!paper/scpma.bst
+!paper/scpma_template_reference.pdf
 *.resolved
 *_stderr.txt
 tgfs.json
