@@ -1,97 +1,118 @@
-%% SCPMA submission: HXMT/HE 1B saturation recovery
-%%
-%% TEMPLATE STATUS (T2): currently using stock article class as placeholder.
-%% SCPMA template (scpma.cls or equivalent) deferred — official site cert
-%% expired and Springer mirror returns 303 as of 2026-05-06. To swap:
-%%   (1) obtain scpma.cls + matching .bst from co-author at IHEP, OR
-%%   (2) email scpma@scichina.org requesting current author template, OR
-%%   (3) initial submission can use this article-class PDF; SCPMA usually
-%%       requests template-formatted re-submission only at acceptance.
-%% When swapping: replace the documentclass line, migrate \author/\title
-%% macros to template-specific \Author/\Title/\Address/\Email forms, and
-%% verify Tasks 6-15 sectioning still resolves cleanly.
-\documentclass[twocolumn]{article}
-
-\usepackage{amsmath,amssymb}
-\usepackage{graphicx}
-\usepackage{booktabs}
-\usepackage{multirow}
-\usepackage{xcolor}
-\usepackage[a4paper,margin=2cm]{geometry}
-\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue]{hyperref}
+% !TEX encoding = UTF-8
+%-----------------------------------------------------------------------
+% SCPMA submission: HXMT/HE 1B saturation recovery
+% Template files in this directory:
+%   2026SCGE.cls   (class)
+%   scpma.bst      (bib style)
+%   picins.sty     (figure support)
+% Reference template (do not edit):
+%   scpma_template_reference.tex / .pdf
+%-----------------------------------------------------------------------
+\documentclass[fleqn]{2026SCGE}
+\setlength{\mathindent}{0cm}
+\usepackage{bm}
+\usepackage{algorithm}
+\pdfstringdefDisableCommands{\renewcommand*{\bm}[1]{#1}}
 
 \graphicspath{{figures/}}
 
-\title{Saturation Recovery for Insight-HXMT/HE\\Bright Burst Observations from Level-1B Raw Data}
-
-\author{Hao-Xuan Guo\thanks{kuohaoxuanus@outlook.com} \and HXMT Collaboration (TBD)}
-\date{\today}
+\thispagestyle{empty}
 
 \begin{document}
+\ensubject{Astronomy}
+
+%%%-------------------------------------------------------------
+\ArticleType{Article}
+\Year{2026}
+\Month{}
+\Vol{}
+\No{}
+\DOI{}
+\ArtNo{}
+\ReceiveDate{}
+\AcceptDate{}
+
+\title{Saturation Recovery for Insight-HXMT/HE Bright Burst Observations from Level-1B Raw Data}{Saturation Recovery for Insight-HXMT/HE 1B Data}
+
+% Corresponding author: \author[N]{Name}{{email@xxx.com}}
+% Other author:         \author[N]{Name}{}
+\author[1]{Hao-Xuan Guo}{{kuohaoxuanus@outlook.com}}
+\author[1]{HXMT Collaboration TBD}{}
+
+\AuthorMark{Guo H X}
+\AuthorCitation{Guo H X, et al}
+
+\address[1]{Institute of High Energy Physics, Chinese Academy of Sciences, Beijing 100049, China}
+
+%%%-------------------------------------------------------------
+\abstract{TBD --- finalized in Task 16 once Phase E numbers are frozen.
+Target length 100--200 words. Structure follows the spec at
+\texttt{docs/superpowers/specs/2026-05-06-scpma-submission-design.md} \S2.2:
+background (HE saturation, 1K limits) / method (1B reconstruction, LIS,
+cross-box shape function) / results (260226A residual, 221009A coverage,
+multi-layer cross-validation) / implication (open-source release).}
+
+\keywords{Insight-HXMT, gamma-ray bursts, data reconstruction, FIFO saturation, time reconstruction}
+
 \maketitle
 
-\begin{abstract}
-TBD --- to be drafted in Task 16 after Phase E numbers are frozen.
-The abstract will follow the structure in
-\texttt{docs/superpowers/specs/2026-05-06-scpma-submission-design.md} \S2.2.
-\end{abstract}
+%%%=============================================================
+\begin{multicols}{2}
 
-%% ===================================================================
 \section{Introduction}\label{sec:intro}
 %% Task 6
-TBD --- ~1.5 pages. Hook + 1.1 HE in bright sources / 1.2 FIFO saturation
+TBD --- $\sim$1.5 pages. Hook + 1.1 HE in bright sources / 1.2 FIFO saturation
 \& 1K limits / 1.3 1B opportunity \& challenges / 1.4 four contributions.
 
-%% ===================================================================
 \section{HE Data System and Saturation Mechanisms}\label{sec:instrument}
 %% Task 7
-TBD --- ~1.5 pages. Subsections 2.1 hardware path / 2.2 packet \& time /
-2.3 saturation modes / 2.4 1B vs 1K. Includes Figure~1.
+TBD --- $\sim$1.5 pages. Subsections 2.1 hardware path / 2.2 packet \& time /
+2.3 saturation modes / 2.4 1B vs 1K. Includes Figure~\ref{fig:datapath}.
 
-%% ===================================================================
 \section{Event-Level Time Reconstruction}\label{sec:method}
 %% Task 8
-TBD --- ~2.5 pages. Opens with framing as prerequisite for Section~\ref{sec:recovery}.
+TBD --- $\sim$2.5 pages. Opens with framing as prerequisite for
+Section~\ref{sec:recovery}.
 Subsections 3.1 problem / 3.2 SEC validation / 3.3 $\Delta s_{\rm time}=1$ direct LIS
 (includes dead-zone safeguard sentence) / 3.4 $\Delta s_{\rm time}>1$ grouped LIS.
-Includes Figures~2, 3, 4 and Table~1.
 
-%% ===================================================================
 \section{FIFO Reset Detection and Light Curve Recovery}\label{sec:recovery}
 %% Task 10 --- HEADLINE SECTION
-TBD --- ~2 pages. Opens with ``With per-event times reconstructed, we
+TBD --- $\sim$2 pages. Opens with ``With per-event times reconstructed, we
 address the headline problem''. Subsections 4.1 adaptive gap threshold /
 4.2 unreliable interval flagging / 4.3 cross-box shape function /
-4.4 three-box co-saturation degenerate case. Includes Figure~5.
+4.4 three-box co-saturation degenerate case.
 
-%% ===================================================================
 \section{Validation}\label{sec:validation}
 %% Task 12
-TBD --- ~3 pages. Subsections 5.1 internal 1B/1K consistency /
+TBD --- $\sim$3 pages. Subsections 5.1 internal 1B/1K consistency /
 5.2 HE engineering data \textbf{(headline)} / 5.3 cross-satellite (5.3.1
 time systems / 5.3.2 GBM / 5.3.3 SPI-ACS / 5.3.4 GECAM-C) /
-5.4 cross-box cross-correlation. Includes Figures~6, 7, 8 and Tables~2, 3, 4.
+5.4 cross-box cross-correlation.
 
-%% ===================================================================
 \section{Discussion: Limits and Failure Modes}\label{sec:discussion}
 %% Task 14
-TBD --- ~1.5 pages. Subsections 6.1 too bright / 6.2 too short /
+TBD --- $\sim$1.5 pages. Subsections 6.1 too bright / 6.2 too short /
 6.3 silent drops (mechanism real but undetectable) / 6.4 CRC-failed event
 recovery infeasibility. \textbf{Dead zone is NOT discussed here} ---
 it appears only in \S\ref{sec:method} as a boundary safeguard.
 
-%% ===================================================================
 \section{Conclusion}\label{sec:conclusion}
 %% Task 15
-TBD --- ~0.5 pages. Four-bullet summary mirroring contribution list,
-plus open-source pointer (Zenodo DOI to be inserted in Task 19).
+TBD --- $\sim$0.5 pages. Four-bullet summary mirroring contribution list,
+plus open-source pointer.
 
-%% ===================================================================
 \section*{Code and Data Availability}
 %% Task 19
 TBD --- statement to be filled with Zenodo DOI after release tag.
 
-\bibliographystyle{plain}
+%%%=============================================================
+%%% References, scpma.bst style
+\bibliographystyle{scpma}
 \bibliography{refs_en}
+
+\end{multicols}
+
+\Authorfootnote
 
 \end{document}

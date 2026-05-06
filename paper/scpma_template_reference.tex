@@ -1,0 +1,510 @@
+% !TEX encoding = System
+%-----------------------------------------------------------------------
+% Template File for Science China Physics, Mechanics & Astronomy
+% Update date: 2016/10/28
+%-----------------------------------------------------------------------
+
+\documentclass[fleqn]{2026SCGE}
+\setlength{\mathindent}{0cm}
+\usepackage{bm}
+\usepackage{algorithm}
+\pdfstringdefDisableCommands{\renewcommand*{\bm}[1]{#1}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Author's definitions for this manuscript
+%%% ???????????
+%%% ???????????????, ????????????
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\usepackage{hyperref}%PDF??????
+%\textcolor[rgb]{0.88,0.77,0}{Table}
+%\usepackage[pdfstartview=FitH,colorlinks,linkcolor=blue,citecolor=blue,urlcolor=blue,hyperindex,dvipdfm]{hyperref}
+%%Print?汾?????linkcolor=black%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%\usepackage[dvipdfm,colorlinks=true,linkcolor=blue,breaklinks=true,urlcolor=blue,citecolor=blue]{hyperref}
+%\definecolor{Table}{RGB}{0.88,0.77,0}
+%%% Begin. ???
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\thispagestyle{empty}
+%\usepackage[toc]{multitoc}
+%\renewcommand*{\multicolumntoc}{1}
+\begin{document}
+\ensubject{subject}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Authors do not modify the information below
+%%% ????????????????
+%%% ??????????, ????????????{}, ???????????????????
+%Letter to the Editor??Article%??????
+\ArticleType{Article}%??Article
+\SpecialTopic{SPECIAL TOPIC: }%???????
+\Year{2026}
+\Month{January}
+\Vol{69}
+\No{1}
+\DOI{??}
+\ArtNo{000000}
+\ReceiveDate{January 11, 2023}
+\AcceptDate{April 6, 2023}
+%\OnlineDate{January 1, 2016}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%% title: ????
+%%%   \title{title}{title for citation}
+\title{Sample manuscript for SCPMA}{Sample manuscript for SCPMA}
+
+%%% Corresponding author: ???????
+%%%   \author[number]{Full name}{{email@xxx.com}}
+%%% General author: ???????
+%%%   \author[number]{Full name}{}
+\author[1]{A. Author}{{zz@scichina.org}}%
+\author[2]{B. Author}{email@xxx.com}
+\author[1]{C. Author}{}%\protect\\?м??ж????
+\author[1]{\\D. Author}{}%
+\author[1]{E. Author}{}
+
+
+
+
+
+
+%%% Author information for page head. ?ü?е????????
+%%% ??????????????, ??????????author???
+\AuthorMark{Yang Y X}%\authorcr????????
+
+%%% Authors for citation. ????????е????????
+%%% ??????????????, ??????????author???
+\AuthorCitation{Yang Y X, Yang J, Zhang Z X, et al}
+
+%%% Address. ???
+%%%   \address[number]{Address, City {\rm Postcode}, Country}
+\address[1]{Department, University, City, Postal code, Country;}
+\address[2]{For example: Institute of Mechanics, Chinese Academy of Sciences, Beijing 100190, China}
+
+
+%\contributions{}%????????
+
+%%% Abstract. ??
+\abstract{An abstract (100-200 words) is a summary of the content of the manuscript. It should briefly describe the research purpose, method, result and conclusion. The extremely professional terms, special signals, figures, tables, chemical structural formula, and equations should be avoided here, and citation of references is not allowed. In this sample article we provide instructions on how to prepare and submit your paper to \textit{Science China Physics, Mechanics $ \& $ Astronomy}, a journal published by Science China Press. The Science China Press staff appreciates your effort to follow our style when preparing your manuscript.}%摘要
+
+%%% Keywords. ?????
+\keywords{keyword 1, keyword 2, keyword 3}
+
+
+
+
+
+\maketitle
+
+%\tableofcontents%?????
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% The main text. ???????
+%???????????????????\cref{fig1}
+%\twocolumn\onecolumn
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{multicols}{2}
+\section{Manuscript preparation and submission}\label{section1}
+Please use this ``sample manuscript" as a guide for preparing your article. Please read all of the following manuscript preparation instructions carefully and in their entirety. The manuscript must be in good scientific American English; this is the author's responsibility. All files will be submitted through our online electronic submission system at \href{https://mc03.manuscriptcentral.com/scpma}{https://mc03.manuscriptcentral.com/scpma}.
+
+Articles must be prepared as either a Microsoft Word .doc/docx file or a REVTeX/LaTeX file. Each version of the manuscript (the original and subsequent revisions) should be submitted with its own complete set of files: a cover letter (indicating the title, authors, and contact information), a complete article file, and separate figure files. When uploading a revised manuscript, also include a response/rebuttal letter (indicating the changes
+\Authorfootnote
+
+\noindent  made to address the Editor's and Reviewers' comments). The manuscript begins with a title, names of all authors and their affiliations, an abstract, keywords and PACS numbers, followed by the body of the paper, tables and figures, if any, included, and the reference section. Consecutively number all tables (1, 2, 3, etc.) and figures (1, 2, 3, etc.), including those in an Appendix. Figures, with figure captions, may be embedded within the manuscript to assist the reviewers. Number all pages consecutively, beginning with 1.
+
+\section{Authors' names and addresses}\label{sec:2}
+Authors' names should preferably be written in a standard form for all publications to facilitate indexing and to avoid ambiguities. Include the names and postal addresses of all institutions, followed by city, state, zip code, and USA if in the United States or by postal code, city, and country if not in the U.S. Please provide the complete address for each author. See the byline of this sample article for examples.
+
+Authors with Chinese, Japanese, or Korean names may choose to have their names published in their own language alongside the English versions of their names in the author list of their publications. For Chinese, authors may use either Simplified or Traditional characters.
+\section{Introduction}\label{sec:3}
+A paper should begin with a brief introduction of the significance of the author's research. Nomenclature, signal and abbreviation should be defined at their initial appearance.
+
+Being the most important part of an article, the introduction introduces the relevant research background and the progress in 2 or 3 years, with references cited in numerical order, then presents the problem to be solved in this article, and finally briefly describes the method adopted in this work. Before the end, the aim of the research should be mentioned. Subtitle is forbidden in this part, and introduction of the article structure is considered unnecessary.
+\section{Materials and method}\label{sec:4}
+This part introduces the materials, method and experimental procedure of the author's work, so as to allow others to repeat the work published based on this clear description.
+\section{Discussion and conclusions}\label{sec:5}
+Conclusions should be derived from the observation and experimental results, and comparison with other relevant results is considered helpful to further proving the results. Repeated data should be avoided, and conclusions and suggestions are required to be clearly expressed. New hypotheses and recommendations may be proposed when war-ranted.
+\section{Figures and tables}\label{sec:6}
+It is preferred that authors embed figures and tables in the manuscript file. Embed the figures and tables in the approximate position and size you think is appropriate. For each figure and table, please supply a caption (title) explaining the components of the figure and table. Identify any previously published material by giving the original source in the form of a reference at the end of the figure and table caption.
+
+
+\subsection{Figures}
+It is vital that you prepare your illustrations so that they are legible when reduced. \cref{fig:example1,fig:example2,fig:example3,fig:example4,fig:example5} show examples of various types of production ready illustrations: color, line art, and halftone.
+
+Acceptable formats for figures: Portable Document Files (PDF), Encapsulated PostScript Files (EPS), PostScript (PS), or *.cdr, *.ai, *.org, *.srf, *.xls, *.fh, *.gmf, *.wmf, Tagged Image File (TIF), and JPEG (.jpg). Microsoft Word files are not acceptable.
+
+PDF files should be vector files. In the PDF illustration, resolution of any shaded or photographic images must be 600 pixels per inch (PPI). Within the PDF illustration, resolution of line art with no shading should be 1200 pixels per inch (PPI). All fonts must be embedded in the PDF. Select ``High Quality Print" when creating a PDF through the application's print command.
+
+When selecting a file mode, for print choose CMYK (cyan, magenta, yellow, black) and for color online choose RGB (red, green, blue).
+
+The figures should have resolution not lower than 600 dpi for line art, 300 dpi of halftones, and clear lines of 5 px, with signals and letters in Arial Unicode MS at 7 pt. A space should always be maintained between the variable and the unit.
+
+Label all figure parts with (a), (b), etc. Each figure file should contain all parts of the figure. For example, if \cref{fig:example1} contains three parts [(a) and (b)], then all parts should be combined in a single file for \cref{fig:example1}.
+
+\begin{figure}[H]%"[]"中为位置参数，四个参数tbph依次是置顶、置底、浮动、当前位置，，选用的参数优先顺序为h-t-b-p
+\centering
+%\includegraphics[scale=1.0]{fig1.eps}%"scale"后的数字为图形的宽度，也可用"width=1.0\columnwidth"定义
+\caption{This figure will appear in color in print and online. Figures should be created at 300 dpi and submitted at 300 dpi for the best presentation. Choose CMYK (cyan, magenta, yellow, black) for any figure that will appear in color in the print version.} %图题
+\label{fig:example1}%{}中"fig:example1"为图名，引用时用\ref{fig:example1}
+\end{figure}
+
+
+\begin{figure}[H]%"[]"中为位置参数，四个参数tbph依次是置顶、置底、浮动、当前位置，，选用的参数优先顺序为h-t-b-p
+\centering
+%\includegraphics[scale=1.0]{fig2.eps}%"scale"后的数字为图形的宽度，也可用"width=1.0\columnwidth"定义
+\caption{(Color online) This figure will appear in color only in the online version only, not in the printed version. Figures should be created at 300 dpi and submitted at 300 dpi for the best presentation. Choose RGB (red, green, blue) for any figure that will appear in color only online.} %图题
+\label{fig:example2}%{}中"fig:example1"为图名，引用时用\ref{fig:example1}
+\end{figure}
+
+
+\begin{figure}[H]%"[]"中为位置参数，四个参数tbph依次是置顶、置底、浮动、当前位置，，选用的参数优先顺序为h-t-b-p
+\centering
+%\includegraphics[scale=1.0]{fig3.eps}%"scale"后的数字为图形的宽度，也可用"width=1.0\columnwidth"定义
+\caption{(Color online) This is a good example of information that was presented clearly. When this figure appeared in the printed journal it was in black and white print, but the reader was able to discern the ``red" diamonds, the ``green" squares, and the ``blue" circles. A description as well as the color is needed. If the caption had simply discussed ``the red and blue symbols," the reader of the print version would not understand because he/she would be seeing the figure without the color.} %图题
+\label{fig:example3}%{}中"fig:example1"为图名，引用时用\ref{fig:example1}
+\end{figure}
+
+
+Prepare illustrations in the final published size, not oversized. The maximum published width for a one-column illustration is 8 cm. The maximum width for a two-column figure is 17 cm. Footnotes to tables should be indicated by superscript lower-case letters (or asterisks for significance values and other statistical data) and included beneath the table body.
+
+The author is responsible for obtaining permissions to reuse previously published material. Full credit lines are needed for figures that are used with permission. An example of the recommended format for crediting material from  a journal article is: ``Reprinted with permission from [FULL CITATION]. Copyright [PUBLICATION YEAR] by  \linebreak \vspace{-8mm}
+
+
+\begin{figure}[H]%"[]"中为位置参数，四个参数tbph依次是置顶、置底、浮动、当前位置，，选用的参数优先顺序为h-t-b-p
+\centering
+%\includegraphics[scale=1.0]{fig4.eps}%"scale"后的数字为图形的宽度，也可用"width=1.0\columnwidth"定义
+\caption{This is an example of line art. Figures should be created at 600 dpi and submitted at 600 dpi for the best presentation. Save line art as black/white bitmap, not grayscale.} %图题
+\label{fig:example4}%{}中"fig:example1"为图名，引用时用\ref{fig:example1}
+\end{figure}
+
+
+\begin{figure}[H]%"[]"中为位置参数，四个参数tbph依次是置顶、置底、浮动、当前位置，，选用的参数优先顺序为h-t-b-p
+\centering
+%\includegraphics[scale=1.0]{fig5.eps}%"scale"后的数字为图形的宽度，也可用"width=1.0\columnwidth"定义
+\caption{This is an example of a halftone. Figures should be created at 300 dpi and submitted at 300 dpi for the best presentation.} %图题
+\label{fig:example5}%{}中"fig:example1"为图名，引用时用\ref{fig:example1}
+\end{figure}
+
+
+\noindent Science China Press." Full citation format is as follows: Author names, journal title, Vol. *, Issue *, Page * (or CID*), Year of publication. For example, the credit line would appear as: ``Reprinted with permission from Sci. China-Phys. Mech. Astron. 58, 050301 (2015). Copyright 2015 by Science China Press." Please be aware that some publishers do not grant electronic rights for free.
+
+
+\subsection{Tables}
+Separate tables (numbered with Roman numerals in the order of their appearance in the text) should be used for all tabular material. Tables must be embedded in the article file, not uploaded like figure files. The structure should be clear. Use simple column headings and include units of measure.  Table captions are positioned above the table and should be styled as ``Table 1  This is a table caption." A caption should make its table intelligible without reference to the text. Capitalize the first word in the table headings and subheadings.
+
+
+\begin{table}[H]
+\footnotesize
+\begin{threeparttable}\caption{FPGA resource ultilization}\label{tab1}
+	\doublerulesep 0.1pt \tabcolsep 13pt %space between two columns. ????????м???
+	\begin{tabular}{ccc}
+		\toprule
+		FPGA device & ArriaV 5AGXFB3H4F35C4N \\\hline
+		Logic utilization (in ALMs) & 83845/136880 (61\%)\\
+		Total registers & 83534\\
+		Total pins & 41/656 (6\%)\\
+		Total block memory bits&2350280/17674240 (13\%)\\
+		Total PLLs&2/36 (6\%)\tnote{1)}\\
+		\bottomrule
+	\end{tabular}\begin{tablenotes}
+		\item[1)] spacecraft will hit earth on way back since $r_p<r_{earth}$
+\end{tablenotes}\end{threeparttable}
+\end{table}
+
+\begin{table*}[t]
+\footnotesize
+\caption{Comparison with related works}
+\label{tab4}
+\tabcolsep 18pt %space between two columns. ????????м???
+\begin{tabular*}{\textwidth}{ccccc}
+	\toprule
+	&This work &{Ref. \cite{ref1}} & {Ref. \cite{ref2}}& {Ref. \cite{ref12,ref13}}\\\hline
+	Image& 8-bit mono& 8-bit mono& 8-bit color & 8-bit mono\\
+	Algorithm& MRID based& LBP based& Color tracking& HOG-LBP\\
+	Resolution&{750 $\times$ 480 }& {128$\times$128} & {512$\times$512} &N/A \\
+	Environment setting& Outdoor/indoor,  & Indoor, Certain  &Indoor, Certain  &Outdoor/indoor, \\
+	&Complex sceneries,&sceneries,&sceneries,&Certain \\
+	&Changing illumination, &Changing &Changing &sceneries, \\
+	&Abrupt rotation&illumination&illumination&Changing illumination\\
+	Robustness&Best &Common & Worst& Common\\
+	Tracking Method&Learning & No learning& No learning& Learning\\
+	{Frequency (MHz)}& {100}&{50} &{151.2} &{N/A} \\
+	{Processing speed (fps)}&1200 &1000 &2000 &N/A \\
+	\bottomrule
+\end{tabular*}
+\end{table*}
+
+
+\subsection{Multimedia submissions}
+Multimedia files can be included in the online version of published papers. All such files are peer reviewed. When published, these files can be viewed by clicking on a link from the figure caption, provided that the reader has a video player installed, such as Windows Media PlayerTM, Quick Time PlayerTM, or RealOne PlayerTM. Please note the following important information when preparing your manuscript:
+\begin{itemize}
+	\item When incorporating multimedia, note that the paper should be written so that the printed version can be understood on its own.\vspace*{-2mm}
+	\item Submit all multimedia files initially with the manuscript.\vspace*{-2mm}
+	\item Treat all multimedia files as figures numbered in sequence as they are referred to in text.\vspace*{-2mm}
+	\item For each multimedia file, provide a figure, which is a static representation of the multimedia file. Also provide an accompanying caption. At the end of the caption, include the phrase, ``(multimedia view)".
+\end{itemize}
+
+Video and other enhanced files should be in a format that the majority of readers can view without too much difficulty.
+
+
+\section{Equations}\label{sec:7}
+Equations need to be editable so we recommend that you create them with Mathtype. An equation is numerically numbered (Arabic numeral), and has the number put on its right side, as \cref{eq:1,eq:2,eq:3}. Don't use the method ``begin\{eqnarray\}".
+
+
+\begin{equation}
+	\textmd{d}s^{2}=-f(r)\textmd{d}t^{2}+f^{-1}(r)\textmd{d}r^{2}+r^{2}\textmd{d}\tilde{x}_i^{2},
+	\label{eq:1}
+\end{equation}
+
+\begin{align}
+	{\cal L}_{\rm K}  = & \left(\frac{\chi}{f_\chi}\right)^2D_\mu K^\dagger D^\mu K - \left(\frac{\chi}{f_\chi}\right)^3m_K^2 K^\dagger K \nonumber\\
+	& - \frac{2{\rm i}N_c}{5f_\uppi^2} {B}^\mu \left(D_\mu K^\dagger K - K^\dagger D_\mu K\right),
+	\label{eq:2}
+\end{align}
+
+\begin{align}
+	\begin{array}{l}
+		{\rm (i)} :  {\rm i} f_\uppi^2 g_{\mu\nu} \delta^{ab}
+		\left(1-\dfrac{2}{3}\left\langle\bm{\phi}_\uppi^2\right\rangle \right),\\[4pt]
+		{\rm (ii)} :
+		- {\rm i} f_\uppi^2 \frac{p_\mu^{} p_\nu}{p^2} \delta^{ab}\left(1-\dfrac{2}{3}\left\langle {\bm\phi}_\uppi^2\right\rangle \right) .
+	\end{array}
+	\label{eq:3}
+\end{align}
+
+When a numbered equation has more than one part and that (those) part(s) consecutively follow, then they are indicated as follows:
+
+\begin{equation}
+	f(r)=-\frac{r^2}{4\alpha}\left[1-\sqrt{1+\frac{8\alpha}{l^2}-\frac{16\alpha  M}{r^3}+\frac{8\alpha Q^2}{r^4}}\right], \tag {4}
+\end{equation}
+
+\begin{equation}
+	\textmd{d}s^2\rightarrow \frac{r^2}{\ell^2}(-\textmd{d}t^2+\textmd{d}x_i^2)+\frac{\ell^2}{r^2}\textmd{d}r^2, \tag {5a}
+\end{equation}
+
+\begin{equation}
+	\ell^2=\frac{l^2(1+\sqrt{1+8\alpha/l^2})}{2}.\label{metric} \tag {5b}
+\end{equation}
+
+\begin{equation}
+	\textmd{d}s^{2}=\frac{l^2}{z^2}[-H(z)\textmd{d}t^{2}+H^{-1}(z)\textmd{d}z^{2}+\textmd{d}x_i^2], \tag {5c}
+\end{equation}
+
+
+
+If, however, they do not follow consecutively, primes are used:
+\begin{equation}
+	f(r)=-\frac{r^2}{4\alpha}\left[1-\sqrt{1+\frac{8\alpha}{l^2}-\frac{16\alpha  M}{r^3}+\frac{8\alpha Q^2}{r^4}}\right], \tag {6}
+\end{equation}
+
+\begin{equation}
+	\textmd{d}s^2\rightarrow \frac{r^2}{\ell^2}(-\textmd{d}t^2+\textmd{d}x_i^2)+\frac{\ell^2}{r^2}\textmd{d}r^2, \tag {7a}
+\end{equation}
+
+\begin{equation}
+	\ell^2=\frac{l^2(1+\sqrt{1+8\alpha/l^2})}{2}.\label{metric} \tag {7b}
+\end{equation}
+
+\begin{equation}
+	\textmd{d}s^{2}=\frac{l^2}{z^2}[-H(z)\textmd{d}t^{2}+H^{-1}(z)\textmd{d}z^{2}+\textmd{d}x_i^2], \tag {7'}
+\end{equation}
+
+\begin{equation}
+	H(z)={1/4\alpha}\left[\sqrt{1+8\alpha-16\alpha M z^3 }-1\right]. \tag {7''}
+\end{equation}
+
+
+\section{References}\label{sec:8}
+1. For an author's name, full spelling of family name appears after abbreviation of given name, and it should include the full list of authors.
+
+2. For correct abbreviations of journal titles, refer to ISO, e.g., Sci. Bull for Science Bulletin, Sci. China-Phys. Mech. Astron. for \textit{SCIENCE CHINA Physics, Mechanics $ \& $ Astronomy}.
+
+3. The article title should be identified by an initial capital letter and italic with the remainder of the title in lower case, but the Journal references have not the article title.
+
+4. For books and proceedings, the initial letter is capitalized for all the notional words and for function words with more than 4 letters.
+
+5. Do not forget to list the editor names of the proceedings, publisher, city and year of publication, and the page numbers.
+
+6. Accepted but unpublished papers should be followed by ``in press".
+
+7. The list of references should only include works that are cited in the text and that have been published or accepted for publication. Personal communications and unpublished works should only be mentioned in the text. Do not use footnotes or endnotes as a substitute for a reference list. The entries in the list should be numbered consecutively.
+
+8. Reference citations in the text should be identified by numbers in square brackets. Some examples:
+
+(i) Negotiation research spans many disciplines \cite{ref1}.
+
+(ii) This result was later contradicted by Becker and Seligman \cite{ref2}.
+
+(iii) This effect has been widely studied \cite{ref3,ref4,ref5,ref6,ref7}.
+
+
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Acknowledgements. ??л
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\Acknowledgements{This work was supported by the National Natural Science Foundation of China (Grant Nos. 61234003, 61434004, 61504141) and CAS Interdisciplinary Project (Grant No. KJZD-EW-L11-04).}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Conflict of interest. ????????????
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\InterestConflict{The authors declare that they have no conflict of interest.}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Supplements. ????????, ????
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\Supplements{}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Reference section. ?ο?????
+%%% citation in the content using "some words~\cite{1,2}".
+%%% ~ is needed to make the reference number is on the same line with the word before it.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{thebibliography}{99}
+\bibitem {ref1} M. Aspelmeyer, T. J. Kippenberg, and F. Marquardt, Rev. Mod. Phys. 86, 1391 (2014).
+
+\bibitem {ref2} R. J. Hunter, \textit{Zeta Potential in Colloid Science} (Academic, New York, 1981), p. 120 %%Books
+
+\bibitem {ref3} M. S. Narayan, and A. Banaszuk, ``Experimental study of a novel active separation control approach", AIAA Paper No. 2003-0060, 2003. %%AIAA Papers
+
+\bibitem {ref4} H. R. Qin, in \textit{The subgroups of a finite order in K(Q): Algebraic K-theory and Its Application}, edited by H. Bass, A. O. Kuku and C. Pedrini (World Scientific, Singapore, 1999), pp. 600–607. %%Proceedings
+
+\bibitem {ref5} 	R. K. Ahrenkiel, in \textit{Gallium Arsenide and Related Compounds 1993: Proceedings of the 20th International Symposium on Gallium Arsenide and Related Compounds}, Freiburg, Germany, 29 August–2 September 1993, edited by H. S. Rupprecht and G. Weimann (Institute of Physics, London, 1994), pp. 685–690. %%Proceedings
+
+\bibitem {ref6} G. X. Liu, \textit{Classification of Finite Dimensional Basic Hopf Algebras and Related Topics}, Dissertation for the Doctoral Degree, (Hangzhou University, Hangzhou, 2005), pp. 24-28. %%Dissertation
+
+\bibitem {ref7}  V. Chang, The Past, \textit{Present and Future of the Linux Operating Systems}, Technical Report, (University of Southampton, 2006).%%Technical report
+
+\bibitem {ref8}  W. P. Zhang, \textit{Experiment apparatus of diffraction imaging}, China patent, 02290557.X (2003-12-03). %%Patent
+
+\bibitem {ref9}  D. L. Wang, J. Zhu, and Z. K. Li, \textit{User Manual for QTKMapper Version 1.6}, 1999. %%User manual
+
+\bibitem {ref10} \textit{Hemodynamics III: The ups and downs of hemodynamics}, Version 2.2, (Computerized Educational Systems, Orlando (FL), 1993). %%Software
+
+\bibitem {ref11} D.-Y. Choi, S. Madden, A. Rode, R. Wang, and B. Luther-Davies, J. Non-Cryst. Solids 354, 3179 (2008); J. Appl. Phys. 104, 113305 (2008). %%same authors, different journals
+
+\bibitem {ref12} J. Scaroni, and T. Mckee, Solid State Technol. 40, 245 (1997); M. G. Lawrence, Bull. Am. Meteorol. Soc. 86, 225 (2005). %%two completely different references
+
+\bibitem {ref13} Y. de Carlan, A. Alamo, M. H. Mathon, G. Geoffroy, and A. Castaing, J. Nucl. Mater. 283-287, 762 (2000); M. H. Mathon, Y. de Carlan, G. Geoffroy, X. Averty, A. Alamo, and C. H. de Novion, ibid. 312, 236 (2003).
+
+
+
+\end{thebibliography}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% Appendix sections. ??????, ????
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{appendix}
+%\section{Name}
+
+%\end{appendix}
+
+
+%\begin{appendices}
+%\section{Appendix}
+%\end{appendices}
+%\appendix
+
+%\appendix
+
+
+\renewcommand{\thesection}{Appendix}
+
+
+\section{}
+
+%\def\thesubsection{\Arabic.\alph{section}}
+
+
+The appendix section is placed after the listing of references.
+Appendices must have a Level One heading as illustrated be-low.
+They do not follow the sequential heading numbering given in the rest of the paper.
+If there is only one appendix, then the heading is set as follows:
+
+
+
+
+
+
+%\section{}
+
+If there is more than one appendix, the headings are set as:
+
+
+\subsection{\label{sec:level1} Description}
+
+\subsection{\label{sec:level2} Description}
+Subheadings in an Appendix are labeled 1, 2, etc. In appendixes, the equation's
+numbering starts over as \cref{eq:a1,eq:a2,eq:a3}.
+
+Figure a1  This is a figure in Appendix.
+Table a1  This is a table in Appendix.
+\begin{figure}[H]%"[]"???λ?ò????????????tbph???????????????????????λ????????????????????h-t-b-p
+	\centering
+	%\includegraphics[scale=1.0]{fig5}%"scale"???????????ε??????????"width=1.0\columnwidth"????
+	\caption{(Color online) This figure will appear in color only in the online version only, not in the printed version. Figures should be created at 300 dpi and submitted at 300 dpi for the best presentation. Choose RGB (red, green, blue) for any figure that will appear in color only online.}\label{fig:example22} %???
+	%{}??"fig:example1"?????????????\ref{fig:example1}
+\end{figure}
+
+
+\begin{equation}\label{eq:a1}
+	R_{\mu \nu } -\frac{1}{2}Rg_{\mu \nu}=8\uppi \textmd{G}\langle T_{\mu \nu}\rangle,
+\end{equation}
+\begin{equation}\label{eq:a2}
+	\textmd{d}s^{2}=-f(r)\textmd{d}t^{2}+f^{-1}(r)\textmd{d}r^{2}+r^{2}\textmd{d}\tilde{x}_i^{2},
+\end{equation}
+\begin{equation}\label{eq:a3}
+	\textmd{d}s^{2}=-f(r)\textmd{d}t^{2}+f^{-1}(r)\textmd{d}r^{2}+r^{2}\textmd{d}\tilde{x}_i^{2},
+\end{equation}
+
+When a numbered equation has more than one part and that (those) part(s) consecutively follow, then they are indicated as follows:
+\begin{subequations}
+	\begin{align}
+		&f(r)=-\frac{r^2}{4\alpha}\left[1-\sqrt{1+\frac{8\alpha}{l^2}-\frac{16\alpha  M}{r^3}+\frac{8\alpha Q^2}{r^4}}\right], \\
+		&\textmd{d}s^2\rightarrow \frac{r^2}{\ell^2}(-\textmd{d}t^2+\textmd{d}x_i^2)+\frac{\ell^2}{r^2}\textmd{d}r^2,
+		\\
+		&\ell^2=\frac{l^2(1+\sqrt{1+8\alpha/l^2})}{2}.\label{metric}
+		\\
+		&\textmd{d}s^{2}=\frac{l^2}{z^2}[-H(z)\textmd{d}t^{2}+H^{-1}(z)\textmd{d}z^{2}+\textmd{d}x_i^2],
+	\end{align}\label{eq:4}
+\end{subequations}
+
+
+\begin{table*}[h]%"[]"???λ?ò????????????htbp???????????????????????λ??????????????????h-t-b-p
+	\caption{Some typical quantities calculated in different models
+		with several particle numbers $N$, where $H_{\rm cri}$ denotes the
+		Hamiltonian at the critical point of the U(5)-O(6) transition.
+		Some typical quantities calculated in different models with
+		several particle numbers $N$, where $H_{\rm cri}$ denotes the
+		Hamiltonian at the critical point of the U(5)-O(6) transition}\label{tab:table2}%?????????????????%????
+	\begin{center}\vspace{-2mm}\footnotesize \doublerulesep 0.2pt \tabcolsep 23pt
+		\begin{tabular*}{\textwidth}
+			{cccccccc}\toprule[0.65pt]  %%(11???????????????0.65pt??????????????????????)
+			&\multicolumn{2}{c} {$H_{\rm cri}$} & \multicolumn{2}{c} {
+				$H_{A}$} &\raisebox{-1.50ex}{$\beta^4$}&\raisebox{-1.50ex}{E(5)}
+			\\
+			\cline{2-3\ }\cline{4-5\ }
+			&$N$=16&$N$=1024& $N$=16&
+			$N$=1024&
+			\\ \hline %%(11?????????????????????\midrule[x pt]??????x???)
+			$E_{4_1}/E_{2_1}$&2.13&2.10&1.95&2.19&2.09&2.20\\
+			$E_{0_2}/E_{2_1}$&2.80&2.46&2.68&3.02&2.39&3.03\\\vspace*{1 pt}
+			$\frac{B(E2;~4_1\rightarrow 2_1)}{B(E2;~2_1\rightarrow 0_1)}$ ~
+			&1.66&1.81&1.61&1.67&1.82&1.68\\\vspace*{1 pt}
+			$\frac{B(E2;~0_2\rightarrow 2_1)}{B(E1;~2_1\rightarrow 0_1)}$ ~
+			&0.98&1.35&0.64&0.86&1.41&0.86\\
+			\bottomrule[0.65pt] %%(11???????????????0.65pt??????????????????????)
+		\end{tabular*}
+	\end{center}
+\end{table*}
+
+
+%\end{appendices}
+\end{appendix}
+
+\end{multicols}
+\end{document}
