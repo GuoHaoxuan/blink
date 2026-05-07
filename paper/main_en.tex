@@ -66,12 +66,11 @@ filtering, and FIFO-reset gaps are filled at $1$~ms granularity using a
 cross-detector-box shape function calibrated by simultaneous reference-box
 counts. We validate against the 1K pipeline ($\sim 5\times 10^{-4}\%$
 residual on GRB~260226A), against the magnetar giant flare GRB~200415A
-(HXMT/SPI-ACS = $1.09 \pm 0.14$ at $50$~ms binning),\footnote{Numbers
+(HXMT/SPI-ACS = $1.09 \pm 0.14$ at $50$~ms binning).\footnote{Numbers
 in this abstract are sourced from \texttt{paper/numbers.csv} and tagged
 \emph{RE-VERIFY} where the camera-ready copy will be re-derived on the
-full-archive server.} and via a within-instrument cross-box
-cross-correlation test on GRB~221009A. We characterize the method's
-failure boundaries explicitly.}
+full-archive server.} We characterize the method's failure boundaries
+explicitly.}
 
 \keywords{Insight-HXMT, gamma-ray bursts, data reconstruction, FIFO saturation, time reconstruction}
 
@@ -543,11 +542,7 @@ holds for every $\Delta s_{\rm time}>1$ window we examined in
 GRB~221009A; the shortest empirical excess of LIS length under
 $j=0$-allowed versus $j=0$-disabled is $\sim 3{,}000$ events for a
 $\Delta s_{\rm time}=19$ window, far above any plausible counting noise.
-We further validate uniqueness against an independent constraint in
-Section~\ref{sec:crossbox}: the cross-correlation of Box A versus Box B
-light curves over the same time window has minimum residual at the LIS
-solution and grows by a factor $\sim 3$ when the wrap count is shifted by
-$\pm 1$. Algorithm~\ref{alg:grouped_lis} summarizes the grouped solver.
+Algorithm~\ref{alg:grouped_lis} summarizes the grouped solver.
 
 \begin{algorithm}[H]
 \caption{Grouped LIS with UTC-tail constraint for
@@ -769,9 +764,6 @@ compares the recovered HXMT/HE light curve against simultaneous
 observations from independent instruments (Fermi/GBM, INTEGRAL/SPI-ACS,
 ASIM/MXGS) on the magnetar giant flare GRB~200415A, where the
 external rate profile is well-determined.
-\emph{Cross-box internal cross-correlation} (Section~\ref{sec:val_xbox})
-provides a within-detector consistency check that does not depend on
-any external reference.
 
 \subsection{Internal 1B/1K consistency}\label{sec:val_1b1k}
 
@@ -882,16 +874,16 @@ and at $1$~ms it quantifies the boundary at which the method loses
 fidelity.
 
 Table~\ref{tab:val_summary} consolidates the validation outcomes
-across all four methods in one place; the same numbers are tagged
+across all three layers in one place; the same numbers are tagged
 \emph{RE-VERIFY} in \texttt{paper/numbers.csv} where they will be
 re-derived from the full archive prior to the camera-ready copy.
 
 \begin{table}[H]
 \centering
-\caption{Summary of validation outcomes across the four
+\caption{Summary of validation outcomes across the three
 independent layers. The 1B/1K and engineering-data layers test
 the recovery against same-source ground truth; the cross-satellite
-and cross-box layers test against independent references.
+layer tests against independent external references.
 ``RE-VERIFY'' marks numbers locked from cached runs that will be
 re-derived on the full archive server before submission.}
 \label{tab:val_summary}
@@ -907,7 +899,6 @@ X-sat $5$\,ms & GRB~200415A & HXMT/SPI-ACS & $1.47 \pm 1.33$ ($31$ bins); Fig.~\
 X-sat $50$\,ms & GRB~200415A & HXMT/SPI-ACS & $1.09 \pm 0.14$; Sec.~\ref{sec:val_xsat} \\
 X-sat $5$\,ms & GRB~200415A & HXMT/GBM (n0+n4) & $1.32 \pm 0.64$ ($22$ bins); Fig.~\ref{fig:xsat} \\
 X-sat $1$\,ms & GRB~200415A & HXMT/ASIM-MXGS & $0.37 \pm 0.31$ ($18$ bins); Sec.~\ref{sec:val_xsat}+\ref{sec:too_short} \\
-Cross-box & GRB~221009A & $k_{\rm A/B}$ peak & sharp at calibrated $k$, zero lag; Fig.~\ref{fig:cross_box} \\
 \hline
 \end{tabular}
 \end{table}
@@ -928,49 +919,6 @@ expected level after spectral-and-area scaling. The ratio averages
 to $1.47\pm 1.33$ at $5$~ms, sharpening to $1.09 \pm 0.14$ when
 binned to $50$~ms.}
 \label{fig:xsat}
-\end{figure}
-
-\subsection{Cross-box internal cross-correlation}\label{sec:val_xbox}
-
-A within-detector consistency test, independent of any external
-reference, is provided by cross-correlation of the three HE boxes
-themselves (Figure~\ref{fig:cross_box}). For each FIFO-reset gap
-in one box that has at least one un-saturated reference box, we
-compute the cross-correlation between the post-fill light curve
-of the gap-bearing box and the simultaneous reference-box light
-curve over a $\pm 50$~ms window. A correctly recovered gap-fill
-should produce a correlation peak at zero lag with amplitude
-consistent with the calibrated rate-ratio $k_b$; an over- or
-under-fill, or an erroneous shape function, would shift the peak
-or reduce the amplitude.
-
-We apply this test to the GRB~221009A T+249--268 interval,
-where multiple FIFO resets occur in Box~A while Boxes~B and C
-remain at least intermittently un-saturated. Figure~\ref{fig:cross_box}
-shows the resulting cross-correlation surface as a function of
-both the assumed cross-calibration coefficient $k_{\rm A/B}$ and
-the temporal lag. The peak is sharp and unique at the calibrated
-$k_{\rm A/B}$ value and at zero lag, with a secondary lobe
-structure consistent with the detector dead-time floor and not
-with an alternative gap-fill solution. This rules out, at the
-correlation level, both systematically biased shape functions
-and constant-offset errors in the cross-calibration.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\columnwidth]{f8_uniqueness.pdf}
-\caption{Cross-box cross-correlation of the gap-filled GRB~221009A
-T+249--268 interval, Box~A versus Box~B reference. Horizontal axis:
-cross-calibration coefficient $k_{\rm A/B}$ (the ratio applied
-during shape-function rescaling, Section~\ref{sec:crossbox}).
-Vertical axis: temporal lag relative to the SEC-anchored event
-times. The black contours mark the cross-correlation amplitude
-levels. The peak coincides exactly with the calibrated
-$k_{\rm A/B}$ at zero lag (white cross), and is uniquely
-localized: there is no alternative $(k, \tau)$ region of
-comparable amplitude, ruling out gap-fill solutions that
-systematically over- or under-rescale the reference shape.}
-\label{fig:cross_box}
 \end{figure}
 
 \section{Discussion: Limits and Failure Modes}\label{sec:discussion}
@@ -1098,7 +1046,7 @@ greedy alternatives that fail catastrophically under deep saturation.
 ordering and a UTC-tail constraint, resolving the wrap ambiguity
 introduced by lost SECs with provable uniqueness for $\Delta s_{\rm time}
 \le 10$~s. Wrap uniqueness is independently confirmed by the
-skip-wrap-0 LIS-length test and by cross-box light-curve correlation.
+skip-wrap-0 LIS-length test.
 
 \item A cross-detector-box shape-function recovery for FIFO-reset gaps
 that exploits HE's three-box independence to provide a calibrated
