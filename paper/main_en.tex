@@ -121,10 +121,13 @@ structure, the original 19-bit hardware time counter (\textit{ptime}),
 the second-tag events (SEC) used to anchor absolute time, and every
 event that passes a 4-bit CRC. Crucially, by preserving each event's
 CCSDS packet membership, 1B exposes inter-packet time gaps directly:
-an inter-packet interval several times longer than the MCU's normal
-$\sim 7$\,ms packet cadence is the signature of a FIFO reset, and the
-gap's start and end are localized to packet boundaries rather than
-smeared by the 1-second binning of the 1K count-rate trace. Once the
+since each FIFO reset discards ${\sim}455$ queued events at once, the
+resulting packet-to-packet gap spans roughly that many event intervals
+at the prevailing source rate. A packet-to-packet gap exceeding the
+in-packet event spacing by ${\sim}100\times$ is therefore the
+signature of a FIFO reset, and the gap's start and end are localized
+to packet boundaries rather than smeared by the 1-second binning of
+the 1K count-rate trace. Once the
 FIFO-reset gaps are localized in time, the per-event detector
 identity --- preserved through both the 1K and 1B event lists ---
 allows the gap in any one box to be filled at $1$\,ms granularity
@@ -308,12 +311,15 @@ two distinct loss mechanisms appear.
 \texttt{FIFOAFullReset()} check: after completing a packet write to FIFO~B,
 if FIFO~A is still at maximum fill, the MCU clears the entire FIFO~A
 buffer in a single hardware operation, discarding all queued events.
-This loses ${\sim}455$ events at once, producing a packet-to-packet gap
-in event time that is several times longer than the MCU's normal
-$\sim 7$~ms cadence. FIFO resets are detectable from the data because
-they leave a gap in MET between consecutive packets that exceeds the
-local rate by orders of magnitude---this is the basis of the gap detector
-in Section~\ref{sec:detect}.
+This loses ${\sim}455$ events at once, producing a packet-to-packet
+gap whose duration is approximately $455/r$ at the prevailing source
+rate $r$ --- tens of milliseconds for the rates that trigger the
+reset, and roughly two orders of magnitude longer than the in-packet
+event spacing $1/r$. FIFO resets are detectable directly from this
+disproportion: a packet-to-packet gap exceeding the in-packet event
+spacing by ${\sim}100\times$, with the surrounding packet rate above
+the MCU readout ceiling, flags a reset
+(Section~\ref{sec:detect}).
 
 \textbf{(ii) Silent drop (instantaneous loss).} While the MCU is inside
 \texttt{HandlePhysicalLVDS()} for the $\sim 7$~ms required to extract 109
