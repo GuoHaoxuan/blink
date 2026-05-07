@@ -377,6 +377,21 @@ anomalous ptime contributes only itself to no chosen subsequence and does
 not poison its neighbors. In our data, switching from greedy to LIS
 recovered ${\sim}24{,}000$ events in GRB~260226A Box~A alone.
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{f3_lis_vs_greedy.pdf}
+\caption{LIS versus greedy ordering on a CRC-ghost-contaminated SEC
+interval. Top: a single ghost event (anomalous ptime, marked $\times$)
+inflates the greedy ``previous accepted'' threshold, causing the
+following ${\sim}10^2$ genuine events to be rejected as out-of-order
+until the next wrap resets the comparator. Bottom: the LIS
+formulation evaluates all subsequences globally, isolating the ghost
+to a length-1 component and accepting the genuine monotone tail
+intact. The cascade in the greedy panel erases ${\sim}0.2$~s of
+data per ghost; LIS preserves it.}
+\label{fig:lis_vs_greedy}
+\end{figure}
+
 \subsection{$\Delta s_{\rm time}>1$: grouped LIS with UTC-tail
 constraint}\label{sec:lis_gt1}
 
@@ -426,7 +441,7 @@ GRB~221009A; the shortest empirical excess of LIS length under
 $j=0$-allowed versus $j=0$-disabled is $\sim 3{,}000$ events for a
 $\Delta s_{\rm time}=19$ window, far above any plausible counting noise.
 We further validate uniqueness against an independent constraint in
-Section~\ref{sec:cross_box}: the cross-correlation of Box A versus Box B
+Section~\ref{sec:crossbox}: the cross-correlation of Box A versus Box B
 light curves over the same time window has minimum residual at the LIS
 solution and grows by a factor $\sim 3$ when the wrap count is shifted by
 $\pm 1$.
@@ -547,6 +562,24 @@ present in the reference data (we revisit this resolution as the
 Figure~\ref{fig:crossbox_recovery} shows a worked example for a
 GRB~221009A FIFO reset, with the saturated Box~A gap filled from
 simultaneous Box~B data.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{f5_crossbox_recovery.pdf}
+\caption{Cross-box shape-function reconstruction for a representative
+GRB~221009A FIFO-reset gap. Top: Box~A 1B observed light curve
+(black), with the FIFO-reset gap shown as a hatched interval where
+no events are recorded. Middle: simultaneous Box~B reference light
+curve (blue), unsaturated through this interval and rate-rescaled
+by $k_{\rm A/B} = C_{\rm A}^{\rm calib}/C_{\rm B}^{\rm calib}$
+to predict the Box-A intrinsic rate. Bottom: the recovered Box~A
+light curve, with the gap filled by allocating
+$N_{\rm lost} = \mathrm{round}(\sum S_i)$ events distributed
+according to the shape-function $S_i$ at 1~ms granularity. The
+recovered profile preserves sub-second structure that integrated
+gap-rate interpolation would erase.}
+\label{fig:crossbox_recovery}
+\end{figure}
 
 \subsection{Three-box co-saturation: degenerate case}\label{sec:cosat}
 
