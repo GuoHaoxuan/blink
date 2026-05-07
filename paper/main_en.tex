@@ -126,16 +126,15 @@ resulting packet-to-packet gap spans roughly that many event intervals
 at the prevailing source rate. A packet-to-packet gap exceeding the
 in-packet event spacing by ${\sim}100\times$ is therefore the
 signature of a FIFO reset, and the gap's start and end are localized
-to packet boundaries. The 1K event list, despite carrying the same
-per-event MET, detector ID, and energy channel, lacks the packet
-membership and so cannot expose the gap directly: its absence is only
-visible as a count-rate dip in a binned light curve, where the
-boundary precision is set by the chosen bin width and Poisson noise
-limits how narrow the bins can usefully be. Once the FIFO-reset gaps
-are localized in time, the per-event detector identity ---
-preserved through both the 1K and 1B event lists --- allows the gap
-in any one box to be filled at $1$\,ms granularity from the
-simultaneous unsaturated data in the other two.
+to packet boundaries. Without packet membership, the 1K event list
+cannot expose this packet-by-packet structure, so 1K-only saturation
+analysis is restricted to the coarser, 1-second-cadence integrated
+lost-count estimate of~\cite{xiao2020deadtime} and cannot localize
+individual reset gaps. Once the FIFO-reset gaps are localized in
+time, the per-event detector identity --- preserved through both the
+1K and 1B event lists --- allows the gap in any one box to be filled
+at $1$\,ms granularity from the simultaneous unsaturated data in the
+other two.
 
 Reconstructing these events directly from 1B raw data presents two technical
 obstacles. First, the ptime counter wraps every $\sim 1.05$~s and the
