@@ -354,10 +354,10 @@ $\Delta s_{\rm time} = s_{\rm SEC_2} - s_{\rm SEC_1} \ge 1$.
 
 When the SEC pair has unit separation, every event between them belongs
 to a known 1-second window. For event $i$ define
-\begin{equation}
-e_i \;=\; \bigl(p_i - p_{\rm SEC_1}\bigr) \bmod P_{\rm MOD},
-\quad a \;=\; \bigl(p_{\rm SEC_2} - p_{\rm SEC_1}\bigr) \bmod P_{\rm MOD},
-\end{equation}
+\begin{align}
+e_i &\;=\; \bigl(p_i - p_{\rm SEC_1}\bigr) \bmod P_{\rm MOD}, \\
+a   &\;=\; \bigl(p_{\rm SEC_2} - p_{\rm SEC_1}\bigr) \bmod P_{\rm MOD},
+\end{align}
 where $a \approx 500{,}000$~ticks $= 1$~s. Valid genuine events have
 $e_i \in [0, a]$. Events with $e_i \in [a+1, P_{\rm MOD}-1]$ fall in the
 $\sim 48.6$~ms ptime range corresponding to no real time within the
