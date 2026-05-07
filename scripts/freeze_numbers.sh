@@ -147,6 +147,14 @@ emit "200415a_peak_recovered_evt_per_s" "48800" "200415A" "ALL" "peak rate after
 emit "200415a_spiacs_ratio" "1.09" "200415A" "ALL" "HXMT/SPI-ACS scale ratio (50ms bin)"
 emit "200415a_spiacs_ratio_err" "0.14" "200415A" "ALL" "ratio uncertainty"
 emit "200415a_spiacs_lighttravel_ms" "-406.6" "200415A" "ALL" "INTEGRAL light-travel projection"
+emit "200415a_spiacs_ratio_5ms" "1.47" "200415A" "ALL" "HXMT/SPI-ACS ratio at 5ms bin (31 bins)"
+emit "200415a_spiacs_ratio_5ms_err" "1.33" "200415A" "ALL" "ratio uncertainty at 5ms"
+emit "200415a_gbm_ratio_5ms" "1.32" "200415A" "ALL" "HXMT/GBM (n0+n4) ratio at 5ms (22 bins)"
+emit "200415a_gbm_ratio_5ms_err" "0.64" "200415A" "ALL" "GBM ratio uncertainty"
+emit "200415a_gbm_scale_factor" "3.67" "200415A" "ALL" "HXMT effective area / GBM n0+n4 scale factor"
+emit "200415a_asim_ratio_1ms" "0.37" "200415A" "ALL" "HXMT/ASIM-MXGS ratio at 1ms (saturation window, 18 bins)"
+emit "200415a_asim_ratio_1ms_err" "0.31" "200415A" "ALL" "ASIM ratio uncertainty (1ms scale, marks too-short boundary)"
+emit "200415a_asim_scale_factor" "4.2" "200415A" "ALL" "HXMT / ASIM-MXGS LED 50-400 keV scale factor"
 
 #=========================================================================
 # 4. Method-wide constants (independent of specific GRB)

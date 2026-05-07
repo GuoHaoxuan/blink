@@ -20,6 +20,9 @@ sips -s format pdf fig_greedy_vs_lis.png --out figures/f3_lis_vs_greedy.pdf > /d
 # F5: cross-box recovery worked example
 sips -s format pdf fig_crossbox.png --out figures/f5_crossbox_recovery.pdf > /dev/null
 
+# F7: cross-satellite (GRB 200415A: SPI-ACS + GBM 5ms composite)
+sips -s format pdf GRB200415A_hxmt_vs_spiacs_gbm.png --out figures/f7_cross_satellite.pdf > /dev/null
+
 # F8: cross-box uniqueness
 sips -s format pdf fig13_crossbox.png --out figures/f8_uniqueness.pdf > /dev/null
 
