@@ -50,12 +50,27 @@
 \address[1]{Institute of High Energy Physics, Chinese Academy of Sciences, Beijing 100049, China}
 
 %%%-------------------------------------------------------------
-\abstract{TBD --- finalized in Task 16 once Phase E numbers are frozen.
-Target length 100--200 words. Structure follows the spec at
-\texttt{docs/superpowers/specs/2026-05-06-scpma-submission-design.md} \S2.2:
-background (HE saturation, 1K limits) / method (1B reconstruction, LIS,
-cross-box shape function) / results (260226A residual, 221009A coverage,
-multi-layer cross-validation) / implication (open-source release).}
+\abstract{The High-Energy detector (HE) on board Insight-HXMT provides
+$\sim 5100~\mathrm{cm^2}$ of effective area in the $20$--$250$~keV band,
+which makes it one of the most sensitive in-orbit instruments to bright
+hard X-ray transients but also makes its FIFO data buffers prone to
+saturation during the brightest events. The standard Level-1K processing
+pipeline reports gaps and constant-rate fills across saturated intervals,
+limiting timing and fluence science. We present an event-level recovery
+pipeline that operates directly on the Level-1B raw telemetry: per-event
+timing is reconstructed from a longest-increasing-subsequence (LIS)
+formulation over 19-bit hardware ptime values with $4$-bit CRC ghost
+filtering, and FIFO-reset gaps are filled at $1$~ms granularity using a
+cross-detector-box shape function calibrated by simultaneous reference-box
+counts. We validate against the 1K pipeline ($\sim 5\times 10^{-4}\%$
+residual on GRB~260226A), against the magnetar giant flare GRB~200415A
+(HXMT/SPI-ACS = $1.09 \pm 0.14$ at $50$~ms binning), and via a
+within-instrument cross-box cross-correlation test on GRB~221009A. We
+characterize the method's failure boundaries explicitly. The pipeline
+is released open-source, with reproduction artifacts archived on
+Zenodo.\footnote{Numbers in this abstract are sourced from
+\texttt{paper/numbers.csv} and tagged \emph{RE-VERIFY} where the camera-ready
+copy will be re-derived on the full-archive server.}}
 
 \keywords{Insight-HXMT, gamma-ray bursts, data reconstruction, FIFO saturation, time reconstruction}
 
