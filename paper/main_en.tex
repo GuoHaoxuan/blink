@@ -66,13 +66,12 @@ filtering, and FIFO-reset gaps are filled at $1$~ms granularity using a
 cross-detector-box shape function calibrated by simultaneous reference-box
 counts. We validate against the 1K pipeline ($\sim 5\times 10^{-4}\%$
 residual on GRB~260226A), against the magnetar giant flare GRB~200415A
-(HXMT/SPI-ACS = $1.09 \pm 0.14$ at $50$~ms binning), and via a
-within-instrument cross-box cross-correlation test on GRB~221009A. We
-characterize the method's failure boundaries explicitly. The pipeline
-is released open-source, with reproduction artifacts archived on
-Zenodo.\footnote{Numbers in this abstract are sourced from
-\texttt{paper/numbers.csv} and tagged \emph{RE-VERIFY} where the camera-ready
-copy will be re-derived on the full-archive server.}}
+(HXMT/SPI-ACS = $1.09 \pm 0.14$ at $50$~ms binning),\footnote{Numbers
+in this abstract are sourced from \texttt{paper/numbers.csv} and tagged
+\emph{RE-VERIFY} where the camera-ready copy will be re-derived on the
+full-archive server.} and via a within-instrument cross-box
+cross-correlation test on GRB~221009A. We characterize the method's
+failure boundaries explicitly.}
 
 \keywords{Insight-HXMT, gamma-ray bursts, data reconstruction, FIFO saturation, time reconstruction}
 
@@ -163,15 +162,13 @@ characterization of the method's failure modes (sub-millisecond burst
 structure, three-box co-saturation, and SEC gaps beyond ${\sim}10$~s).
 \end{itemize}
 
-The pipeline is implemented in Rust as an open-source command-line tool
-released under the MIT license; the corresponding repository is referenced
-in the Code and Data Availability statement. Section~\ref{sec:instrument}
-describes the HE data system and saturation mechanisms;
-Section~\ref{sec:method} details the time-reconstruction algorithm;
-Section~\ref{sec:recovery} covers FIFO-reset detection and light-curve
-recovery; Section~\ref{sec:validation} presents the three-layer validation;
-Section~\ref{sec:discussion} characterizes the method's failure modes; and
-Section~\ref{sec:conclusion} summarizes.
+The remainder of this paper is organized as follows.
+Section~\ref{sec:instrument} describes the HE data system and saturation
+mechanisms; Section~\ref{sec:method} details the time-reconstruction
+algorithm; Section~\ref{sec:recovery} covers FIFO-reset detection and
+light-curve recovery; Section~\ref{sec:validation} presents the
+three-layer validation; Section~\ref{sec:discussion} characterizes the
+method's failure modes; and Section~\ref{sec:conclusion} summarizes.
 
 \section{HE Data System and Saturation Mechanisms}\label{sec:instrument}
 
@@ -1116,14 +1113,12 @@ INTEGRAL/SPI-ACS, together with an explicit quantitative
 characterization of the method's failure modes.
 \end{itemize}
 
-The pipeline is implemented in Rust and released under the MIT license;
-see the Code and Data Availability statement below for the repository
-and Zenodo DOI. The recovered event streams are suitable for GRB
-peak analyses at $\ge 5$~ms time resolution and have been used in this
-work to confirm consistency with independent instruments at the
-few-percent level for moderately bright events. We anticipate the
-method to extend straightforwardly to other instruments with similar
-FIFO-based readout architectures, including GECAM and SVOM~GRM.
+The recovered event streams are suitable for GRB peak analyses at
+$\ge 5$~ms time resolution and have been used in this work to confirm
+consistency with independent instruments at the few-percent level for
+moderately bright events. We anticipate the method to extend
+straightforwardly to other instruments with similar FIFO-based readout
+architectures, including GECAM and SVOM~GRM.
 
 \section*{Acknowledgements}
 
@@ -1144,33 +1139,16 @@ Denmark for access to MXGS LED $1$~ms light curves of GRB~200415A.
 We acknowledge funding support from [TBD --- specific grant numbers
 to be added during author-list finalization].
 
-\section*{Code and Data Availability}
+\section*{Data Availability}
 
-The recovery pipeline described in this work is implemented in Rust
-as the \texttt{blink} package and will be released open-source under
-the MIT license, archived on Zenodo with a citable DOI, at the time
-of publication. During the editorial-review process the source code
-and reproduction artifacts are available to the editorial board and
-referees upon request to the corresponding author.
-
-The frozen reproducibility data set --- including the event-by-event
-metric tables, $1$-ms reconstructed light curves of the four GRBs
-analyzed here (GRB~200415A, GRB~221009A, GRB~260226A, and the
-engineering-data event), and the cached 1B-vs-1K comparison outputs
---- will be bundled with the Zenodo release. The script
-\texttt{scripts/freeze\_numbers.sh} regenerates the metric table
-(\texttt{paper/numbers.csv}) end-to-end when run on a machine with
-full HXMT 1B/1K archive coverage; that table is the single source of
-truth for all numbers quoted in this manuscript.
-
-Insight-HXMT raw $1$B and $1$K data are available through the
-Insight-HXMT data archive at \url{http://hxmten.ihep.ac.cn}.
-Fermi/GBM data are available through HEASARC. INTEGRAL/SPI-ACS
-data products were obtained from the INTEGRAL Science Data Centre
-(ISDC) at the University of Geneva. ASIM/MXGS data were provided
-by the ASIM Science Data Centre under a private-communication
-agreement; published light curves are available through the
-references cited in Section~\ref{sec:val_xsat}.
+Insight-HXMT 1B and 1K data are distributed through the Insight-HXMT
+data archive at \url{http://hxmten.ihep.ac.cn} subject to the mission's
+data policy. Fermi/GBM data are available through HEASARC.
+INTEGRAL/SPI-ACS data products were obtained from the INTEGRAL Science
+Data Centre (ISDC) at the University of Geneva. ASIM/MXGS data were
+provided by the ASIM Science Data Centre under a private-communication
+agreement; published light curves are available through the references
+cited in Section~\ref{sec:val_xsat}.
 
 %%%=============================================================
 %%% References, scpma.bst style
