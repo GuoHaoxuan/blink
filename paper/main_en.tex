@@ -96,10 +96,12 @@ from SGR~1935$+$2154~\cite{li2021frb}, and the brightest gamma-ray burst ever
 recorded, GRB~221009A~\cite{burns2023boat,an2023hxmt}. The same property that
 makes HE valuable for these observations---large effective area in a single
 collecting volume---also makes it especially prone to electronics-level
-saturation. When the photon rate exceeds the readout capacity of the front-end
-microcontroller, hardware FIFO buffers overflow, the FPGA side stops accepting
-new events, and a fraction of the burst photons are lost without any flag in
-the downlinked data.
+saturation. When the photon rate exceeds the per-box MCU readout
+ceiling, the hardware FIFO between FPGA and MCU fills faster than it
+can be drained. The MCU responds by clearing the entire buffer in a
+single hardware operation when it detects sustained overflow,
+discarding several hundred queued events at once and leaving a gap in
+the downlinked event stream that carries no flag.
 
 The standard 1K-level data pipeline does not attempt to detect or
 compensate for these losses: it processes the surviving event list
