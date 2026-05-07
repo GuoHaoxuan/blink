@@ -108,20 +108,22 @@ compensate for these losses: it processes the surviving event list
 with its time-reconstruction and CRC filters, and intervals where
 the hardware FIFO dropped photons appear in the 1K product as
 count-rate deficits, with no interpolation or fill applied. Offline
-analysis of the 1K product can identify saturated intervals from
-the 1-second deadtime counter and estimate the integrated number of
-lost counts in each one~\cite{xiao2020deadtime}, but the events
-themselves --- their per-event arrival times and energy
-channels --- are absent from the downlinked stream and cannot be
-recovered from the 1K event list alone. The lower-level 1B raw
-telemetry retains the
-complete CCSDS packet structure, the original 19-bit hardware time
-counter (\textit{ptime}), the second-tag events (SEC) used to
-anchor absolute time, and every event that passes a 4-bit CRC.
-Crucially, it also retains the surrounding three-detector-box context
-that an offline pipeline can exploit to reconstruct events lost to
-FIFO resets in any one box from the simultaneous unsaturated data
-in the other two.
+analysis of the 1K product can identify saturated intervals and
+estimate the integrated number of lost counts at the 1-second
+cadence~\cite{xiao2020deadtime}, by comparing the recorded 1-second
+deadtime --- which physically saturates at $1$\,s/s during deep
+gaps --- against a deadtime calculated from the per-second large- and
+wide-signal count rates. What this 1K-only approach cannot provide
+is the sub-second light-curve profile of the lost flux, which
+dominates the science return for short-duration transients. The
+lower-level 1B raw telemetry retains the complete CCSDS packet
+structure, the original 19-bit hardware time counter (\textit{ptime}),
+the second-tag events (SEC) used to anchor absolute time, and every
+event that passes a 4-bit CRC. Crucially, it also retains the
+surrounding three-detector-box context that an offline pipeline can
+exploit to recover the light curve across saturated intervals at
+$1$\,ms granularity from the simultaneous unsaturated data in the
+other two.
 
 Reconstructing these events directly from 1B raw data presents two technical
 obstacles. First, the ptime counter wraps every $\sim 1.05$~s and the
