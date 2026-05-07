@@ -119,11 +119,16 @@ dominates the science return for short-duration transients. The
 lower-level 1B raw telemetry retains the complete CCSDS packet
 structure, the original 19-bit hardware time counter (\textit{ptime}),
 the second-tag events (SEC) used to anchor absolute time, and every
-event that passes a 4-bit CRC. Crucially, it also retains the
-surrounding three-detector-box context that an offline pipeline can
-exploit to recover the light curve across saturated intervals at
-$1$\,ms granularity from the simultaneous unsaturated data in the
-other two.
+event that passes a 4-bit CRC. Crucially, by preserving each event's
+CCSDS packet membership, 1B exposes inter-packet time gaps directly:
+an inter-packet interval several times longer than the MCU's normal
+$\sim 7$\,ms packet cadence is the signature of a FIFO reset, and the
+gap's start and end are localized to packet boundaries rather than
+smeared by the 1-second binning of the 1K count-rate trace. Once the
+FIFO-reset gaps are localized in time, the per-event detector
+identity --- preserved through both the 1K and 1B event lists ---
+allows the gap in any one box to be filled at $1$\,ms granularity
+from the simultaneous unsaturated data in the other two.
 
 Reconstructing these events directly from 1B raw data presents two technical
 obstacles. First, the ptime counter wraps every $\sim 1.05$~s and the
