@@ -186,7 +186,9 @@ which extracts up to 109 events, packages them into one CCSDS packet (6-byte
 header, $109\times 8 = 872$-byte payload, 4-byte UTC tail; 882 bytes total),
 and writes the packet to FIFO~B. Each \texttt{HandlePhysicalLVDS()}
 invocation takes $\sim 7$~ms, so the steady-state throughput ceiling is
-${\sim}109/7~\mathrm{ms}\approx 15{,}600$ evt/s per box.
+${\sim}109/7~\mathrm{ms}\approx 15{,}600$ evt/s per box. The full set
+of instrument and telemetry constants used in the recovery pipeline
+is summarized in Table~\ref{tab:he_params}.
 
 \begin{figure}[H]
 \centering
@@ -201,6 +203,39 @@ the FIFO~A write port or full-FIFO resets initiated by the MCU when it
 detects sustained overflow.}
 \label{fig:datapath}
 \end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Insight-HXMT HE instrument and telemetry parameters
+relevant to the recovery pipeline. Effective area and energy band are
+from~\cite{liu2020he}; the data-path quantities follow the model
+established in Section~\ref{sec:datapath}.}
+\label{tab:he_params}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}p{0.40\columnwidth}p{0.50\columnwidth}@{}}
+\hline
+Parameter & Value \\
+\hline
+Energy band & $20$--$250$~keV \\
+Effective area (peak) & ${\sim}5100$~cm$^2$ \\
+Number of detector boxes & 3 (A, B, C, independent FIFO each) \\
+Event size (FPGA $\to$ FIFO~A) & 9 bytes \\
+Event size (in CCSDS payload) & 8 bytes \\
+FIFO~A capacity & $4096$~bytes (${\sim}455$~events) \\
+Events per CCSDS packet & $109$ \\
+Packet size & $882$~bytes ($6$~hdr $+$ $872$~data $+$ $4$~UTC) \\
+\texttt{HandlePhysicalLVDS()} cadence & ${\sim}7$~ms \\
+MCU readout ceiling & ${\sim}15{,}600$~evt/s/box \\
+Hardware ptime resolution $\Delta t$ & $2~\mu$s \\
+ptime modulus $P_{\rm MOD}$ & $2^{19} = 524{,}288$ \\
+ptime wrap period $T_{\rm wrap}$ & $1.0486$~s \\
+SEC injection rate & $1$~Hz (GPS-1PPS disciplined) \\
+Per-event CRC & 4 bits ($1/16$ ghost rate) \\
+Empirical 1B$\to$1K time offset $t_{\rm corr}$ & ${\sim}4.0$~s \\
+\hline
+\end{tabular}
+\end{table}
 
 \subsection{Event packet format and time stamps}\label{sec:event_format}
 
