@@ -169,7 +169,9 @@ Section~\ref{sec:conclusion} summarizes.
 
 This section describes the HE data acquisition chain at the level of detail
 relevant to the 1B reconstruction problem. Readers familiar with the HE
-hardware (see~\cite{liu2020he} for a full description) may skim this
+hardware (see~\cite{liu2020he,cao2020me,chen2020le} for full
+descriptions of HE, ME, and LE respectively, and~\cite{li2020calib}
+for the on-orbit effective-area calibration) may skim this
 section and proceed to Section~\ref{sec:method}. The novel content here is
 the explicit characterization of the two saturation loss modes (Section~%
 \ref{sec:loss_modes}) and the contrast between 1B raw and 1K processed
@@ -265,7 +267,8 @@ the GPS time at which the MCU \textit{completed} the packet---which can
 lag the events themselves by many seconds during deep saturation when
 FIFO~A drains slowly.
 
-The 4-bit CRC has a $1/16 \approx 6.3\%$ collision probability, so even
+The 4-bit CRC has a $1/16 \approx 6.3\%$ collision
+probability~\cite{koopman2004crc}, so even
 when a transmission error corrupts an event byte, the corrupted value has
 a $6.3\%$ chance of passing CRC and being accepted as a valid event with
 random ptime and channel. Under nominal conditions this rate is negligible,
