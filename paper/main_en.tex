@@ -739,6 +739,37 @@ at $5$~ms (consistent with SPI-ACS and GBM) it validates recovery,
 and at $1$~ms it quantifies the boundary at which the method loses
 fidelity.
 
+Table~\ref{tab:val_summary} consolidates the validation outcomes
+across all four methods in one place; the same numbers are tagged
+\emph{RE-VERIFY} in \texttt{paper/numbers.csv} where they will be
+re-derived from the full archive prior to the camera-ready copy.
+
+\begin{table}[H]
+\centering
+\caption{Summary of validation outcomes across the four
+independent layers. The 1B/1K and engineering-data layers test
+the recovery against same-source ground truth; the cross-satellite
+and cross-box layers test against independent references.
+``RE-VERIFY'' marks numbers locked from cached runs that will be
+re-derived on the full archive server before submission.}
+\label{tab:val_summary}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}p{0.18\columnwidth}p{0.18\columnwidth}p{0.18\columnwidth}p{0.32\columnwidth}@{}}
+\hline
+Layer & Source & Metric & Result \\
+\hline
+1B/1K consistency & GRB~260226A & event residual & $3 / 549{,}661$ ($5.5{\times}10^{-4}\%$); Sec.~\ref{sec:val_1b1k}, RE-VERIFY \\
+Engineering data & HE eng. test & per-gap residual & TBD (HEADLINE); Sec.~\ref{sec:val_eng} \\
+X-sat $5$\,ms & GRB~200415A & HXMT/SPI-ACS & $1.47 \pm 1.33$ ($31$ bins); Fig.~\ref{fig:xsat} \\
+X-sat $50$\,ms & GRB~200415A & HXMT/SPI-ACS & $1.09 \pm 0.14$; Sec.~\ref{sec:val_xsat} \\
+X-sat $5$\,ms & GRB~200415A & HXMT/GBM (n0+n4) & $1.32 \pm 0.64$ ($22$ bins); Fig.~\ref{fig:xsat} \\
+X-sat $1$\,ms & GRB~200415A & HXMT/ASIM-MXGS & $0.37 \pm 0.31$ ($18$ bins); Sec.~\ref{sec:val_xsat}+\ref{sec:too_short} \\
+Cross-box & GRB~221009A & $k_{\rm A/B}$ peak & sharp at calibrated $k$, zero lag; Fig.~\ref{fig:cross_box} \\
+\hline
+\end{tabular}
+\end{table}
+
 \begin{figure}[H]
 \centering
 \includegraphics[width=\columnwidth]{f7_cross_satellite.pdf}
