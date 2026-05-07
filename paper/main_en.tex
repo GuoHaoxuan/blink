@@ -949,9 +949,53 @@ few-percent level for moderately bright events. We anticipate the
 method to extend straightforwardly to other instruments with similar
 FIFO-based readout architectures, including GECAM and SVOM~GRM.
 
+\section*{Acknowledgements}
+
+This work made use of data from the Insight-HXMT mission, a project
+funded by the China National Space Administration (CNSA) and the
+Chinese Academy of Sciences (CAS). The authors thank the HXMT
+science operations and data processing teams at the Institute of
+High Energy Physics (CAS) for their continued support, and the
+HE engineering team for assistance with the FPGA and MCU firmware
+documentation that informed the hardware-level model in
+Section~\ref{sec:datapath}. This research has made use of data
+obtained from the High Energy Astrophysics Science Archive Research
+Center (HEASARC), provided by NASA's Goddard Space Flight Center,
+including data from the Fermi Gamma-ray Burst Monitor (GBM) and
+INTEGRAL/SPI-ACS. We thank the ASIM team and the Atmosphere-Space
+Interactions Monitor data center at the Technical University of
+Denmark for access to MXGS LED $1$~ms light curves of GRB~200415A.
+We acknowledge funding support from [TBD --- specific grant numbers
+to be added during author-list finalization].
+
 \section*{Code and Data Availability}
-%% Task 19
-TBD --- statement to be filled with Zenodo DOI after release tag.
+
+The recovery pipeline described in this work is implemented in Rust
+as part of the open-source \texttt{blink} package, released under
+the MIT license. The source code is hosted at
+\url{https://github.com/[TBD]/blink}, with the version used to
+generate the results presented here archived on Zenodo at
+\texttt{[Zenodo DOI to be assigned upon release tag]}.
+
+The frozen reproducibility data set --- including the
+event-by-event metric tables, $1$-ms reconstructed light curves
+of the four GRBs analyzed here (GRB~200415A, GRB~221009A,
+GRB~260226A, and the engineering-data event), and the cached
+1B-vs-1K comparison outputs --- is bundled with the Zenodo
+release. The script \texttt{scripts/freeze\_numbers.sh}
+regenerates the metric table (\texttt{paper/numbers.csv}) end-to-end
+when run on a machine with full HXMT 1B/1K archive coverage; that
+table is the single source of truth for all numbers quoted in this
+manuscript.
+
+Insight-HXMT raw $1$B and $1$K data are available through the
+Insight-HXMT data archive at \url{http://hxmten.ihep.ac.cn}.
+Fermi/GBM data are available through HEASARC. INTEGRAL/SPI-ACS
+data products were obtained from the INTEGRAL Science Data Centre
+(ISDC) at the University of Geneva. ASIM/MXGS data were provided
+by the ASIM Science Data Centre under a private-communication
+agreement; published light curves are available through the
+references cited in Section~\ref{sec:val_xsat}.
 
 %%%=============================================================
 %%% References, scpma.bst style
