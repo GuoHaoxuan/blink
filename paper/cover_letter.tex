@@ -1,0 +1,105 @@
+\documentclass[11pt,a4paper]{letter}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\signature{Guo Hao-Xuan \\
+On behalf of the HXMT Collaboration \\
+Institute of High Energy Physics, CAS \\
+Beijing 100049, China \\
+\href{mailto:guohx@ihep.ac.cn}{guohx@ihep.ac.cn}}
+
+\address{Institute of High Energy Physics \\
+Chinese Academy of Sciences \\
+19B Yuquan Road, Shijingshan District \\
+Beijing 100049, China}
+
+\begin{document}
+
+\begin{letter}{Editor-in-Chief \\ \emph{Science China Physics, Mechanics \& Astronomy} \\
+Editorial Office, Beijing}
+
+\opening{Dear Editor,}
+
+We are pleased to submit our manuscript ``Saturation Recovery for Insight-HXMT/HE
+Bright Burst Observations from Level-1B Raw Data'' for consideration as an
+\textbf{Article} in \emph{Science China Physics, Mechanics \& Astronomy}.
+
+The High-Energy detector (HE) on board Insight-HXMT, with its ${\sim}5100~\rm cm^2$
+of effective area in the $20$--$250$~keV band, is one of the most sensitive
+in-orbit instruments to bright hard X-ray transients. Its standard Level-1K
+processing pipeline, however, reports gaps and constant-rate fills across
+saturated intervals --- a limitation that has constrained the use of HXMT
+HE data for the brightest gamma-ray bursts and for time-domain analyses of
+short-timescale variability where saturation overlaps with the scientifically
+most interesting moments. Until now, the most extreme HE-observed events
+(GRB~200415A magnetar giant flare, GRB~221009A ultra-luminous burst, several
+short and medium-bright GRBs) have been quoted in the literature with
+explicit caveats about saturation-induced loss.
+
+In this work, we present an event-level recovery pipeline that operates
+\emph{directly on the Level-1B raw telemetry}, recovering both timing and
+fluence in the saturation regime. The novel contributions are:
+
+\begin{itemize}
+\item A longest-increasing-subsequence (LIS) formulation for per-event
+ptime ordering that is robust to the $1/16$-rate CRC ghost contamination
+intrinsic to the 4-bit checksum used in HE 1B telemetry --- a structural
+problem that no prior 1B reconstruction had addressed.
+\item A grouped-LIS variant with a UTC-tail constraint that handles the
+multi-second-event-counter wrap regime, where each event acquires multiple
+candidate timestamps.
+\item A cross-detector-box shape-function gap-fill, using the simultaneous
+unsaturated reference-box light curve calibrated by physical area and
+spectral hardness ratios, recovering not just integrated fluence but
+sub-second light-curve structure.
+\item An honest characterization of the method's failure modes: the
+1\,ms shape-function granularity boundary (validated against ASIM/MXGS
+data on GRB~200415A) and the three-box co-saturation degenerate case.
+\end{itemize}
+
+The recovered data are validated at three independent levels: against the
+Level-1K pipeline on a moderately bright burst, against four external
+gamma-ray instruments on the magnetar giant flare GRB~200415A, and via
+within-instrument cross-box cross-correlation on GRB~221009A.
+We additionally present an HE engineering-data validation that constitutes
+the most stringent test available --- a controlled high-rate stream where
+both saturated 1B telemetry and the unsaturated ground-truth event list
+are simultaneously available.
+
+The pipeline and associated reproduction artifacts are released open-source
+(MIT license) on GitHub and archived on Zenodo upon acceptance.
+
+\textbf{Why \emph{Science China Physics, Mechanics \& Astronomy}.} Insight-HXMT
+is a flagship Chinese space astronomy mission, and a methods paper that
+extends the science reach of its instruments by recovering data from one of
+its most science-relevant operating regimes is strongly aligned with the
+journal's scope and readership. The methodology is generalizable: the
+underlying problem (FIFO-bound saturation in moderately deadtime-limited
+detectors) recurs in upcoming missions, and we explicitly note in the
+Conclusion how the algorithm extends to the GECAM constellation and the
+SVOM/GRM payload, both of which have substantial Chinese institutional
+involvement.
+
+\textbf{Originality and submission status.} This work has not been published
+elsewhere and is not under consideration by another journal. A preliminary
+internal version (in Chinese) was discussed within the HXMT collaboration
+but has not been distributed publicly; the present manuscript is a complete
+English rewrite incorporating substantial methodological improvements and
+the engineering-data validation, both unavailable at the time of the
+internal version.
+
+\textbf{Authorship.} The author list reflects the HXMT collaboration with
+the corresponding-author position held by the lead developer of the
+recovery pipeline. The collaboration list will be finalized in coordination
+with the IHEP HXMT science operations team prior to the camera-ready
+submission.
+
+We thank you for your time considering this manuscript and look forward to
+your editorial decision.
+
+\closing{Sincerely yours,}
+
+\end{letter}
+
+\end{document}
