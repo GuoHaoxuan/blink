@@ -103,14 +103,18 @@ single hardware operation when it detects sustained overflow,
 discarding several hundred queued events at once and leaving a gap in
 the downlinked event stream that carries no flag.
 
-The standard 1K-level data pipeline does not attempt to detect or
+The standard 1K-level data pipeline itself does not detect or
 compensate for these losses: it processes the surviving event list
 with its time-reconstruction and CRC filters, and intervals where
 the hardware FIFO dropped photons appear in the 1K product as
-count-rate deficits, with no interpolation or fill applied. This is
-sufficient for routine analysis on non-saturated bursts, but the
-lost events cannot be reintroduced by any offline operation on the
-1K event list alone. The lower-level 1B raw telemetry retains the
+count-rate deficits, with no interpolation or fill applied. Offline
+analysis of the 1K product can identify saturated intervals from
+the 1-second deadtime counter and estimate the integrated number of
+lost counts in each one~\cite{xiao2020deadtime}, but the events
+themselves --- their per-event arrival times and energy
+channels --- are absent from the downlinked stream and cannot be
+recovered from the 1K event list alone. The lower-level 1B raw
+telemetry retains the
 complete CCSDS packet structure, the original 19-bit hardware time
 counter (\textit{ptime}), the second-tag events (SEC) used to
 anchor absolute time, and every event that passes a 4-bit CRC.
