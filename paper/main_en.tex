@@ -428,8 +428,9 @@ file order, accept the next event whose $e_i$ exceeds the current
 sequences. A single ghost with anomalously large $e_i$ raises the greedy
 threshold above the next several genuine events, which are then rejected
 as ``out of order''---a cascade failure that can erase ${\sim}0.2$~s of
-data per ghost (Figure~\ref{fig:lis_vs_greedy}). The LIS algorithm by
-contrast considers all subsequences globally, so an isolated ghost with an
+data per ghost (Figure~\ref{fig:lis_vs_greedy}). The LIS
+algorithm~\cite{aldous1999} by contrast considers all subsequences
+globally, so an isolated ghost with an
 anomalous ptime contributes only itself to no chosen subsequence and does
 not poison its neighbors. In our data, switching from greedy to LIS
 recovered ${\sim}24{,}000$ events in GRB~260226A Box~A alone.
@@ -490,9 +491,10 @@ sequence is strictly increasing in file order, and the size of the chosen
 set is maximized. This is the grouped longest-increasing-subsequence
 problem.
 
-\paragraph{Algorithm.} We adopt a modified patience-sorting solver. Events
-are processed in file order; within each event, the $k$ candidates are
-processed in \textit{descending} order. Descending intra-event ordering
+\paragraph{Algorithm.} We adopt a modified patience-sorting
+solver~\cite{aldous1999}. Events are processed in file order; within
+each event, the $k$ candidates are processed in \textit{descending}
+order. Descending intra-event ordering
 is necessary: if candidates were processed ascending, a smaller candidate
 $e_i^{(j)}$ accepted into the patience-sort tail array could be later
 overtaken by the larger candidate $e_i^{(j+1)}$ from the same event,
