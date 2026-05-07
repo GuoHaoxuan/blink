@@ -391,6 +391,7 @@ contrast considers all subsequences globally, so an isolated ghost with an
 anomalous ptime contributes only itself to no chosen subsequence and does
 not poison its neighbors. In our data, switching from greedy to LIS
 recovered ${\sim}24{,}000$ events in GRB~260226A Box~A alone.
+Algorithm~\ref{alg:lis} summarizes the procedure.
 
 \begin{figure}[H]
 \centering
@@ -406,6 +407,32 @@ intact. The cascade in the greedy panel erases ${\sim}0.2$~s of
 data per ghost; LIS preserves it.}
 \label{fig:lis_vs_greedy}
 \end{figure}
+
+\begin{algorithm}[H]
+\caption{LIS-based time reconstruction for $\Delta s_{\rm time}=1$
+SEC pairs}\label{alg:lis}
+\begin{algorithmic}[1]
+\REQUIRE SEC pair $(p_{\rm SEC_1}, t_{\rm SEC_1}, p_{\rm SEC_2})$
+with $\Delta s_{\rm time}=1$; file-ordered events
+$\{(p_i, t_{\rm utc}^i)\}_{i=1}^{n}$ between the two SECs
+\ENSURE Accepted index set $\mathcal{L} \subseteq \{1,\dots,n\}$
+and per-event MET $\{t^*_i\}_{i \in \mathcal{L}}$
+\STATE $a \gets (p_{\rm SEC_2} - p_{\rm SEC_1}) \bmod P_{\rm MOD}$
+\FOR{$i = 1$ to $n$}
+  \STATE $e_i \gets (p_i - p_{\rm SEC_1}) \bmod P_{\rm MOD}$
+  \IF{$e_i > a$}
+    \STATE mark $i$ \emph{dropped} \COMMENT{boundary safeguard;
+    real events do not land here}
+  \ENDIF
+\ENDFOR
+\STATE $\mathcal{L} \gets \textsc{Patience-Sort}\bigl(\{e_i : i\text{
+not dropped}\}\bigr)$ \COMMENT{LIS over file order, $O(n \log n)$}
+\FOR{$i \in \mathcal{L}$}
+  \STATE $t^*_i \gets t_{\rm SEC_1} + e_i \cdot \Delta t + t_{\rm corr}$
+\ENDFOR
+\RETURN $(\mathcal{L}, \{t^*_i\}_{i \in \mathcal{L}})$
+\end{algorithmic}
+\end{algorithm}
 
 \subsection{$\Delta s_{\rm time}>1$: grouped LIS with UTC-tail
 constraint}\label{sec:lis_gt1}
@@ -459,7 +486,35 @@ We further validate uniqueness against an independent constraint in
 Section~\ref{sec:crossbox}: the cross-correlation of Box A versus Box B
 light curves over the same time window has minimum residual at the LIS
 solution and grows by a factor $\sim 3$ when the wrap count is shifted by
-$\pm 1$.
+$\pm 1$. Algorithm~\ref{alg:grouped_lis} summarizes the grouped solver.
+
+\begin{algorithm}[H]
+\caption{Grouped LIS with UTC-tail constraint for
+$\Delta s_{\rm time} > 1$}\label{alg:grouped_lis}
+\begin{algorithmic}[1]
+\REQUIRE SEC pair with $\Delta s_{\rm time}=k > 1$; file-ordered
+events $\{(p_i, t_{\rm utc}^i)\}_{i=1}^{n}$
+\ENSURE Accepted set $\mathcal{L}$, chosen wrap index $\{j_i\}$,
+per-event MET $\{t^*_i\}$
+\FOR{each event $i$}
+  \STATE $e_i \gets (p_i - p_{\rm SEC_1}) \bmod P_{\rm MOD}$
+  \STATE generate candidates $e_i^{(j)} \gets e_i + j \cdot P_{\rm MOD}$
+  for $j = 0,\dots,k-1$
+  \STATE $j_{\max}^i \gets \lfloor (t_{\rm utc}^i + 1 - t_{\rm SEC_1})/
+  (P_{\rm MOD}\cdot \Delta t) \rfloor$ \COMMENT{UTC-tail bound}
+  \STATE keep candidates with $j \le j_{\max}^i$, sort
+  \emph{descending} by $j$ within each event
+\ENDFOR
+\STATE $(\mathcal{L}, \{j_i\}) \gets$ \textsc{Patience-Sort-Grouped}
+$\bigl(\{e_i^{(j)}\}\bigr)$ \COMMENT{LIS variant: at most one
+candidate per event}
+\FOR{$i \in \mathcal{L}$}
+  \STATE $t^*_i \gets t_{\rm SEC_1} + e_i^{(j_i)} \cdot \Delta t +
+  t_{\rm corr}$
+\ENDFOR
+\RETURN $(\mathcal{L}, \{j_i\}, \{t^*_i\})$
+\end{algorithmic}
+\end{algorithm}
 
 \section{FIFO Reset Detection and Light Curve Recovery}\label{sec:recovery}
 
@@ -576,7 +631,8 @@ present in the reference data (we revisit this resolution as the
 ``too-short'' failure mode in Section~\ref{sec:discussion}).
 Figure~\ref{fig:crossbox_recovery} shows a worked example for a
 GRB~221009A FIFO reset, with the saturated Box~A gap filled from
-simultaneous Box~B data.
+simultaneous Box~B data; Algorithm~\ref{alg:gap_fill} summarizes the
+fill procedure end-to-end.
 
 \begin{figure}[H]
 \centering
@@ -595,6 +651,31 @@ recovered profile preserves sub-second structure that integrated
 gap-rate interpolation would erase.}
 \label{fig:crossbox_recovery}
 \end{figure}
+
+\begin{algorithm}[H]
+\caption{Cross-box shape-function gap-fill}\label{alg:gap_fill}
+\begin{algorithmic}[1]
+\REQUIRE Gap interval $[t_{\rm s}, t_{\rm e}]$ in target box $b_t$;
+unsaturated reference box $b_r$; calibration window $W$ adjacent
+to but disjoint from the gap
+\ENSURE Filled events $\{(t^*_j, b_t)\}_{j=1}^{N_{\rm lost}}$
+\STATE $C_t \gets$ event count of $b_t$ over $W$
+\STATE $C_r \gets$ event count of $b_r$ over $W$
+\STATE $k \gets C_t / C_r$ \COMMENT{cross-box rate calibration}
+\STATE bin reference events over $[t_{\rm s}, t_{\rm e}]$ at
+$\Delta_{\rm bin} = 1$~ms: $S_i^{\rm ref}$ for $i = 1, \dots, M$
+\STATE $S_i \gets k \cdot S_i^{\rm ref}$ \COMMENT{predicted target
+rate per bin}
+\STATE $N_{\rm lost} \gets \mathrm{round}\bigl(\sum_{i=1}^M S_i\bigr)$
+\FOR{$i = 1$ to $M$}
+  \STATE $n_i \gets \mathrm{round}\bigl(S_i \cdot N_{\rm lost} /
+  \sum_{j} S_j\bigr)$
+  \STATE distribute $n_i$ events at uniform sub-bin spacing over
+  $[t_{\rm s} + (i-1)\Delta_{\rm bin}, t_{\rm s} + i\Delta_{\rm bin}]$
+\ENDFOR
+\RETURN $\{(t^*_j, b_t)\}_{j=1}^{N_{\rm lost}}$
+\end{algorithmic}
+\end{algorithm}
 
 \subsection{Three-box co-saturation: degenerate case}\label{sec:cosat}
 
