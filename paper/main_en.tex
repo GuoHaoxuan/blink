@@ -55,8 +55,10 @@ $\sim 5100~\mathrm{cm^2}$ of effective area in the $20$--$250$~keV band,
 which makes it one of the most sensitive in-orbit instruments to bright
 hard X-ray transients but also makes its FIFO data buffers prone to
 saturation during the brightest events. The standard Level-1K processing
-pipeline reports gaps and constant-rate fills across saturated intervals,
-limiting timing and fluence science. We present an event-level recovery
+pipeline reports only the events that survive the in-flight hardware
+path; it does not detect or compensate for FIFO-reset losses, so
+saturated intervals appear in the 1K product as count-rate deficits
+that limit timing and fluence science in those windows. We present an event-level recovery
 pipeline that operates directly on the Level-1B raw telemetry: per-event
 timing is reconstructed from a longest-increasing-subsequence (LIS)
 formulation over 19-bit hardware ptime values with $4$-bit CRC ghost
@@ -96,15 +98,21 @@ microcontroller, hardware FIFO buffers overflow, the FPGA side stops accepting
 new events, and a fraction of the burst photons are lost without any flag in
 the downlinked data.
 
-The standard 1K-level data pipeline accepts this loss as inherent and applies
-conservative event-filtering rules in saturated intervals to prevent timing
-artifacts from contaminating downstream science. This is appropriate for
-routine analysis but discards events that, given the right offline
-processing, can in fact be recovered. The lower-level 1B-level raw telemetry
-retains the complete CCSDS packet structure, the original 19-bit hardware
-time counter (\textit{ptime}), the second-tag events (SEC) used to anchor
-absolute time, and every event that passes a 4-bit CRC---including some that
-the 1K pipeline subsequently drops at the saturation boundaries.
+The standard 1K-level data pipeline does not attempt to detect or
+compensate for these losses: it processes the surviving event list
+with its time-reconstruction and CRC filters, and intervals where
+the hardware FIFO dropped photons appear in the 1K product as
+count-rate deficits, with no interpolation or fill applied. This is
+sufficient for routine analysis on non-saturated bursts, but the
+lost events cannot be reintroduced by any offline operation on the
+1K event list alone. The lower-level 1B raw telemetry retains the
+complete CCSDS packet structure, the original 19-bit hardware time
+counter (\textit{ptime}), the second-tag events (SEC) used to
+anchor absolute time, and every event that passes a 4-bit CRC.
+Crucially, it also retains the surrounding three-detector-box context
+that an offline pipeline can exploit to reconstruct events lost to
+FIFO resets in any one box from the simultaneous unsaturated data
+in the other two.
 
 Reconstructing these events directly from 1B raw data presents two technical
 obstacles. First, the ptime counter wraps every $\sim 1.05$~s and the
@@ -309,28 +317,37 @@ in deep saturation.
 The 1B data product is the lowest level of HE telemetry preserved by the
 mission archive: it consists of the raw CCSDS packets as downlinked from
 the spacecraft, with all CRC information, both EVT and SEC events, and the
-UTC tail intact. The 1K product is the standard science-grade output: it
-applies time reconstruction, CRC filtering, and conservative event-removal
-heuristics around saturation boundaries to yield a clean event list with
-absolute MET. The 1K time reconstruction is mature and accurate in
-non-saturated intervals, and we do not improve upon it there. What 1K
-discards, however, is precisely the population we wish to recover: events
-near FIFO-reset boundaries that the heuristics cannot confidently assign,
-and events in deep-saturation intervals where SEC anchors are themselves
-suspect. This work operates on 1B raw packets, performs an event-level
-time reconstruction tailored to the saturation regime, and recovers the
-events that 1K conservatively filters out.
+UTC tail intact. The 1K product is the standard science-grade output:
+it applies time reconstruction and CRC filtering to yield a clean
+event list with absolute MET. The 1K time reconstruction is mature
+and accurate in non-saturated intervals, and we do not improve upon
+it there. What 1K \emph{cannot} do, however, is recover events that
+the in-flight FIFO has already dropped: those events are not in the
+1K input, and no post-processing on the standard event list can
+reintroduce them. The 1K product simply reflects the depleted event
+counts that the spacecraft downlinked, and saturated intervals
+manifest as count-rate deficits with no flag indicating their
+presence. The internal residual between 1B and 1K processing of the
+\emph{same} surviving events is small and quantified in
+Section~\ref{sec:val_1b1k}; this work's contribution lies elsewhere,
+namely in recovering, from 1B raw packets and cross-box redundancy,
+the events that the FIFO has dropped and that 1K therefore never
+sees.
 
 \section{Event-Level Time Reconstruction}\label{sec:method}
 
-Time reconstruction in 1B raw data is the prerequisite, not the headline,
-of this work. The standard 1K pipeline already produces accurate event
-times in non-saturated intervals, and we do not propose to improve on it
-there. What we need from 1B is an event-level MET assignment that survives
-the conditions where 1K's heuristics give up---deep saturation, lost SECs,
-and CRC-collision contamination---so that we can subsequently feed the
-recovered event stream to the FIFO-reset gap reconstruction in
-Section~\ref{sec:recovery}. This section presents the algorithm.
+Time reconstruction in 1B raw data is the prerequisite, not the
+headline, of this work. The standard 1K pipeline already produces
+accurate event times in non-saturated intervals, and we do not propose
+to improve on it there. What we need from 1B is an event-level MET
+assignment that operates in the regime 1K does not enter---intervals
+of deep saturation where most events were lost in flight and the
+small minority that survives must still be precisely placed in time,
+sequences where SEC anchors are themselves missing or corrupted, and
+streams contaminated by CRC-collision ghosts. With the 1B-side MET
+assignment in hand, we then feed the recovered event stream to the
+FIFO-reset gap reconstruction in Section~\ref{sec:recovery}. This
+section presents the algorithm.
 
 \subsection{Problem formulation}\label{sec:problem}
 
