@@ -45,7 +45,7 @@ const GAP_FACTOR: f64 = 100.0;
 const MAX_FIFO_RESET_GAP: f64 = 1.0;
 
 /// MCU 读取速率下限 (events/s)。
-/// MCU 以固定速率从 FIFO A 读取：109 events / 6.9ms ≈ 15797 evt/s。
+/// MCU 以固定速率从 FIFO A 读取：109 events / ~7ms ≈ 15,600 evt/s。
 /// 只有当物理事件率超过此值时，FIFO 才可能溢出触发 FIFOAFullReset。
 /// 设为 15000 略低于理论值，留一点余量。
 const MCU_READ_RATE_FLOOR: f64 = 15000.0;
