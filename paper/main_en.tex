@@ -140,12 +140,14 @@ Reconstructing these events directly from 1B raw data presents two technical
 obstacles. First, the ptime counter wraps every $\sim 1.05$~s and the
 absolute MET assignment requires knowing how many wrap periods have elapsed
 since the most recent SEC anchor. In saturation, FIFO resets and corrupted
-SECs make this wrap count locally indeterminate. Second, the 4-bit CRC has a
-$1/16$ collision probability, so during long, dense saturation epochs a
-substantial fraction of corrupted bytes pass the CRC check and appear as
-``ghost events'' with random ptime values---values that, if accepted blindly,
-break the strict monotonicity of the underlying FIFO event order and
-catastrophically derail naive time-reconstruction algorithms.
+SECs make this wrap count locally indeterminate. Second, while the
+4-bit CRC is designed to catch all single-bit errors, multi-bit
+corruption modes that activate at high count rates can escape it.
+In deep saturation a substantial fraction of corrupted bytes pass the
+CRC check and appear as ``ghost events'' with random ptime
+values---values that, if accepted blindly, break the strict
+monotonicity of the underlying FIFO event order and catastrophically
+derail naive time-reconstruction algorithms.
 
 We address both obstacles with a single observation: the FIFO is strictly
 order-preserving, so the ptime values of \textit{real} events between two
@@ -268,7 +270,7 @@ Hardware ptime resolution $\Delta t$ & $2~\mu$s \\
 ptime modulus $P_{\rm MOD}$ & $2^{19} = 524{,}288$ \\
 ptime wrap period $T_{\rm wrap}$ & $1.0486$~s \\
 SEC injection rate & $1$~Hz (GPS-1PPS disciplined) \\
-Per-event CRC & 4 bits ($1/16$ ghost rate) \\
+Per-event CRC & 4 bits \\
 Empirical 1B$\to$1K time offset $t_{\rm corr}$ & ${\sim}4.0$~s \\
 \hline
 \end{tabular}
@@ -295,15 +297,15 @@ the GPS time at which the MCU \textit{completed} the packet---which can
 lag the events themselves by many seconds during deep saturation when
 FIFO~A drains slowly.
 
-The 4-bit CRC has a $1/16 \approx 6.3\%$ collision
-probability~\cite{koopman2004crc}, so even
-when a transmission error corrupts an event byte, the corrupted value has
-a $6.3\%$ chance of passing CRC and being accepted as a valid event with
-random ptime and channel. Under nominal conditions this rate is negligible,
-but in deep saturation (notably GRB~221009A) the CRC error rate exceeds
-$50\%$, generating millions of these ``ghost events'' whose random ptime
-values are statistically guaranteed to fall in the gaps of any genuine
-event sequence. Section~\ref{sec:method} addresses this directly.
+The 4-bit CRC is designed to detect all single-bit errors, so under
+nominal conditions its protection is essentially complete and ghost
+events are rare. At very high count rates, however, multi-bit
+corruption modes escape the CRC and inject events with random ptime
+and channel values. In deep saturation (notably GRB~221009A) the
+resulting ghost-event rate exceeds $50\%$ of CRC-passed events,
+statistically guaranteeing that ghost-event ptime values fall in the
+gaps of any genuine event sequence. Section~\ref{sec:method}
+addresses this directly.
 
 \subsection{Saturation modes: FIFO resets and silent drops}\label{sec:loss_modes}
 
