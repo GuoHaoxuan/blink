@@ -17,6 +17,8 @@
 \setlength{\mathindent}{0cm}
 \usepackage{bm}
 \usepackage{algorithm}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit}
 \pdfstringdefDisableCommands{\renewcommand*{\bm}[1]{#1}}
 
 \graphicspath{{figures/}}
@@ -233,7 +235,61 @@ is summarized in Table~\ref{tab:he_params}.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=\columnwidth]{f1_datapath.pdf}
+\begin{tikzpicture}[
+  font=\tiny,
+  node distance=1.2mm and 1.2mm,
+  block/.style={draw, rectangle, minimum height=4.5mm, minimum width=6mm,
+                inner sep=0.8pt, align=center, line width=0.35pt},
+  fifo/.style={block, fill=black!8},
+  arr/.style={-{Latex[length=1mm,width=0.7mm]}, line width=0.35pt,
+              shorten >=0.3pt, shorten <=0.3pt},
+  boxlbl/.style={font=\tiny\bfseries, anchor=east}
+]
+% --- Box A row ---
+\node[block]                   (a-pmt)    {PMT};
+\node[block, right=of a-pmt]   (a-pa)     {Preamp};
+\node[block, right=of a-pa]    (a-adc)    {ADC};
+\node[block, right=of a-adc]   (a-fpga)   {FPGA};
+\node[fifo,  right=of a-fpga]  (a-fifoA)  {FIFO\,A};
+\node[block, right=of a-fifoA] (a-mcu)    {MCU\\(8051)};
+\node[fifo,  right=of a-mcu]   (a-fifoB)  {FIFO\,B};
+\node[boxlbl, left=1mm of a-pmt] {A};
+\foreach \src/\dst in {a-pmt/a-pa, a-pa/a-adc, a-adc/a-fpga,
+                       a-fpga/a-fifoA, a-fifoA/a-mcu, a-mcu/a-fifoB}
+  \draw[arr] (\src) -- (\dst);
+
+% --- Box B row ---
+\node[block, below=4mm of a-pmt]   (b-pmt)    {PMT};
+\node[block, right=of b-pmt]       (b-pa)     {Preamp};
+\node[block, right=of b-pa]        (b-adc)    {ADC};
+\node[block, right=of b-adc]       (b-fpga)   {FPGA};
+\node[fifo,  right=of b-fpga]      (b-fifoA)  {FIFO\,A};
+\node[block, right=of b-fifoA]     (b-mcu)    {MCU\\(8051)};
+\node[fifo,  right=of b-mcu]       (b-fifoB)  {FIFO\,B};
+\node[boxlbl, left=1mm of b-pmt] {B};
+\foreach \src/\dst in {b-pmt/b-pa, b-pa/b-adc, b-adc/b-fpga,
+                       b-fpga/b-fifoA, b-fifoA/b-mcu, b-mcu/b-fifoB}
+  \draw[arr] (\src) -- (\dst);
+
+% --- Box C row ---
+\node[block, below=4mm of b-pmt]   (c-pmt)    {PMT};
+\node[block, right=of c-pmt]       (c-pa)     {Preamp};
+\node[block, right=of c-pa]        (c-adc)    {ADC};
+\node[block, right=of c-adc]       (c-fpga)   {FPGA};
+\node[fifo,  right=of c-fpga]      (c-fifoA)  {FIFO\,A};
+\node[block, right=of c-fifoA]     (c-mcu)    {MCU\\(8051)};
+\node[fifo,  right=of c-mcu]       (c-fifoB)  {FIFO\,B};
+\node[boxlbl, left=1mm of c-pmt] {C};
+\foreach \src/\dst in {c-pmt/c-pa, c-pa/c-adc, c-adc/c-fpga,
+                       c-fpga/c-fifoA, c-fifoA/c-mcu, c-mcu/c-fifoB}
+  \draw[arr] (\src) -- (\dst);
+
+% --- Common downlink ---
+\node[block, fill=black!8, right=4mm of b-fifoB] (down) {1553B};
+\draw[arr] (a-fifoB) -- (down);
+\draw[arr] (b-fifoB) -- (down);
+\draw[arr] (c-fifoB) -- (down);
+\end{tikzpicture}
 \caption{HE data path. Each of the three independent detector boxes
 (A, B, C) routes events through PMT $\to$ preamp $\to$ ADC $\to$ FPGA
 $\to$ FIFO~A (${\sim}455$~event capacity, strictly FIFO-ordered, no
