@@ -233,14 +233,17 @@ The FPGA writes each accepted event into FIFO~A.
 FIFO~A is strictly order-preserving, and---critically---when full,
 additional writes from the FPGA side are blocked: \textit{the
 existing buffer contents are not overwritten and the new events are
-dropped without any hardware flag}. The MCU reads FIFO~A in a
-polling main loop; each pass invokes \texttt{HandlePhysicalLVDS()},
-which extracts up to 109 events, strips the \texttt{0x5A} sync
-bytes, and packages the resulting payload into one CCSDS packet
-(6-byte header, $109\times 8 = 872$-byte payload, 4-byte UTC tail;
-882 bytes total) written to FIFO~B. Each \texttt{HandlePhysicalLVDS()}
-invocation takes $\sim 7$~ms, so the steady-state throughput ceiling is
-${\sim}109/7~\mathrm{ms}\approx 15{,}600$ evt/s per box. The full set
+dropped without any hardware flag}. The FPGA raises an MCU interrupt
+when FIFO~A reaches half-full (${\sim}227$~events); in response, the
+MCU's \texttt{HandlePhysicalLVDS()} routine reads \emph{exactly} 109
+events from FIFO~A, strips the \texttt{0x5A} sync bytes, and packages
+the resulting payload into one CCSDS packet (6-byte header,
+$109\times 8 = 872$-byte payload, 4-byte UTC tail; 882 bytes total)
+written to FIFO~B. Because the read size is fixed and the trigger
+fires only at half-full, FIFO~A always contains at least 109 events
+when \texttt{HandlePhysicalLVDS()} starts. Each invocation takes
+$\sim 7$~ms to complete, setting the steady-state throughput ceiling
+at ${\sim}109/7~\mathrm{ms}\approx 15{,}600$ evt/s per box. The full set
 of instrument and telemetry constants used in the recovery pipeline
 is summarized in Table~\ref{tab:he_params}.
 
