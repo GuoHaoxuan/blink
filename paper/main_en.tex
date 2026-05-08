@@ -356,7 +356,7 @@ ptime modulus $P_{\rm MOD}$ & $2^{19} = 524{,}288$ \\
 ptime wrap period $T_{\rm wrap}$ & $1.0486$~s \\
 SEC injection rate & $1$~Hz (GPS-1PPS disciplined) \\
 Per-event CRC & 4 bits \\
-Empirical 1B$\to$1K time offset $t_{\rm corr}$ & ${\sim}4.0$~s \\
+1B$\to$1K time offset $t_{\rm corr}$ & $4.0$~s (exact to ${<}1~\mu$s) \\
 \hline
 \end{tabular}
 \end{table}
@@ -478,7 +478,9 @@ t_{\rm MET} \;=\; t_{\rm SEC} \;+\;
 \bigl(p - p_{\rm SEC} + n\,P_{\rm MOD}\bigr)\,\Delta t \;+\; t_{\rm corr},
 \end{equation}
 where $\Delta t = 2~\mu$s, $P_{\rm MOD} = 524288$,
-$t_{\rm corr} = 4.0$~s is an empirical 1B-to-1K offset, and $n$ is the
+$t_{\rm corr} = 4.0$~s is the constant 1B-to-1K time offset (verified
+sub-microsecond by event-by-event 1B/1K matching, see
+Section~\ref{sec:val_1b1k}), and $n$ is the
 number of complete ptime wrap periods between the SEC and the event. The
 MET solution is unique provided $n$ is known. The wrap count $n$ can be
 determined unambiguously when the event sequence between consecutive valid
@@ -909,10 +911,15 @@ numbers in this paragraph are taken from the cached
 \texttt{compare} run on a developer machine with single-hour 1B/1K
 coverage; final values, to be locked in for the camera-ready copy,
 are obtained by re-running \texttt{scripts/freeze\_numbers.sh
-FRESH\_RUN=1} on the full archive server.} For the events common to
-both streams, the per-event MET timestamps agree to within
-$\pm 2$~$\mu$s (one ptime tick) after the constant offset
-$t_{\rm corr} \approx 4.0$~s is removed. This level of agreement
+FRESH\_RUN=1} on the full archive server.} For the events common to both streams, the per-event MET timestamps
+agree to sub-microsecond precision after the constant offset
+$t_{\rm corr} = 4.0$~s is removed: in a one-hour test run on
+$9.46\times 10^6$ matched Box-A events, the median residual is
+$0.000~\mu$s and 100\% of events fall within
+$\pm 0.5~\mu$s of zero, well below the $2~\mu$s ptime quantization.
+The fact that this offset is exactly $4.0$~s (to better than
+$1~\mu$s) suggests it is a fixed delay built into the 1K processing
+pipeline rather than an empirical fit. This level of agreement
 demonstrates that the LIS-based time reconstruction (Section~\ref
 {sec:method}) reproduces 1K-pipeline timing to the underlying ptime
 quantization for non-saturated intervals; any disagreement seen
