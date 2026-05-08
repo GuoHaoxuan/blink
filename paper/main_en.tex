@@ -906,6 +906,13 @@ GRB~221009A FIFO resets fall in this regime, defining one component
 of the method's quantified failure boundary
 (Section~\ref{sec:discussion}).
 
+\textcolor{red}{\textbf{[TODO/FUTURE WORK:} each FIFO reset discards
+\emph{exactly} $\sim 455$ events (the FIFO~A capacity); this hard
+hardware constraint could replace the linear-ramp integral as the
+$N_{\rm lost}$ estimate in the three-box co-saturation case,
+leaving only the temporal profile to be approximated. Revisit and
+incorporate.\textbf{]}}
+
 \section{Validation}\label{sec:validation}
 
 The recovery pipeline is validated at three independent levels, each
