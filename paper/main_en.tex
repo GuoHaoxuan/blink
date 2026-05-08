@@ -885,15 +885,18 @@ rate per bin}
 \subsection{Three-box co-saturation: degenerate case}\label{sec:cosat}
 
 When all three boxes are simultaneously saturated, no reference is
-available and the cross-box approach fails by construction. In this
-regime we fall back to a pre-/post-reset rate interpolation: the
-mean event rate over $\pm 1$~s bracketing the gap, linearly
-interpolated across $T_{\rm gap}$ and integrated, yields a single
-$N_{\rm lost}$ estimate, with events distributed uniformly over
-$T_{\rm gap}$. This is a clearly inferior estimator (it cannot recover
-sub-second structure within the gap) and we report its prevalence
-explicitly: $\sim 8\%$ of GRB~221009A FIFO resets fall in this
-regime, defining one component of the method's quantified failure
+available. In this degenerate regime we fall back to a
+pre-/post-reset rate interpolation: the rates of the CCSDS packets
+immediately bracketing the gap (each $= 109/\mathrm{packet\,span}$)
+are linearly interpolated across $T_{\rm gap}$ at
+$\Delta_{\rm bin} = 1$~ms to build $S_i$, with
+$N_{\rm lost} = \mathrm{round}(\Delta_{\rm bin}\sum_i S_i)$ and events
+allocated proportional to $S_i$ (Algorithm~\ref{alg:gap_fill}); when
+only one side is available, the rate is held constant. This is a
+clearly inferior estimator --- it cannot resolve sub-second structure
+within the gap beyond the linear ramp implied by the two boundary
+rates --- and we report its prevalence: $\sim 8\%$ of GRB~221009A
+FIFO resets, one component of the method's quantified failure
 boundary (Section~\ref{sec:discussion}).
 
 \section{Validation}\label{sec:validation}
