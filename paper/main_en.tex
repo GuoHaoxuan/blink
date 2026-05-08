@@ -99,8 +99,8 @@ recorded, GRB~221009A~\cite{burns2023boat,an2023hxmt}. The same property that
 makes HE valuable for these observations---large effective area in a single
 collecting volume---also makes it especially prone to electronics-level
 saturation. When the photon rate exceeds the per-box MCU readout
-ceiling, the hardware FIFO between the per-box PDAU and MCU fills
-faster than it can be drained. The MCU responds by clearing the entire buffer in a
+ceiling, the hardware FIFO between the FPGA and MCU fills faster than
+it can be drained. The MCU responds by clearing the entire buffer in a
 single hardware operation when it detects sustained overflow,
 discarding several hundred queued events at once and leaving a gap in
 the downlinked event stream that carries no flag.
@@ -217,19 +217,24 @@ front-end electronics, FPGAs, microcontrollers, and downlink paths%
 ~\cite{liu2020he}. Figure~\ref{fig:datapath} traces an event from
 detection through downlink. The PMT signal is amplified at the
 detector head and routed to the per-box Physical Data Acquisition
-Unit (PDAU) inside the HE Electronics Box, which threshold-tests,
-pulse-shape-discriminates, and 8-bit-ADC-digitizes the surviving
-NaI good events. The PDAU writes each event into a hardware
-first-in-first-out (FIFO) buffer (FIFO~A, capacity $\sim 4096$~bytes,
-holding up to ${\sim}455$ events of 9~bytes each). FIFO~A
-is strictly order-preserving, and---critically---when full, additional
-writes from the PDAU side are blocked: \textit{the existing buffer
-contents are not overwritten and the new events are dropped without any
-hardware flag}. An 8051-architecture microcontroller (MCU) reads FIFO~A
-in a polling main loop. Each pass invokes \texttt{HandlePhysicalLVDS()},
-which extracts up to 109 events, packages them into one CCSDS packet (6-byte
-header, $109\times 8 = 872$-byte payload, 4-byte UTC tail; 882 bytes total),
-and writes the packet to FIFO~B. Each \texttt{HandlePhysicalLVDS()}
+Unit (PDAU-A/B/C) inside the HE Electronics Box. Each PDAU module
+contains, in sequence, an FPGA that measures pulse-width and
+applies NaI/CsI pulse-shape discrimination, an FPGA-triggered 8-bit
+ADC for the amplitude of accepted (NaI) events, a hardware FIFO
+buffer (FIFO~A; M67204H, capacity $\sim 4096$~bytes, holding up to
+${\sim}455$ events of 9~bytes each --- one $\mathtt{0x5A}$ sync
+byte plus an 8-byte event word), an 8051-architecture
+microcontroller (MCU), and a second FIFO (FIFO~B) feeding the
+1553B downlink. The FPGA writes each accepted event into FIFO~A.
+FIFO~A is strictly order-preserving, and---critically---when full,
+additional writes from the FPGA side are blocked: \textit{the
+existing buffer contents are not overwritten and the new events are
+dropped without any hardware flag}. The MCU reads FIFO~A in a
+polling main loop; each pass invokes \texttt{HandlePhysicalLVDS()},
+which extracts up to 109 events, strips the $\mathtt{0x5A}$ sync
+bytes, and packages the resulting payload into one CCSDS packet
+(6-byte header, $109\times 8 = 872$-byte payload, 4-byte UTC tail;
+882 bytes total) written to FIFO~B. Each \texttt{HandlePhysicalLVDS()}
 invocation takes $\sim 7$~ms, so the steady-state throughput ceiling is
 ${\sim}109/7~\mathrm{ms}\approx 15{,}600$ evt/s per box. The full set
 of instrument and telemetry constants used in the recovery pipeline
@@ -250,7 +255,7 @@ is summarized in Table~\ref{tab:he_params}.
 % --- Box A row ---
 \node[block]                   (a-pmt)    {PMT};
 \node[block, right=of a-pmt]   (a-pa)     {Preamp};
-\node[block, right=of a-pa]    (a-pdau)   {PDAU};
+\node[block, right=of a-pa]    (a-pdau)   {FPGA};
 \node[fifo,  right=of a-pdau]  (a-fifoA)  {FIFO\,A};
 \node[block, right=of a-fifoA] (a-mcu)    {MCU\\(8051)};
 \node[fifo,  right=of a-mcu]   (a-fifoB)  {FIFO\,B};
@@ -262,7 +267,7 @@ is summarized in Table~\ref{tab:he_params}.
 % --- Box B row ---
 \node[block, below=4mm of a-pmt]   (b-pmt)    {PMT};
 \node[block, right=of b-pmt]       (b-pa)     {Preamp};
-\node[block, right=of b-pa]        (b-pdau)   {PDAU};
+\node[block, right=of b-pa]        (b-pdau)   {FPGA};
 \node[fifo,  right=of b-pdau]      (b-fifoA)  {FIFO\,A};
 \node[block, right=of b-fifoA]     (b-mcu)    {MCU\\(8051)};
 \node[fifo,  right=of b-mcu]       (b-fifoB)  {FIFO\,B};
@@ -274,7 +279,7 @@ is summarized in Table~\ref{tab:he_params}.
 % --- Box C row ---
 \node[block, below=4mm of b-pmt]   (c-pmt)    {PMT};
 \node[block, right=of c-pmt]       (c-pa)     {Preamp};
-\node[block, right=of c-pa]        (c-pdau)   {PDAU};
+\node[block, right=of c-pa]        (c-pdau)   {FPGA};
 \node[fifo,  right=of c-pdau]      (c-fifoA)  {FIFO\,A};
 \node[block, right=of c-fifoA]     (c-mcu)    {MCU\\(8051)};
 \node[fifo,  right=of c-mcu]       (c-fifoB)  {FIFO\,B};
@@ -290,11 +295,14 @@ is summarized in Table~\ref{tab:he_params}.
 \draw[arr] (c-fifoB) -- (down);
 \end{tikzpicture}
 \caption{HE data path. Each of the three independent detector boxes
-(A, B, C) routes events through PMT $\to$ preamp $\to$ PDAU
-(threshold check, pulse-shape discrimination, 8-bit ADC, and
-event-word formation) $\to$ FIFO~A (${\sim}455$~event capacity,
-strictly FIFO-ordered, no overwrite when full) $\to$ MCU (8051
-polling main loop) $\to$ FIFO~B $\to$ 1553B downlink.
+(A, B, C) routes events through PMT $\to$ preamp $\to$ FPGA
+(pulse-width measurement, NaI/CsI pulse-shape discrimination,
+8-bit-ADC trigger, and event-word formation) $\to$ FIFO~A
+(${\sim}455$~event capacity, strictly FIFO-ordered, no overwrite
+when full) $\to$ MCU (8051 polling main loop) $\to$ FIFO~B $\to$
+1553B downlink. The FPGA, ADC, FIFO~A, MCU, and FIFO~B together
+constitute the per-box Physical Data Acquisition Unit (PDAU-A/B/C)
+of Liu et al.~\cite{liu2020he}.
 Saturation occurs when the source rate exceeds the MCU's
 $\sim 15{,}600$~evt/s readout ceiling, leading to either silent drops at
 the FIFO~A write port or full-FIFO resets initiated by the MCU when it
@@ -318,7 +326,7 @@ Parameter & Value \\
 Energy band & $20$--$250$~keV \\
 Effective area (peak) & ${\sim}5100$~cm$^2$ \\
 Number of detector boxes & 3 (A, B, C, independent FIFO each) \\
-Event size (PDAU $\to$ FIFO~A) & 9 bytes \\
+Event size (FPGA $\to$ FIFO~A) & 9 bytes \\
 Event size (in CCSDS payload) & 8 bytes \\
 FIFO~A capacity & $4096$~bytes (${\sim}455$~events) \\
 Events per CCSDS packet & $109$ \\
@@ -387,7 +395,7 @@ the MCU readout ceiling, flags a reset
 
 \textbf{(ii) Silent drop (instantaneous loss).} While the MCU is inside
 \texttt{HandlePhysicalLVDS()} for the $\sim 7$~ms required to extract 109
-events, FIFO~A briefly fills, the PDAU stops writing, and during this
+events, FIFO~A briefly fills, the FPGA stops writing, and during this
 window any incoming event is dropped. When the MCU finishes the read and
 returns to the main loop, FIFO~A is no longer full, so the
 \texttt{FIFOAFullReset()} check does not trigger, and the silent drop
