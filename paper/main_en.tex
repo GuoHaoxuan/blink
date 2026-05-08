@@ -412,10 +412,12 @@ LIS-based reconstruction (Section~\ref{sec:method}) as
 order-violations. Although this absolute ghost rate is small,
 cascade-failure modes in greedy time-reconstruction algorithms
 (Section~\ref{sec:method}) amplify their effect: a single ghost
-with anomalous ptime can erroneously reject the ${\sim}10^2$
-subsequent events that follow it in the FIFO order.
-Section~\ref{sec:method} addresses this directly with a
-longest-increasing-subsequence formulation that is intrinsically
+with anomalously high ptime raises the greedy ``previous accepted''
+threshold and rejects \emph{all} subsequent events whose ptime falls
+below it, a cascade that persists until the underlying ptime stream
+catches up to the ghost's value (potentially many events at high
+source rates). Section~\ref{sec:method} addresses this directly with
+a longest-increasing-subsequence formulation that is intrinsically
 immune to single-ghost cascades.
 
 \subsection{Saturation modes: FIFO resets and silent drops}\label{sec:loss_modes}
@@ -584,28 +586,31 @@ t_{\rm SEC_2} - (a - e_i)\,\Delta t
 file order, accept the next event whose $e_i$ exceeds the current
 ``previous accepted'' value) fails catastrophically on ghost-contaminated
 sequences. A single ghost with anomalously large $e_i$ raises the greedy
-threshold above the next several genuine events, which are then rejected
-as ``out of order''---a cascade failure that can erase ${\sim}0.2$~s of
-data per ghost (Figure~\ref{fig:lis_vs_greedy}). The LIS
+threshold and the next several genuine events whose $e_i$ falls below
+the ghost's value are rejected as ``out of order''. The cascade
+persists until the genuine ptime stream catches up to the ghost's
+value, which for a randomly-positioned ghost spans on average half
+a wrap period and translates to a number of rejected events that
+scales linearly with source rate---potentially substantial at the
+saturation rates (${\sim}10^4$~evt/s/box) where ghosts are most
+prevalent (Figure~\ref{fig:lis_vs_greedy}). The LIS
 algorithm~\cite{aldous1999} by contrast considers all subsequences
 globally, so an isolated ghost with an
-anomalous ptime contributes only itself to no chosen subsequence and does
-not poison its neighbors. In our data, switching from greedy to LIS
-recovered ${\sim}24{,}000$ events in GRB~260226A Box~A alone.
-Algorithm~\ref{alg:lis} summarizes the procedure.
+anomalous ptime contributes only itself to no chosen subsequence
+and does not poison its neighbors. Algorithm~\ref{alg:lis}
+summarizes the procedure.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\columnwidth]{f3_lis_vs_greedy.pdf}
 \caption{LIS versus greedy ordering on a CRC-ghost-contaminated SEC
 interval. Top: a single ghost event (anomalous ptime, marked $\times$)
-inflates the greedy ``previous accepted'' threshold, causing the
-following ${\sim}10^2$ genuine events to be rejected as out-of-order
-until the next wrap resets the comparator. Bottom: the LIS
-formulation evaluates all subsequences globally, isolating the ghost
-to a length-1 component and accepting the genuine monotone tail
-intact. The cascade in the greedy panel erases ${\sim}0.2$~s of
-data per ghost; LIS preserves it.}
+inflates the greedy ``previous accepted'' threshold, causing all
+subsequent events whose ptime falls below the ghost's value to be
+rejected as out-of-order until the genuine ptime stream catches up
+to the ghost. Bottom: the LIS formulation evaluates all subsequences
+globally, isolating the ghost to a length-1 component and accepting
+the genuine monotone tail intact.}
 \label{fig:lis_vs_greedy}
 \end{figure}
 
