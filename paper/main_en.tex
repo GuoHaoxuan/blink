@@ -857,7 +857,8 @@ end-to-end.
 \REQUIRE Gap interval $[t_{\rm s}, t_{\rm e}]$ in target box $b_t$;
 unsaturated reference box $b_r$; calibration window $W$ adjacent
 to but disjoint from the gap
-\ENSURE Filled events $\{(t^*_j, b_t)\}_{j=1}^{N_{\rm lost}}$
+\ENSURE Filled-event times $\{t^*_j\}_{j=1}^{N_{\rm lost}}$ to be
+inserted into box $b_t$'s event list
 \STATE $C_t \gets$ event count of $b_t$ over $W$
 \STATE $C_r \gets$ event count of $b_r$ over $W$
 \STATE $k \gets C_t / C_r$ \COMMENT{cross-box rate calibration}
@@ -866,13 +867,18 @@ $\Delta_{\rm bin} = 1$~ms: $S_i^{\rm ref}$ for $i = 1, \dots, M$
 \STATE $S_i \gets k \cdot S_i^{\rm ref}$ \COMMENT{predicted target
 rate per bin}
 \STATE $N_{\rm lost} \gets \mathrm{round}\bigl(\sum_{i=1}^M S_i\bigr)$
+\STATE initialize empty list $\mathcal{T}$
 \FOR{$i = 1$ to $M$}
   \STATE $n_i \gets \mathrm{round}\bigl(S_i \cdot N_{\rm lost} /
-  \sum_{j} S_j\bigr)$
-  \STATE distribute $n_i$ events at uniform sub-bin spacing over
-  $[t_{\rm s} + (i-1)\Delta_{\rm bin}, t_{\rm s} + i\Delta_{\rm bin}]$
+  \sum_{m} S_m\bigr)$
+  \FOR{$\ell = 1$ to $n_i$}
+    \STATE $t \gets t_{\rm s} + (i-1)\Delta_{\rm bin} +
+    (\ell - \tfrac{1}{2})\,\Delta_{\rm bin}/n_i$
+    \COMMENT{centred sub-bin spacing}
+    \STATE append $t$ to $\mathcal{T}$
+  \ENDFOR
 \ENDFOR
-\RETURN $\{(t^*_j, b_t)\}_{j=1}^{N_{\rm lost}}$
+\RETURN $\mathcal{T} = \{t^*_j\}_{j=1}^{N_{\rm lost}}$
 \end{algorithmic}
 \end{algorithm}
 
