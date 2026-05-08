@@ -155,9 +155,9 @@ valid SECs must form a strictly increasing sequence under the correct wrap
 assignment. The longest increasing subsequence (LIS) of the observed ptime
 values therefore identifies the genuine event subset and excludes ghosts
 automatically, without thresholding or iterative refinement. Building on
-this, we recover events lost to FIFO resets by combining the reconstructed
-1B event stream from one detector box with simultaneous unsaturated data
-from the other two. The resulting pipeline is validated through three
+this, we recover the light curve across FIFO-reset gaps at $1$\,ms
+granularity by combining the reconstructed 1B event stream from one
+detector box with simultaneous unsaturated data from the other two. The resulting pipeline is validated through three
 independent layers---internal 1B/1K consistency checks, comparison against
 HE's own engineering-data event counters, and cross-satellite light-curve
 matching against Fermi/GBM~\cite{meegan2009gbm},
@@ -1090,7 +1090,7 @@ INTEGRAL/SPI-ACS, together with an explicit quantitative
 characterization of the method's failure modes.
 \end{itemize}
 
-The recovered event streams are suitable for GRB peak analyses at
+The recovered light curves are suitable for GRB peak analyses at
 $\ge 5$~ms time resolution and have been used in this work to confirm
 consistency with independent instruments at the few-percent level for
 moderately bright events. We anticipate the method to extend
