@@ -414,11 +414,12 @@ cascade-failure modes in greedy time-reconstruction algorithms
 (Section~\ref{sec:method}) amplify their effect: a single ghost
 with anomalously high ptime raises the greedy ``previous accepted''
 threshold and rejects \emph{all} subsequent events whose ptime falls
-below it, a cascade that persists until the underlying ptime stream
-catches up to the ghost's value (potentially many events at high
-source rates). Section~\ref{sec:method} addresses this directly with
-a longest-increasing-subsequence formulation that is intrinsically
-immune to single-ghost cascades.
+below it, a cascade that persists until either the underlying ptime
+stream catches up to the ghost's value or the next SEC anchor is
+reached (each SEC pair is processed independently, so its arrival
+resets the comparator). Section~\ref{sec:method} addresses this
+directly with a longest-increasing-subsequence formulation that is
+intrinsically immune to single-ghost cascades.
 
 \subsection{Saturation modes: FIFO resets and silent drops}\label{sec:loss_modes}
 
@@ -588,12 +589,13 @@ file order, accept the next event whose $e_i$ exceeds the current
 sequences. A single ghost with anomalously large $e_i$ raises the greedy
 threshold and the next several genuine events whose $e_i$ falls below
 the ghost's value are rejected as ``out of order''. The cascade
-persists until the genuine ptime stream catches up to the ghost's
-value, which for a randomly-positioned ghost spans on average half
-a wrap period and translates to a number of rejected events that
-scales linearly with source rate---potentially substantial at the
-saturation rates (${\sim}10^4$~evt/s/box) where ghosts are most
-prevalent (Figure~\ref{fig:lis_vs_greedy}). The LIS
+persists until either the genuine ptime stream catches up to the
+ghost's value or the next SEC anchor is reached (which restarts the
+comparator, since the algorithm operates one SEC pair at a time);
+within a single SEC pair, the number of rejected events scales
+linearly with source rate, becoming substantial at the saturation
+rates (${\sim}10^4$~evt/s/box) where ghosts are most prevalent
+(Figure~\ref{fig:lis_vs_greedy}). The LIS
 algorithm~\cite{aldous1999} by contrast considers all subsequences
 globally, so an isolated ghost with an
 anomalous ptime contributes only itself to no chosen subsequence
@@ -607,10 +609,11 @@ summarizes the procedure.
 interval. Top: a single ghost event (anomalous ptime, marked $\times$)
 inflates the greedy ``previous accepted'' threshold, causing all
 subsequent events whose ptime falls below the ghost's value to be
-rejected as out-of-order until the genuine ptime stream catches up
-to the ghost. Bottom: the LIS formulation evaluates all subsequences
-globally, isolating the ghost to a length-1 component and accepting
-the genuine monotone tail intact.}
+rejected as out-of-order until either the genuine ptime stream
+catches up to the ghost or the next SEC anchor is reached (which
+restarts the comparator). Bottom: the LIS formulation evaluates all
+subsequences globally, isolating the ghost to a length-1 component
+and accepting the genuine monotone tail intact.}
 \label{fig:lis_vs_greedy}
 \end{figure}
 
