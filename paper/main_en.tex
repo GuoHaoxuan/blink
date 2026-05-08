@@ -213,7 +213,9 @@ HE comprises 18 NaI(Tl)/CsI(Na) phoswich detector modules grouped into
 three independent boxes (A, B, and C, six modules each) with separate
 front-end electronics, FPGAs, microcontrollers, and downlink paths%
 ~\cite{liu2020he}. Figure~\ref{fig:datapath} traces an event from
-detection through downlink. After ASIC digitization, the FPGA writes each
+detection through downlink. The PMT signal is amplified, threshold-tested,
+and pulse-shape-discriminated to select NaI good events; the surviving
+pulse is digitized by an 8-bit ADC, after which the FPGA writes each
 event into a hardware first-in-first-out (FIFO) buffer (FIFO~A, capacity
 $\sim 4096$~bytes, holding up to ${\sim}455$ events of 9~bytes each). FIFO~A
 is strictly order-preserving, and---critically---when full, additional
@@ -233,9 +235,10 @@ is summarized in Table~\ref{tab:he_params}.
 \centering
 \includegraphics[width=\columnwidth]{f1_datapath.pdf}
 \caption{HE data path. Each of the three independent detector boxes
-(A, B, C) routes events through ASIC $\to$ FPGA $\to$ FIFO~A
-(${\sim}455$~event capacity, strictly FIFO-ordered, no overwrite when full)
-$\to$ MCU (8051 polling main loop) $\to$ FIFO~B $\to$ 1553B downlink.
+(A, B, C) routes events through PMT $\to$ preamp $\to$ ADC $\to$ FPGA
+$\to$ FIFO~A (${\sim}455$~event capacity, strictly FIFO-ordered, no
+overwrite when full) $\to$ MCU (8051 polling main loop) $\to$ FIFO~B
+$\to$ 1553B downlink.
 Saturation occurs when the source rate exceeds the MCU's
 $\sim 15{,}600$~evt/s readout ceiling, leading to either silent drops at
 the FIFO~A write port or full-FIFO resets initiated by the MCU when it
