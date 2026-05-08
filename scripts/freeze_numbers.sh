@@ -2,20 +2,22 @@
 #
 # freeze_numbers.sh
 # ----------------
-# Generate paper/numbers.csv: single source of truth for all metrics quoted
-# in the SCPMA manuscript abstract, validation tables, and discussion.
+# Generate numbers.csv in the paper repository: single source of truth for
+# all metrics quoted in the SCPMA manuscript abstract, validation tables,
+# and discussion.
 #
 # Usage:
 #     ./scripts/freeze_numbers.sh                     # uses cached data where available
 #     FRESH_RUN=1 ./scripts/freeze_numbers.sh         # re-runs blink_cli on full data
 #
 # Environment:
-#     HXMT_1B_DIR   path to 1B archive  (default ./data/1B)
-#     HXMT_1K_DIR   path to 1K archive  (default ./data/1K)
-#     FRESH_RUN     if set, bypass cache and re-run blink_cli
+#     HXMT_1B_DIR    path to 1B archive  (default ./data/1B)
+#     HXMT_1K_DIR    path to 1K archive  (default ./data/1K)
+#     FRESH_RUN      if set, bypass cache and re-run blink_cli
+#     PAPER_REPO     path to paper repo  (default ../paper-hxmt-saturation)
 #
 # Output:
-#     paper/numbers.csv  — header + one row per metric, stamped with commit hash
+#     $PAPER_REPO/numbers.csv — header + one row per metric, stamped with commit hash
 #     scripts/freeze_numbers_run.log — log of all blink_cli invocations
 #
 # IMPORTANT: When run on a machine without full archive coverage (e.g.,
@@ -31,9 +33,16 @@ cd "$REPO"
 
 export HXMT_1B_DIR=${HXMT_1B_DIR:-data/1B}
 export HXMT_1K_DIR=${HXMT_1K_DIR:-data/1K}
+PAPER_REPO=${PAPER_REPO:-$REPO/../paper-hxmt-saturation}
 
-OUT=paper/numbers.csv
+OUT=$PAPER_REPO/numbers.csv
 LOG=scripts/freeze_numbers_run.log
+
+if [ ! -d "$PAPER_REPO" ]; then
+    echo "ERROR: paper repo not found at $PAPER_REPO" >&2
+    echo "Set PAPER_REPO env var to override." >&2
+    exit 1
+fi
 COMMIT=$(git rev-parse HEAD)
 DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
