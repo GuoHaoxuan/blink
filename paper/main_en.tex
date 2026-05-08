@@ -383,8 +383,12 @@ clock derived by tenfold frequency division of the $5$\,MHz
 high-precision clock from the satellite platform) and wraps every
 $P_{\rm MOD} = 2^{19} = 524{,}288$ ticks, i.e.,
 $T_{\rm wrap} \approx 1.0486$~s. SEC events are injected by
-the FPGA exactly once per second and provide $(t_{\rm SEC}, p_{\rm SEC})$
-anchor pairs for absolute time reconstruction. Both EVT and SEC traverse
+the FPGA exactly once per second; each carries the absolute MET-second
+value $t_{\rm SEC}$ (the 32-bit \textit{stime} field) and the ptime
+snapshot $p_{\rm SEC}$ latched at the GPS-PPS edge. Together they form
+the $(t_{\rm SEC}, p_{\rm SEC})$ anchor pair used to reconstruct the
+absolute time of events between consecutive SECs
+(Section~\ref{sec:method}). Both EVT and SEC traverse
 the same FIFO~A, so they share its order-preservation and saturation
 behavior; in particular, SECs can be lost or corrupted under saturation
 just as EVTs can. The 4-byte UTC tail at the end of each packet records
