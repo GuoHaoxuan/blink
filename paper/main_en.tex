@@ -393,9 +393,7 @@ absolute time of events between consecutive SECs
 the same FIFO~A, so they share its order-preservation and saturation
 behavior; in particular, SECs can be lost or corrupted under saturation
 just as EVTs can. The 4-byte UTC tail at the end of each packet records
-the GPS time at which the MCU \textit{completed} the packet---which can
-lag the events themselves by many seconds during deep saturation when
-FIFO~A drains slowly.
+the GPS time at which the MCU \textit{completed} the packet.
 
 The 4-bit CRC is designed to detect all single-bit errors, so under
 nominal conditions its protection is essentially complete and ghost
