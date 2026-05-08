@@ -222,16 +222,17 @@ contains, in sequence, an FPGA that measures pulse-width and
 applies NaI/CsI pulse-shape discrimination, an FPGA-triggered 8-bit
 ADC for the amplitude of accepted (NaI) events, a hardware FIFO
 buffer (FIFO~A; M67204H, capacity $\sim 4096$~bytes, holding up to
-${\sim}455$ events of 9~bytes each --- one $\mathtt{0x5A}$ sync
+${\sim}455$ events of 9~bytes each --- one \texttt{0x5A} sync
 byte plus an 8-byte event word), an 8051-architecture
-microcontroller (MCU), and a second FIFO (FIFO~B) feeding the
-1553B downlink. The FPGA writes each accepted event into FIFO~A.
+microcontroller (MCU), and a second FIFO (FIFO~B) whose contents
+are forwarded by an LVDS interface to the satellite data processor.
+The FPGA writes each accepted event into FIFO~A.
 FIFO~A is strictly order-preserving, and---critically---when full,
 additional writes from the FPGA side are blocked: \textit{the
 existing buffer contents are not overwritten and the new events are
 dropped without any hardware flag}. The MCU reads FIFO~A in a
 polling main loop; each pass invokes \texttt{HandlePhysicalLVDS()},
-which extracts up to 109 events, strips the $\mathtt{0x5A}$ sync
+which extracts up to 109 events, strips the \texttt{0x5A} sync
 bytes, and packages the resulting payload into one CCSDS packet
 (6-byte header, $109\times 8 = 872$-byte payload, 4-byte UTC tail;
 882 bytes total) written to FIFO~B. Each \texttt{HandlePhysicalLVDS()}
@@ -288,11 +289,18 @@ is summarized in Table~\ref{tab:he_params}.
                        c-fifoA/c-mcu, c-mcu/c-fifoB}
   \draw[arr] (\src) -- (\dst);
 
-% --- Common downlink ---
-\node[block, fill=black!8, right=4mm of b-fifoB] (down) {1553B};
-\draw[arr] (a-fifoB) -- (down);
-\draw[arr] (b-fifoB) -- (down);
-\draw[arr] (c-fifoB) -- (down);
+% --- Per-box LVDS to satellite data processor ---
+\node[block, right=2mm of a-fifoB] (a-lvds) {LVDS};
+\node[block, right=2mm of b-fifoB] (b-lvds) {LVDS};
+\node[block, right=2mm of c-fifoB] (c-lvds) {LVDS};
+\draw[arr] (a-fifoB) -- (a-lvds);
+\draw[arr] (b-fifoB) -- (b-lvds);
+\draw[arr] (c-fifoB) -- (c-lvds);
+\node[block, fill=black!8, right=3mm of b-lvds, minimum width=10mm]
+  (down) {satellite\\data proc.};
+\draw[arr] (a-lvds) -- (down);
+\draw[arr] (b-lvds) -- (down);
+\draw[arr] (c-lvds) -- (down);
 \end{tikzpicture}
 \caption{HE data path. Each of the three independent detector boxes
 (A, B, C) routes events through PMT $\to$ preamp $\to$ FPGA
@@ -300,9 +308,13 @@ is summarized in Table~\ref{tab:he_params}.
 8-bit-ADC trigger, and event-word formation) $\to$ FIFO~A
 (${\sim}455$~event capacity, strictly FIFO-ordered, no overwrite
 when full) $\to$ MCU (8051 polling main loop) $\to$ FIFO~B $\to$
-1553B downlink. The FPGA, ADC, FIFO~A, MCU, and FIFO~B together
+per-box LVDS interface to the satellite data processor. The FPGA,
+ADC, FIFO~A, MCU, FIFO~B, and the LVDS interface together
 constitute the per-box Physical Data Acquisition Unit (PDAU-A/B/C)
-of Liu et al.~\cite{liu2020he}.
+of Liu et al.~\cite{liu2020he}. (A separate, shared 1553B bus
+carries commands from the satellite to the PDAUs and per-second
+engineering telemetry --- count rates, status, deadtime --- in the
+return direction; science events do not traverse 1553B.)
 Saturation occurs when the source rate exceeds the MCU's
 $\sim 15{,}600$~evt/s readout ceiling, leading to either silent drops at
 the FIFO~A write port or full-FIFO resets initiated by the MCU when it
@@ -345,16 +357,26 @@ Empirical 1B$\to$1K time offset $t_{\rm corr}$ & ${\sim}4.0$~s \\
 
 \subsection{Event packet format and time stamps}\label{sec:event_format}
 
-Each 8-byte event slot in a CCSDS packet carries:
-(i)~event \textit{type} flags identifying physical events (EVT) versus
-hardware-injected second markers (SEC) versus error placeholders;
-(ii)~for EVT, a 7-bit detector identifier (which together with the box
-index determines the 18-detector global ID) and a 7-bit pulse-height
-channel; (iii)~for SEC, a 32-bit absolute MET second counter
-(\textit{stime}); and (iv)~a 19-bit hardware time counter (\textit{ptime})
-plus a 4-bit cyclic-redundancy code (CRC). The ptime counter increments at
-$\Delta t = 2~\mu$s per tick and wraps every $P_{\rm MOD} = 2^{19} = 524{,}288$
-ticks, i.e., $T_{\rm wrap} \approx 1.0486$~s. SEC events are injected by
+Each 8-byte event slot in a CCSDS packet carries the following fields
+(per the HE data-format specification):
+(i)~a 2-bit event-\textit{type} field distinguishing physical events
+(EVT, \texttt{00}) from GPS-second markers (SEC, \texttt{01}) and
+calibration events (\texttt{10});
+(ii)~for EVT, an 8-bit pulse-height (energy) value, an 8-bit
+pulse-width information field, an 18-bit anti-coincidence flag word
+covering all 18 HVT shielding detectors, and a 5-bit channel index
+\texttt{chano} ($0$--$5$, identifying which of the six detectors in
+the current box recorded the event; box label and \texttt{chano}
+together determine the 18-detector global ID);
+(iii)~for SEC, a 32-bit absolute MET second counter (\textit{stime})
+in place of the EVT-specific energy/width/HVT/channel fields;
+(iv)~a 19-bit hardware time counter (\textit{ptime}) and a 4-bit
+cyclic-redundancy code (CRC), shared between EVT and SEC. The ptime
+counter increments at $\Delta t = 2~\mu$s per tick (a $500$\,kHz
+clock derived by tenfold frequency division of the $5$\,MHz
+high-precision clock from the satellite platform) and wraps every
+$P_{\rm MOD} = 2^{19} = 524{,}288$ ticks, i.e.,
+$T_{\rm wrap} \approx 1.0486$~s. SEC events are injected by
 the FPGA exactly once per second and provide $(t_{\rm SEC}, p_{\rm SEC})$
 anchor pairs for absolute time reconstruction. Both EVT and SEC traverse
 the same FIFO~A, so they share its order-preservation and saturation
