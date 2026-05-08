@@ -921,11 +921,14 @@ testing a different failure mode. \emph{Internal 1B/1K consistency}
 from 1B raw data agrees, on individual events, with the standard 1K
 pipeline output in regimes where 1K itself is reliable; this isolates
 the time-reconstruction algorithm from the gap-fill algorithm.
-\emph{Engineering-data validation} (Section~\ref{sec:val_eng}) is the
-strongest test available: a controlled high-rate data stream where
-both saturated 1B telemetry and the unsaturated ground-truth event
-list are available, allowing direct event-by-event comparison after
-gap-fill. \emph{Cross-satellite validation} (Section~\ref{sec:val_xsat})
+\emph{Engineering-data validation} (Section~\ref{sec:val_eng})
+exploits HE's on-board per-second engineering counters, which are
+sampled by FPGA monitoring logic upstream of FIFO~A and are
+therefore not subject to FIFO-reset losses. Comparing the
+1B-reconstructed (and gap-filled) event count integrated over each
+1~s engineering-data interval against the corresponding engineering
+counter provides a saturation-immune integrated-count check at
+1~s cadence. \emph{Cross-satellite validation} (Section~\ref{sec:val_xsat})
 compares the recovered HXMT/HE light curve against simultaneous
 observations from independent instruments (Fermi/GBM, INTEGRAL/SPI-ACS,
 ASIM/MXGS) on the magnetar giant flare GRB~200415A, where the
@@ -967,20 +970,36 @@ in saturated intervals is therefore attributable to the gap-fill
 algorithm, not to the time-reconstruction step.
 
 \subsection{HE engineering-data validation}\label{sec:val_eng}
-\textbf{[HEADLINE --- to be written from forthcoming HE engineering
-data analysis.]} Engineering-data acquisitions provide a controlled
-high-rate stress test in which the raw event list is also available
-on the ground, bypassing the in-flight FIFO. This permits a
-gap-by-gap event-count and shape-function comparison between the
-1B-reconstructed light curve and the engineering ground truth, the
-strongest validation available short of an independent astrophysical
-calibrator. Section to be filled with: (i) the engineering test
-configuration; (ii) per-gap residuals between reconstructed
-$N_{\rm lost}$ and ground-truth event counts; (iii) shape-function
-residuals at $1$~ms granularity; (iv) the rate threshold at which
-the engineering data themselves saturate the FIFO and the recovery
-algorithm's behavior near and beyond that boundary. F6 figure to
-be added.
+
+In addition to the science-data path through FIFO~A, each PDAU
+writes a per-second engineering-data block containing direct
+counters of the per-detector event rates (normal-signal count,
+large-signal count, wide-signal count, and the in-second deadtime;
+see Sections~\ref{sec:datapath} and~\ref{sec:event_format} for the
+event classification). These counters are sampled by FPGA monitoring
+logic \emph{upstream} of FIFO~A and are therefore immune to the
+FIFO-reset and silent-drop losses that the science path suffers
+during saturation. They provide an in-orbit, saturation-immune
+ground truth for the integrated event count at 1~s cadence.
+
+Validation proceeds by binning the 1B-reconstructed event stream
+(observed events plus the cross-box gap-fill output of
+Section~\ref{sec:crossbox}) at 1~s cadence and comparing the per-
+second total against the corresponding engineering normal-signal
+counter. Agreement over saturated intervals demonstrates that the
+gap-fill recovers the integrated lost-event count to the precision
+of the engineering counter; any systematic residual exposes a bias
+in the cross-box rate calibration $k_{\rm A/B}$ or in the
+$N_{\rm lost}$ estimator. The check is integrated, not event-by-event:
+it does not constrain sub-second light-curve structure within
+individual FIFO-reset gaps (that role is played by the cross-
+satellite comparison in Section~\ref{sec:val_xsat}).
+
+\textbf{[HEADLINE --- numbers and figure F6 from forthcoming HE
+engineering-data analysis: (i) per-second residual distribution
+across the GRB~221009A saturation window; (ii) saturation-window
+integrated residual; (iii) discussion of any systematic offset and
+its scaling with source rate.]}
 
 \subsection{Cross-satellite validation: GRB~200415A magnetar
 giant flare}\label{sec:val_xsat}
