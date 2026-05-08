@@ -399,11 +399,18 @@ The 4-bit CRC is designed to detect all single-bit errors, so under
 nominal conditions its protection is essentially complete and ghost
 events are rare. At very high count rates, however, multi-bit
 corruption modes escape the CRC and inject events with random ptime
-and channel values. In deep saturation (notably GRB~221009A) the
-resulting ghost-event rate exceeds $50\%$ of CRC-passed events,
-statistically guaranteeing that ghost-event ptime values fall in the
-gaps of any genuine event sequence. Section~\ref{sec:method}
-addresses this directly.
+and channel values. The empirical CRC failure rate in 1B telemetry
+of GRB~221009A rises from a baseline ${\lesssim}0.05\%$ to a peak of
+${\sim}1\%$ in the brightest 1-second bins of the main pulse, evidence
+of multi-bit byte corruption beyond the protection of the 4-bit CRC;
+the residual rate of ghost events that survive the CRC is much smaller
+still. Although the absolute ghost rate is small, cascade-failure
+modes in greedy time-reconstruction algorithms (Section~%
+\ref{sec:method}) amplify their effect: a single ghost with anomalous
+ptime can erroneously reject the ${\sim}10^2$ subsequent events that
+follow it in the FIFO order. Section~\ref{sec:method} addresses this
+directly with a longest-increasing-subsequence formulation that is
+intrinsically immune to single-ghost cascades.
 
 \subsection{Saturation modes: FIFO resets and silent drops}\label{sec:loss_modes}
 
