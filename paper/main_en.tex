@@ -609,15 +609,17 @@ summarizes the procedure.
 \begin{figure}[H]
 \centering
 \includegraphics[width=\columnwidth]{f3_lis_vs_greedy.pdf}
-\caption{LIS versus greedy ordering on a CRC-ghost-contaminated SEC
-interval. Top: a single ghost event (anomalous ptime, marked $\times$)
-inflates the greedy ``previous accepted'' threshold, causing all
-subsequent events whose ptime falls below the ghost's value to be
-rejected as out-of-order until either the genuine ptime stream
-catches up to the ghost or the next SEC anchor is reached (which
-restarts the comparator). Bottom: the LIS formulation evaluates all
-subsequences globally, isolating the ghost to a length-1 component
-and accepting the genuine monotone tail intact.}
+\caption{LIS versus greedy on a synthetic SEC interval contaminated
+by a single CRC-collision ghost event (event index $8$ in file
+order, with anomalously high $e_i \approx 2.85\times 10^5$).
+\textbf{Left} (Greedy): the ghost (orange) raises the greedy
+``previous accepted'' threshold (dashed line), so the next six
+genuine events at indices $9$--$14$ (red, $\times$) are rejected as
+out-of-order; the cascade ends at index $15$ where the genuine
+ptime stream catches up to the ghost's value. \textbf{Right} (LIS):
+the LIS formulation evaluates all subsequences globally, isolating
+the ghost (red, index $8$) as a length-$1$ component while accepting
+the genuine increasing tail at indices $0$--$7$ and $9$--$20$ intact.}
 \label{fig:lis_vs_greedy}
 \end{figure}
 
