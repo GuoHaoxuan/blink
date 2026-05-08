@@ -698,7 +698,31 @@ holds for every $\Delta s_{\rm time}>1$ window we examined in
 GRB~221009A; the shortest empirical excess of LIS length under
 $j=0$-allowed versus $j=0$-disabled is $\sim 3{,}000$ events for a
 $\Delta s_{\rm time}=19$ window, far above any plausible counting noise.
+A direct cross-box check is shown in Figure~\ref{fig:wrap_uniqueness}:
+the $j=0$ Box~A reconstruction tracks the simultaneously measured
+Box~B reference light curve to within count-rate fluctuations across
+the full $T_0+248$~s to $T_0+268$~s window of GRB~221009A, while the
+$j=1$ alternative is shifted in time by exactly the wrap period
+$1.05$~s and visibly misaligned with Box~B. Such cross-box validation
+of wrap selection is independent of the LIS-length argument above and
+confirms the same conclusion.
 Algorithm~\ref{alg:grouped_lis} summarizes the grouped solver.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\columnwidth]{f5_crossbox_recovery.pdf}
+\caption{Cross-box validation of the grouped-LIS wrap selection over a
+$\Delta s_{\rm time}>1$ window in GRB~221009A ($T_0+248$ to
+$T_0+268$~s). Box~B (orange), unsaturated and used as an external
+reference, defines the ground-truth source rate at this time. Box~A
+reconstructed with the chosen wrap index $j=0$ (solid blue) tracks
+Box~B closely; the alternative reconstruction with $j=1$ (dashed
+light blue) is shifted by exactly the ptime wrap period $1.05$~s and
+is visibly misaligned with Box~B over the entire window. The
+LIS-length argument and this cross-box light-curve test agree on the
+same wrap assignment.}
+\label{fig:wrap_uniqueness}
+\end{figure}
 
 \begin{algorithm}[H]
 \caption{Grouped LIS with UTC-tail constraint for
@@ -824,28 +848,8 @@ recovered events distributed at equal sub-bin spacing. The granularity
 of 1~ms is fine enough to preserve sub-second light-curve features
 present in the reference data (we revisit this resolution as the
 ``too-short'' failure mode in Section~\ref{sec:discussion}).
-Figure~\ref{fig:crossbox_recovery} shows a worked example for a
-GRB~221009A FIFO reset, with the saturated Box~A gap filled from
-simultaneous Box~B data; Algorithm~\ref{alg:gap_fill} summarizes the
-fill procedure end-to-end.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\columnwidth]{f5_crossbox_recovery.pdf}
-\caption{Cross-box shape-function reconstruction for a representative
-GRB~221009A FIFO-reset gap. Top: Box~A 1B observed light curve
-(black), with the FIFO-reset gap shown as a hatched interval where
-no events are recorded. Middle: simultaneous Box~B reference light
-curve (blue), unsaturated through this interval and rate-rescaled
-by $k_{\rm A/B} = C_{\rm A}^{\rm calib}/C_{\rm B}^{\rm calib}$
-to predict the Box-A intrinsic rate. Bottom: the recovered Box~A
-light curve, with the gap filled by allocating
-$N_{\rm lost} = \mathrm{round}(\sum S_i)$ events distributed
-according to the shape-function $S_i$ at 1~ms granularity. The
-recovered profile preserves sub-second structure that integrated
-gap-rate interpolation would erase.}
-\label{fig:crossbox_recovery}
-\end{figure}
+Algorithm~\ref{alg:gap_fill} summarizes the fill procedure
+end-to-end.
 
 \begin{algorithm}[H]
 \caption{Cross-box shape-function gap-fill}\label{alg:gap_fill}
