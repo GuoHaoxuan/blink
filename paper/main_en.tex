@@ -370,12 +370,12 @@ Each 8-byte event slot in a CCSDS packet carries the following fields
 calibration events (\texttt{10});
 (ii)~for EVT, an 8-bit pulse-height (energy) value, an 8-bit
 pulse-width information field, an 18-bit anti-coincidence flag word
-covering all 18 HVT shielding detectors, and a 5-bit channel index
+covering all 18 anti-coincidence detectors (ACDs) of HE, and a 5-bit channel index
 \texttt{chano} ($0$--$5$, identifying which of the six detectors in
 the current box recorded the event; box label and \texttt{chano}
 together determine the 18-detector global ID);
 (iii)~for SEC, a 32-bit absolute MET second counter (\textit{stime})
-in place of the EVT-specific energy/width/HVT/channel fields;
+in place of the EVT-specific energy/width/ACD/channel fields;
 (iv)~a 19-bit hardware time counter (\textit{ptime}) and a 4-bit
 cyclic-redundancy code (CRC), shared between EVT and SEC. The ptime
 counter increments at $\Delta t = 2~\mu$s per tick (a $500$\,kHz
