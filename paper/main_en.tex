@@ -752,43 +752,26 @@ when
 \begin{equation}
 g \;>\; F_{\rm gap}\,T_{\rm base}, \qquad F_{\rm gap} = 100,
 \end{equation}
-\textit{and} the larger of the two neighbouring per-packet rates
-exceeds the MCU read floor $R_{\rm MCU} = 15{,}000$ evt/s
-(slightly below the theoretical
+\textit{and} the maximum per-packet rate within a $\pm 5$-packet
+window centred on the candidate gap exceeds the MCU read floor
+$R_{\rm MCU} = 15{,}000$ evt/s (slightly below the theoretical
 $109/6.9\,\mathrm{ms} \approx 15{,}800$ evt/s ceiling). The rate
 condition removes false detections in genuinely quiet intervals where
 a long gap simply reflects a low source rate rather than a hardware
-overflow. In deep-saturation regions where two adjacent packets are
-both congested, the local event rate is depressed by the congestion
-itself; we therefore expand the rate-evaluation window to $\pm 5$
-packets and use the maximum, which restores sensitivity in continuous
-saturation episodes.
+overflow; the $\pm 5$-packet window provides a more robust local-rate
+estimate than a two-packet adjacent comparison, smoothing over
+single-packet rate fluctuations.
 
 \subsection{Unreliable-interval flagging}\label{sec:unreliable}
 
 Cross-box shape-function recovery requires reference data that
 faithfully tracks the source rate, so any time interval where the
-reference box is itself unreliable must be excluded. We identify three
-types of unreliable interval:
-
-(i) FIFO-reset gaps in the reference box itself --- handled
-trivially by the detector in Section~\ref{sec:detect};
-
-(ii) congestion-broadened packets, where the MCU has fallen behind and
-a single packet's MET span exceeds three times the local median packet
-duration --- the events within such a packet are temporally smeared
-toward the MCU's read cadence rather than reflecting the true source
-distribution;
-
-(iii) silently-dropped intervals within otherwise-normal packets, where
-the inter-event spacing contains an isolated long gap that is
-inconsistent with Poisson statistics at the local rate. We compute the
-Poisson probability of the longest in-packet gap given the local rate
-$\lambda$ estimated from neighbouring events, and flag any packet with
-$\log_{10}p < -10$.
-
-Time intervals overlapping any of these flags are excluded from the
-reference pool when reconstructing other boxes' light curves.
+reference box is itself unreliable must be excluded. The only
+unreliable category we flag is FIFO-reset gaps in the reference box
+itself, handled trivially by the detector in
+Section~\ref{sec:detect}. Time intervals overlapping such gaps are
+excluded from the reference pool when reconstructing other boxes'
+light curves.
 
 \subsection{Cross-box shape-function reconstruction}\label{sec:crossbox}
 

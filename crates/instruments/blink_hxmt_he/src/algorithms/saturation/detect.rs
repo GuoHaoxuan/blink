@@ -75,9 +75,11 @@ fn event_rate(summary: &PacketTimeSummary) -> Option<f64> {
 /// 算法：
 /// 1. 对每个 CCSDS 包重建所有事件的 MET 时间，提取 (min_met, max_met, n_events)
 /// 2. 按 min_met 排序
-/// 3. 对每对相邻包，取前后包中平均事件间隔较小的那个（即事件率较高的包）
-/// 4. 若前后包的最大事件率 < MCU_READ_RATE_FLOOR → 跳过（FIFO 不可能溢出）
-/// 5. 实际 gap > 该间隔 × GAP_FACTOR → 标记为 FifoReset
+/// 3. 对每对相邻包：
+///    - baseline = 紧邻两包中平均事件间隔较小的那个（事件率较高的包）
+///    - local_max_rate = ±5 包窗口内（包含紧邻 2 包，共最多 12 包）的最大事件率
+///    - 若 local_max_rate < MCU_READ_RATE_FLOOR → 跳过（源率不到饱和阈值）
+///    - 若 gap > baseline × GAP_FACTOR → 标记为 FifoReset
 pub fn detect_fifo_reset_intervals(sci_data: &SciFile, offset: f64) -> Vec<SaturationInterval> {
     let packet_times = reconstruct_with_wrap_tracking(sci_data, offset);
 
@@ -115,41 +117,19 @@ pub fn detect_fifo_reset_intervals(sci_data: &SciFile, offset: f64) -> Vec<Satur
             (None, None) => continue,
         };
 
-        // 事件率检查：优先用相邻包，若拥塞包率被拉低则用附近包的率
-        let rate_prev = event_rate(&window[0]);
-        let rate_next = event_rate(&window[1]);
-        let max_rate_adjacent = match (rate_prev, rate_next) {
-            (Some(a), Some(b)) => a.max(b),
-            (Some(a), None) => a,
-            (None, Some(b)) => b,
-            (None, None) => continue,
-        };
-
-        let effective_max_rate = if max_rate_adjacent >= MCU_READ_RATE_FLOOR {
-            max_rate_adjacent
-        } else {
-            // 相邻包可能是拥塞宽包（率被拉低），用附近包的率判断
-            let mut neighbor_rates: Vec<f64> = Vec::new();
-            for offset in 1..=5_usize {
-                if wi >= offset {
-                    if let Some(r) = event_rate(&summaries[wi - offset]) {
-                        neighbor_rates.push(r);
-                    }
-                }
-                if wi + 1 + offset < summaries.len() {
-                    if let Some(r) = event_rate(&summaries[wi + 1 + offset]) {
-                        neighbor_rates.push(r);
-                    }
-                }
+        // 用 ±5 包窗口（含紧邻 2 包）的最大事件率作为本地源率估计：
+        // 单包率有涨落，扩展到 12 包窗口取最大值更稳健。
+        let lo = wi.saturating_sub(5);
+        let hi = (wi + 6).min(summaries.len() - 1);
+        let mut local_max_rate = 0.0_f64;
+        let mut found = false;
+        for k in lo..=hi {
+            if let Some(r) = event_rate(&summaries[k]) {
+                local_max_rate = local_max_rate.max(r);
+                found = true;
             }
-            neighbor_rates
-                .iter()
-                .cloned()
-                .reduce(f64::max)
-                .unwrap_or(max_rate_adjacent)
-        };
-
-        if effective_max_rate < MCU_READ_RATE_FLOOR {
+        }
+        if !found || local_max_rate < MCU_READ_RATE_FLOOR {
             continue;
         }
 
@@ -226,83 +206,28 @@ pub struct BoxReconstructionData {
     pub packets: Vec<PacketInfo>,
     /// 每个包内的事件时间（索引 = 原始包号，内部已排序）
     pub packet_events: Vec<Vec<f64>>,
-    /// 不可信区间（FIFO reset gap + 拥塞宽包），用于交叉参考时排除
+    /// 不可信区间（FIFO reset gap），用于交叉参考时排除
     pub unreliable: Vec<UnreliableInterval>,
 }
 
-/// 检测不可信时间区间：FIFO reset gap + 拥塞宽包 + 包内异常间隔。
+/// 检测不可信时间区间：仅 FIFO reset gap。
 ///
-/// 三种来源：
-/// 1. FIFO reset gap：整包丢失的时间段
-/// 2. 拥塞宽包：包跨时 > 邻居中位跨时 × 3
-/// 3. 包内有泊松异常间隔，整个包的事件分布不可信
+/// 拥塞宽包和包内泊松异常检测已移除：
+/// - 拥塞宽包：实际触发多为 SAA 开关机导致的包跨时异常，非真正拥塞
+/// - 包内异常：与静默丢数检测同一判据（泊松 log₁₀(p) < -10），
+///   因 λ 在单包时间跨度内不稳定导致大量误报
 pub fn detect_unreliable_intervals(
     gaps: &[SaturationInterval],
-    packets: &[PacketInfo],
-    packet_events: &[Vec<f64>],
+    _packets: &[PacketInfo],
+    _packet_events: &[Vec<f64>],
 ) -> Vec<UnreliableInterval> {
     let mut intervals: Vec<UnreliableInterval> = Vec::new();
 
-    // 1. FIFO reset gap → 不可信
     for g in gaps {
         intervals.push(UnreliableInterval {
             start: g.start_met,
             stop: g.stop_met,
         });
-    }
-
-    // 预计算邻居中位跨时（用于宽包和内部不均匀检测）
-    let packet_spans: Vec<f64> = packets.iter().map(|p| p.span()).collect();
-
-    for (i, pkt) in packets.iter().enumerate() {
-        let span = pkt.span();
-        if span < 1e-9 {
-            continue;
-        }
-
-        // 邻居中位跨时
-        let mut neighbor_spans: Vec<f64> = Vec::new();
-        for offset in 1..=5_usize {
-            if i >= offset && packet_spans[i - offset] > 1e-9 {
-                neighbor_spans.push(packet_spans[i - offset]);
-            }
-            if i + offset < packets.len() && packet_spans[i + offset] > 1e-9 {
-                neighbor_spans.push(packet_spans[i + offset]);
-            }
-        }
-        if neighbor_spans.is_empty() {
-            continue;
-        }
-        neighbor_spans.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let median_span = neighbor_spans[neighbor_spans.len() / 2];
-
-        // 2. 拥塞宽包 → 不可信
-        if span > median_span * SPAN_RATIO_THRESHOLD {
-            intervals.push(UnreliableInterval {
-                start: pkt.min_met,
-                stop: pkt.max_met,
-            });
-            continue;
-        }
-
-        // 3. 包内有异常大间隔 → 整个包不可信
-        // 用邻居事件率做 λ，检查是否有 log10(p) < -10 的间隔
-        let times = &packet_events[pkt.pkt_idx];
-        if times.len() < 2 {
-            continue;
-        }
-        let neighbor_rate = EVENTS_PER_PKT / median_span;
-        let has_anomalous_interval = times.windows(2).any(|w| {
-            let dt = w[1] - w[0];
-            let log_p = -neighbor_rate * dt / std::f64::consts::LN_10;
-            log_p < LOG10_P_THRESHOLD
-        });
-        if has_anomalous_interval {
-            intervals.push(UnreliableInterval {
-                start: pkt.min_met,
-                stop: pkt.max_met,
-            });
-        }
     }
 
     // 按 start 排序
@@ -393,6 +318,38 @@ pub fn reconstruct_gaps(
             }
         }
 
+        // ── diagnostic: calibration ratio breakdown ──
+        for (ri, ref_data) in references.iter().enumerate() {
+            let dw = [(gap_start - 0.5, gap_start), (gap_stop, gap_stop + 0.5)];
+            let (mut tc, mut rc) = (0usize, 0usize);
+            let (mut te, mut re) = (0.0f64, 0.0f64);
+            for &(wl, wh) in &dw {
+                let t = effective_duration(wl, wh, &target.unreliable);
+                if t > 1e-6 {
+                    let a = target.events.partition_point(|&x| x < wl);
+                    let b = target.events.partition_point(|&x| x < wh);
+                    tc += target.events[a..b].iter()
+                        .filter(|&&x| !is_in_unreliable(x, &target.unreliable)).count();
+                    te += t;
+                }
+                let r = effective_duration(wl, wh, &ref_data.unreliable);
+                if r > 1e-6 {
+                    let a = ref_data.events.partition_point(|&x| x < wl);
+                    let b = ref_data.events.partition_point(|&x| x < wh);
+                    rc += ref_data.events[a..b].iter()
+                        .filter(|&&x| !is_in_unreliable(x, &ref_data.unreliable)).count();
+                    re += r;
+                }
+            }
+            if re > 1e-6 && rc > 10 && te > 1e-6 {
+                let tr = tc as f64 / te;
+                let rr = rc as f64 / re;
+                eprintln!("  gap[{gap_idx}] ref[{ri}]: k={:.4}  tgt={tc}/{te:.4}s={tr:.0}/s  ref={rc}/{re:.4}s={rr:.0}/s", tr/rr);
+            } else {
+                eprintln!("  gap[{gap_idx}] ref[{ri}]: k=1.0(default)  tgt={tc}/{te:.4}s  ref={rc}/{re:.4}s");
+            }
+        }
+
         // 步骤二：确定 N_lost
         let n_lost;
         if has_ref {
@@ -401,15 +358,18 @@ pub fn reconstruct_gaps(
                 // 参考覆盖充分：用 shape 总和作为 N_lost
                 interpolate_empty_bins(&mut shape);
                 n_lost = shape.iter().sum::<f64>().round() as usize;
+                eprintln!("gap[{gap_idx}]: {gap_dur:.4}s  n_lost={n_lost}  cross-ref  cov={n_filled}/{n_sbins}");
             } else {
                 // 参考覆盖不足：退化为 pre/post 率线性插值
                 fill_shape_fallback(&mut shape, gap, &target.packets);
                 n_lost = (shape.iter().sum::<f64>() * actual_sbin).round() as usize;
+                eprintln!("gap[{gap_idx}]: {gap_dur:.4}s  n_lost={n_lost}  FALLBACK  cov={n_filled}/{n_sbins}");
             }
         } else {
             // 无参考：pre/post 率线性插值
             fill_shape_fallback(&mut shape, gap, &target.packets);
             n_lost = (shape.iter().sum::<f64>() * actual_sbin).round() as usize;
+            eprintln!("gap[{gap_idx}]: {gap_dur:.4}s  n_lost={n_lost}  NO-REF");
         }
 
         if n_lost == 0 {
@@ -556,8 +516,6 @@ fn effective_duration(lo: f64, hi: f64, unreliable: &[UnreliableInterval]) -> f6
 }
 
 
-const LOG10_P_THRESHOLD: f64 = -10.0;
-const SPAN_RATIO_THRESHOLD: f64 = 3.0; // 包跨时 > 邻居中位数 × 3 → 拥塞包
 
 
 /// 空 bin 插值：从最近的有值 bin 做线性插值，边缘用最近有值 bin 常数外推。
