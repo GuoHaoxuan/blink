@@ -895,12 +895,16 @@ build a shape function $S_i$, and the integrated lost-count estimate
 is $N_{\rm lost} = \mathrm{round}\bigl(\Delta_{\rm bin}\sum_i S_i\bigr)$.
 Recovered events are then distributed across bins proportional to
 $S_i$ (with centred sub-bin spacing, as in
-Algorithm~\ref{alg:gap_fill}). This is a clearly inferior
-estimator --- it cannot recover sub-second structure within the gap
-beyond the linear ramp implied by the two boundary rates --- and we
-report its prevalence explicitly: $\sim 8\%$ of GRB~221009A FIFO
-resets fall in this regime, defining one component of the method's
-quantified failure boundary (Section~\ref{sec:discussion}).
+Algorithm~\ref{alg:gap_fill}). This is a clearly inferior estimator:
+the linear interpolation between $r_{\rm pre}$ and $r_{\rm post}$
+fixes both the integrated lost-count $N_{\rm lost}$ \emph{and} the
+within-gap shape, so any rate variation inside $T_{\rm gap}$ that
+departs from a linear ramp --- a peak, a trough, or fast
+sub-second variability --- is missed in both the total count and the
+temporal profile. We report its prevalence explicitly: $\sim 8\%$ of
+GRB~221009A FIFO resets fall in this regime, defining one component
+of the method's quantified failure boundary
+(Section~\ref{sec:discussion}).
 
 \section{Validation}\label{sec:validation}
 
