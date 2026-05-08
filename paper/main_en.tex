@@ -626,8 +626,8 @@ and accepting the genuine monotone tail intact.}
 SEC pairs}\label{alg:lis}
 \begin{algorithmic}[1]
 \REQUIRE SEC pair $(p_{\rm SEC_1}, t_{\rm SEC_1}, p_{\rm SEC_2})$
-with $\Delta s_{\rm time}=1$; file-ordered events
-$\{(p_i, t_{\rm utc}^i)\}_{i=1}^{n}$ between the two SECs
+with $\Delta s_{\rm time}=1$; file-ordered event ptimes
+$\{p_i\}_{i=1}^{n}$ between the two SECs
 \ENSURE Accepted index set $\mathcal{L} \subseteq \{1,\dots,n\}$
 and per-event MET $\{t^*_i\}_{i \in \mathcal{L}}$
 \STATE $a \gets (p_{\rm SEC_2} - p_{\rm SEC_1}) \bmod P_{\rm MOD}$
