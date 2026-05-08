@@ -895,10 +895,7 @@ build a shape function $S_i$, and the integrated lost-count estimate
 is $N_{\rm lost} = \mathrm{round}\bigl(\Delta_{\rm bin}\sum_i S_i\bigr)$.
 Recovered events are then distributed across bins proportional to
 $S_i$ (with centred sub-bin spacing, as in
-Algorithm~\ref{alg:gap_fill}). When only one side has a usable
-adjacent packet, the rate is held constant (uniform shape); when
-both sides are unavailable, the MCU readout ceiling
-($R_{\rm MCU}$) serves as a placeholder. This is a clearly inferior
+Algorithm~\ref{alg:gap_fill}). This is a clearly inferior
 estimator --- it cannot recover sub-second structure within the gap
 beyond the linear ramp implied by the two boundary rates --- and we
 report its prevalence explicitly: $\sim 8\%$ of GRB~221009A FIFO
