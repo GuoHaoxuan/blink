@@ -118,8 +118,11 @@ gaps --- against a deadtime calculated from the per-second large- and
 wide-signal count rates. What this 1K-only approach cannot provide
 is the sub-second light-curve profile of the lost flux, which
 dominates the science return for short-duration transients. The
-lower-level 1B raw telemetry retains the complete CCSDS packet
-structure, the original 19-bit hardware time counter (\textit{ptime}),
+lower-level 1B raw telemetry retains the complete CCSDS\footnote{%
+Consultative Committee for Space Data Systems --- the
+international spacecraft-telemetry packet-format standard used by
+HXMT and most modern space missions.} packet structure, the original
+19-bit hardware time counter (\textit{ptime}),
 the second-tag events (SEC) used to anchor absolute time, and every
 event that passes a 4-bit CRC. Crucially, by preserving each event's
 CCSDS packet membership, 1B exposes inter-packet time gaps directly:
