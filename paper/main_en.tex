@@ -218,9 +218,12 @@ front-end electronics, FPGAs, microcontrollers, and downlink paths%
 detection through downlink. The PMT signal is amplified at the
 detector head and routed to the per-box Physical Data Acquisition
 Unit (PDAU-A/B/C) inside the HE Electronics Box. Each PDAU module
-contains, in sequence, an FPGA that measures pulse-width and
-applies NaI/CsI pulse-shape discrimination, an FPGA-triggered 8-bit
-ADC for the amplitude of accepted (NaI) events, a hardware FIFO
+contains, in sequence, an FPGA that measures pulse width and applies
+pulse-shape discrimination (PSD), an FPGA-triggered 8-bit ADC for
+the amplitude of every event passing the on-board PSD threshold
+(pulse width $\le 120$, set permissively to record both NaI and CsI
+events for on-ground separation~\cite{xiao2020deadtime}), a hardware
+FIFO
 buffer (FIFO~A; M67204H, capacity $\sim 4096$~bytes, holding up to
 ${\sim}455$ events of 9~bytes each --- one \texttt{0x5A} sync
 byte plus an 8-byte event word), an 8051-architecture
@@ -304,7 +307,7 @@ is summarized in Table~\ref{tab:he_params}.
 \end{tikzpicture}
 \caption{HE data path. Each of the three independent detector boxes
 (A, B, C) routes events through PMT $\to$ preamp $\to$ FPGA
-(pulse-width measurement, NaI/CsI pulse-shape discrimination,
+(pulse-width measurement, pulse-shape discrimination,
 8-bit-ADC trigger, and event-word formation) $\to$ FIFO~A
 (${\sim}455$~event capacity, strictly FIFO-ordered, no overwrite
 when full) $\to$ MCU (8051 polling main loop) $\to$ FIFO~B $\to$
