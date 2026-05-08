@@ -399,18 +399,24 @@ The 4-bit CRC is designed to detect all single-bit errors, so under
 nominal conditions its protection is essentially complete and ghost
 events are rare. At very high count rates, however, multi-bit
 corruption modes escape the CRC and inject events with random ptime
-and channel values. The empirical CRC failure rate in 1B telemetry
-of GRB~221009A rises from a baseline ${\lesssim}0.05\%$ to a peak of
-${\sim}1\%$ in the brightest 1-second bins of the main pulse, evidence
-of multi-bit byte corruption beyond the protection of the 4-bit CRC;
-the residual rate of ghost events that survive the CRC is much smaller
-still. Although the absolute ghost rate is small, cascade-failure
-modes in greedy time-reconstruction algorithms (Section~%
-\ref{sec:method}) amplify their effect: a single ghost with anomalous
-ptime can erroneously reject the ${\sim}10^2$ subsequent events that
-follow it in the FIFO order. Section~\ref{sec:method} addresses this
-directly with a longest-increasing-subsequence formulation that is
-intrinsically immune to single-ghost cascades.
+and channel values. In 1B telemetry of GRB~221009A the empirical
+CRC failure rate rises from a baseline ${\sim}0.005\%$ outside the
+main pulse to a peak of ${\sim}1.5\%$ in the brightest 1-second bin
+($\text{MET}=T_0{+}219$~s, all three boxes), evidence of multi-bit
+byte corruption beyond the protection of the 4-bit CRC. The residual
+ghost rate among CRC-passed events is much smaller still: across
+the full $2022$-$10$-$09\text{T}13$ hour, only $563$ events
+($1.1\times 10^{-5}$ of the $5.28\times 10^7$ CRC-passed events
+across all three boxes) are subsequently rejected by the
+LIS-based reconstruction (Section~\ref{sec:method}) as
+order-violations. Although this absolute ghost rate is small,
+cascade-failure modes in greedy time-reconstruction algorithms
+(Section~\ref{sec:method}) amplify their effect: a single ghost
+with anomalous ptime can erroneously reject the ${\sim}10^2$
+subsequent events that follow it in the FIFO order.
+Section~\ref{sec:method} addresses this directly with a
+longest-increasing-subsequence formulation that is intrinsically
+immune to single-ghost cascades.
 
 \subsection{Saturation modes: FIFO resets and silent drops}\label{sec:loss_modes}
 
