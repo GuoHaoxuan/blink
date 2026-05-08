@@ -8,10 +8,10 @@ use blink_core::types::MissionElapsedTime;
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PTIME_MOD: u64 = 1 << 19; // 524288
-const WRAP_PERIOD: f64 = PTIME_MOD as f64 * 2e-6; // 1.048576s
 
-/// 1B→1K 经验时间校正 (秒)。
-/// 通过 GRB 200415A 和 GRB 221009A 交叉验证确定。
+/// 1B→1K 时间校正 (秒)。精确到亚微秒：在 2026-02-26T10 一小时窗口
+/// （Box A，9.46M 事件）逐事例匹配，中位差 0.000μs，100% 事件落在 ±0.5μs。
+/// 推测是 1K 管线内嵌的固定 4.0s 延迟，非经验拟合值。
 const MET_CORRECTION: f64 = 4.0;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -107,41 +107,31 @@ pub fn reconstruct_with_wrap_tracking_labeled(
     let mut n_sec_total = 0u64;
     let mut n_err_total = 0u64;
 
-    // parsed[pkt_idx] = Vec of (evt_idx, ptime, is_second, channel, raw_bytes)
-    // 只包含通过 CRC 的事件
+    // parsed[pkt_idx] = Vec of parsed events (只包含通过 CRC 的事件)
     struct ParsedEvent {
         ptime: u64,
-        is_second: bool,
         stime: Option<u64>,  // SEC 才有
-        channel: u8,
-        raw_bytes: [u8; 8],
     }
 
     let mut parsed: Vec<Vec<ParsedEvent>> = Vec::with_capacity(n_packets);
 
-    for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
+    for (_pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
         let events = parse_events(ccsds);
         let mut pkt_events: Vec<ParsedEvent> = Vec::new();
 
         for event in &events {
             match event {
-                Pack::Event { ptime, channel, raw_bytes } => {
+                Pack::Event { ptime, .. } => {
                     pkt_events.push(ParsedEvent {
                         ptime: *ptime,
-                        is_second: false,
                         stime: None,
-                        channel: *channel,
-                        raw_bytes: *raw_bytes,
                     });
                     n_evt_total += 1;
                 }
                 Pack::Second { stime, ptime } => {
                     pkt_events.push(ParsedEvent {
                         ptime: *ptime,
-                        is_second: true,
                         stime: Some(*stime),
-                        channel: 0,
-                        raw_bytes: [0; 8],
                     });
                     n_sec_total += 1;
                 }
@@ -637,6 +627,7 @@ pub struct EventDetail {
     pub evt_index: usize,
     pub is_second: bool,
     pub channel: u8,
+    pub det_id: u8,
     pub met: f64,
     pub raw_bytes: [u8; 8],
 }
@@ -681,6 +672,7 @@ pub fn solve_events(
                                 evt_index: evt_idx,
                                 is_second: true,
                                 channel: 0,
+                                det_id: 0,
                                 met: computed_met,
                                 raw_bytes: [0; 8],
                             });
@@ -701,6 +693,7 @@ pub fn solve_events(
                                 evt_index: evt_idx,
                                 is_second: false,
                                 channel: *channel,
+                                det_id: (raw_bytes[4] >> 1) & 0x07,
                                 met: computed_met,
                                 raw_bytes: *raw_bytes,
                             });
@@ -728,6 +721,7 @@ pub struct PacketDiag {
     pub utc_tail: f64,
     pub met_min: Option<f64>,
     pub met_max: Option<f64>,
+    pub n_0x5a: usize,
 }
 
 /// 对每个 CCSDS 包进行诊断，返回统计信息。
@@ -740,6 +734,14 @@ pub fn diagnose_packets(sci_data: &SciFile, offset: f64) -> Vec<PacketDiag> {
         let utc_tail = get_utc_tail(ccsds);
         let events = parse_events(ccsds);
         let times = &packet_times[pkt_idx];
+
+        // Count occurrences of 0x5A in byte[0] of each 8-byte slot (FIFO start marker leaking
+        // into payload — indicates MCU read pointer misalignment from SEE).
+        let payload = &ccsds[6..878];
+        let n_0x5a = payload
+            .chunks_exact(8)
+            .filter(|chunk| chunk[0] == 0x5A)
+            .count();
 
         let mut n_event = 0usize;
         let mut n_second = 0usize;
@@ -783,6 +785,7 @@ pub fn diagnose_packets(sci_data: &SciFile, offset: f64) -> Vec<PacketDiag> {
             utc_tail,
             met_min: pkt_met_min,
             met_max: pkt_met_max,
+            n_0x5a,
         });
     }
 
@@ -791,15 +794,15 @@ pub fn diagnose_packets(sci_data: &SciFile, offset: f64) -> Vec<PacketDiag> {
 
 /// 扫描饱和区间，返回 MissionElapsedTime 类型。
 pub fn scan_saturation_intervals(
-    sci_data: &SciFile,
-    offset: f64,
+    _sci_data: &SciFile,
+    _offset: f64,
 ) -> Vec<(MissionElapsedTime<HxmtHe>, MissionElapsedTime<HxmtHe>)> {
     // 依赖时间重建，暂时返回空
     Vec::new()
 }
 
 /// 扫描饱和区间，直接返回原始 MET 秒数。
-pub fn scan_saturation_intervals_raw(sci_data: &SciFile, offset: f64) -> Vec<(f64, f64)> {
+pub fn scan_saturation_intervals_raw(_sci_data: &SciFile, _offset: f64) -> Vec<(f64, f64)> {
     Vec::new()
 }
 
