@@ -8,8 +8,7 @@
 #   START_DATE = 20170615
 #   END_DATE   = $(date -u +%Y%m%d)
 #
-# Idempotent: skips dates whose output already exists.
-# Re-run any number of times to backfill.
+# Idempotent: skips dates whose output already exists. Re-run to backfill.
 
 set -euo pipefail
 
@@ -20,18 +19,18 @@ for arg in "$@"; do
     [ "$arg" = "--dry-run" ] && DRY_RUN=1
 done
 
-# Edit these for your server environment:
-SCRIPT_PATH="$(realpath "$(dirname "$0")/extract_per_sec_day.py")"
-PYTHON="python3"
+WORKER="$(realpath "$(dirname "$0")/extract_per_sec_one.sh")"
 OUTPUT_DIR="per_sec_parquet"
 LOG_DIR="logs/extract"
-HEPSUB_GROUP=""    # ← fill in your hep_sub group name (or pass via env)
-HEPSUB_MEM="6GB"
-HEPSUB_TIME="1h"
+
+# IHEP HEP cluster configuration
+HEPSUB="/afs/ihep.ac.cn/soft/common/sysgroup/hep_job/bin/hep_sub"
+HEPSUB_GROUP="gecam"
+HEPSUB_MEM_MB="6000"     # observed peak ~4 GB; 6 GB has safety margin
+HEPSUB_WT="short"        # short queue (1h max wall); single day takes ~15 min
 
 mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
 
-# Iterate dates from START to END inclusive.
 cur="$START"
 n_submitted=0
 n_skipped=0
@@ -40,18 +39,18 @@ while [ "$cur" -le "$END" ]; do
     if [ -s "$out" ]; then
         n_skipped=$((n_skipped + 1))
     else
-        cmd="$PYTHON $SCRIPT_PATH $cur --output-dir $OUTPUT_DIR"
         if [ -n "$DRY_RUN" ]; then
-            echo "[DRY] hep_sub -g $HEPSUB_GROUP -mem $HEPSUB_MEM -wt $HEPSUB_TIME \\"
-            echo "      -o $LOG_DIR/${cur}.out -e $LOG_DIR/${cur}.err \"$cmd\""
+            echo "[DRY] $HEPSUB -g $HEPSUB_GROUP -m $HEPSUB_MEM_MB -wt $HEPSUB_WT \\"
+            echo "        -o $LOG_DIR/${cur}.out -e $LOG_DIR/${cur}.err \\"
+            echo "        -argu $cur $WORKER"
         else
-            hep_sub -g "$HEPSUB_GROUP" -mem "$HEPSUB_MEM" -wt "$HEPSUB_TIME" \
-                    -o "$LOG_DIR/${cur}.out" -e "$LOG_DIR/${cur}.err" \
-                    "$cmd"
+            "$HEPSUB" -g "$HEPSUB_GROUP" -m "$HEPSUB_MEM_MB" -wt "$HEPSUB_WT" \
+                -o "$LOG_DIR/${cur}.out" -e "$LOG_DIR/${cur}.err" \
+                -argu "$cur" "$WORKER"
         fi
         n_submitted=$((n_submitted + 1))
     fi
-    # Advance by one day. Use a portable date arithmetic via Python.
+    # Advance one day via portable Python date arithmetic.
     cur=$(python3 -c "
 from datetime import date, timedelta
 d = date(int('$cur'[:4]), int('$cur'[4:6]), int('$cur'[6:8])) + timedelta(days=1)
