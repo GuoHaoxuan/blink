@@ -31,6 +31,18 @@ MET_CORRECTION = 4.0  # 1B Time → 1K MET, verified sub-microsecond
 BOX_PORTS = {"A": "0766", "B": "1009", "C": "1781"}
 BOX_INDEX = {"A": 0, "B": 1, "C": 2}
 
+
+def _try_read(reader, path, label: str, date: str, hour: int):
+    """Call ``reader(path)``; on exception, log to stderr and return None."""
+    if path is None:
+        return None
+    try:
+        return reader(path)
+    except Exception as e:
+        print(f"[per_sec_extract] WARN: read {label} for {date} hour {hour} failed: {e}",
+              file=sys.stderr, flush=True)
+        return None
+
 DEFAULT_1B_ROOT = "/hxmtfs/data/Archive_tmp/1B"
 DEFAULT_1K_ROOT = "/hxmt/work/HXMT-DATA/1K"
 
@@ -350,7 +362,12 @@ def _box_hour_rows(
     eng_path = find_he_eng_path(date, hour, BOX_PORTS[box])
     if eng_path is None:
         return []
-    d = read_he_eng(eng_path)
+    try:
+        d = read_he_eng(eng_path)
+    except Exception as e:
+        print(f"[per_sec_extract] WARN: read HE_Eng {eng_path} failed: {e}",
+              file=sys.stderr, flush=True)
+        return []
     n_sec = len(d["Time"])
     box_idx = BOX_INDEX[box]
     offset = compute_offset(int(d["UTC_Last_Bdc"][0]), int(d["sTime_Last_Bdc"][0]))
@@ -455,23 +472,36 @@ def extract_day(date: str) -> pd.DataFrame:
         att_path   = find_1k_aux_path(date, hour, "Att")
         evt_path   = find_1k_aux_path(date, hour, "HE-Evt")
 
-        hv_table    = _index_by_time(read_he_hv(hv_path))   if hv_path    else None
-        orbit_table = _index_by_time(read_orbit(orbit_path)) if orbit_path else None
-        evt_table   = read_he_evt(evt_path)                  if evt_path   else None
+        hv_raw = _try_read(read_he_hv, hv_path, "HE-HV", date, hour)
+        hv_table = _index_by_time(hv_raw) if hv_raw is not None else None
+
+        orbit_raw = _try_read(read_orbit, orbit_path, "Orbit", date, hour)
+        orbit_table = _index_by_time(orbit_raw) if orbit_raw is not None else None
+
+        evt_table = _try_read(read_he_evt, evt_path, "HE-Evt", date, hour)
 
         for box in ["A", "B", "C"]:
             # Att depends on target seconds: defer to per-(box, hour) where we know n_sec
             eng_path = find_he_eng_path(date, hour, BOX_PORTS[box])
             if eng_path is None:
                 continue
-            d_probe = read_he_eng(eng_path)
+            d_probe = _try_read(read_he_eng, eng_path, f"HE_Eng ({box})", date, hour)
+            if d_probe is None:
+                continue
             offset = compute_offset(int(d_probe["UTC_Last_Bdc"][0]),
                                      int(d_probe["sTime_Last_Bdc"][0]))
             met_sec_probe = np.floor(
                 compute_met_float(d_probe["Time"], offset)
             ).astype(np.int64)
-            att_vals = (read_att(att_path, met_sec_probe)
-                        if att_path else None)
+
+            att_vals = None
+            if att_path is not None:
+                try:
+                    att_vals = read_att(att_path, met_sec_probe)
+                except Exception as e:
+                    print(f"[per_sec_extract] WARN: read Att for {date} hour {hour} failed: {e}",
+                          file=sys.stderr, flush=True)
+                    att_vals = None
 
             rows.extend(_box_hour_rows(
                 date, box, hour,
@@ -497,7 +527,7 @@ def write_parquet_atomic(df: pd.DataFrame, output_path: Path) -> None:
     ) as tmp:
         tmp_path = Path(tmp.name)
     try:
-        df.to_parquet(tmp_path, index=False)
+        df.to_parquet(tmp_path, index=False, compression="zstd")
         tmp_path.replace(output_path)
     except Exception:
         # Clean up temp file on error
@@ -531,8 +561,8 @@ def main() -> int:
 
     output_file = args.output_dir / f"{date_str}.parquet"
 
-    # Idempotency: if output exists, exit 0 (no-op)
-    if output_file.exists():
+    # Idempotency: if output exists and is non-empty, exit 0 (no-op)
+    if output_file.exists() and output_file.stat().st_size > 0:
         print(f"Output already exists: {output_file}", file=sys.stderr)
         return 0
 
