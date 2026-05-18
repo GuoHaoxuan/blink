@@ -93,3 +93,27 @@ def test_read_he_eng_2017_box_a(require_file):
     # Raw byte fields preserved
     assert d["BUS_Time_Bdc"].shape == (3600, 6)
     assert d["Error_code"].shape == (3600, 4)
+
+
+def test_read_he_hv_synthetic(tmp_path):
+    """Build a fake HE-HV FITS and confirm the reader unpacks it correctly."""
+    from astropy.io import fits
+    import numpy as np
+
+    n = 10
+    cols = [fits.Column(name="Time", format="J",
+                        array=np.arange(1000, 1000 + n, dtype=np.int64))]
+    for j in range(18):
+        cols.append(fits.Column(name=f"HV_PHODet_{j}", format="E",
+                                array=(-1000.0 - j) * np.ones(n, dtype=np.float32)))
+    hdu = fits.BinTableHDU.from_columns(cols, name="HE_HV_PHODet")
+    fpath = tmp_path / "fake_he_hv.fits"
+    fits.HDUList([fits.PrimaryHDU(), hdu]).writeto(fpath)
+
+    d = M.read_he_hv(fpath)
+    # Expected: dict with 'Time' (n,) and 'HV' (n, 18)
+    assert d["Time"].shape == (n,)
+    assert d["HV"].shape == (n, 18)
+    assert d["Time"][0] == 1000
+    assert d["HV"][0, 0] == -1000.0
+    assert d["HV"][0, 17] == -1017.0
