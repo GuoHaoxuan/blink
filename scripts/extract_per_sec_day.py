@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 
 import numpy as np
+from astropy.io import fits
 
 MET_CORRECTION = 4.0  # 1B Time → 1K MET, verified sub-microsecond
 
@@ -72,6 +73,42 @@ def window_indices(times: np.ndarray, t0: float, t1: float) -> tuple[int, int]:
     i_start = int(np.searchsorted(times, t0, side="left"))
     i_end = int(np.searchsorted(times, t1, side="left"))
     return i_start, i_end
+
+
+def read_he_eng(path) -> dict:
+    """Read one 1B HE_Eng FITS file. Returns dict of numpy arrays.
+
+    Schema (per-second, ~3600 rows per file):
+        Time, Length_Time_Cycle:                shape (n,)         int
+        UTC_Last_Bdc, sTime_Last_Bdc:           shape (n,)         int
+        Cnt_PHODet, Cnt_OOCDet,
+        Cnt_CsI_PHODet, Cnt_LargeEvt,
+        DeadTime_PHODet:                        shape (n, 6)       int  (per-det)
+        BUS_Time_Bdc:                           shape (n, 6)       uint8 (raw)
+        Error_code:                             shape (n, 4)       uint8 (raw)
+    """
+    with fits.open(path, memmap=False) as f:
+        d = f["HE_Eng"].data
+        n = len(d)
+
+        def per_det(base: str) -> np.ndarray:
+            cols = [d[f"{base}_{i}"].astype(np.int32) for i in range(6)]
+            return np.stack(cols, axis=1)   # (n, 6)
+
+        out = {
+            "Time":              d["Time"].astype(np.int64),
+            "Length_Time_Cycle": d["Length_Time_Cycle"].astype(np.int32),
+            "UTC_Last_Bdc":      d["UTC_Last_Bdc"].astype(np.int64),
+            "sTime_Last_Bdc":    d["sTime_Last_Bdc"].astype(np.int64),
+            "Cnt_PHODet":        per_det("Cnt_PHODet"),
+            "Cnt_OOCDet":        per_det("Cnt_OOCDet"),
+            "Cnt_CsI_PHODet":    per_det("Cnt_CsI_PHODet"),
+            "Cnt_LargeEvt":      per_det("Cnt_LargeEvt"),
+            "DeadTime_PHODet":   per_det("DeadTime_PHODet"),
+            "BUS_Time_Bdc":      np.asarray(d["BUS_Time_Bdc"], dtype=np.uint8).reshape(n, 6),
+            "Error_code":        np.asarray(d["Error_code"], dtype=np.uint8).reshape(n, 4),
+        }
+        return out
 
 
 if __name__ == "__main__":

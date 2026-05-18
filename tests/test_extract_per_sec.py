@@ -69,3 +69,27 @@ def test_window_indices_empty():
     i_start, i_end = M.window_indices(times, 10.0, 11.0)
     assert i_start == 3
     assert i_end == 3   # zero-length window past end
+
+
+def test_read_he_eng_2017_box_a(require_file):
+    from tests.conftest import HE_ENG_2017_BOXA
+    require_file(HE_ENG_2017_BOXA)
+
+    d = M.read_he_eng(HE_ENG_2017_BOXA)
+
+    # Expect a dict of numpy arrays, one per kept column.
+    assert d["Time"][0] == 1618548
+    assert d["UTC_Last_Bdc"][0] == 181439999
+    assert d["sTime_Last_Bdc"][0] == 1618548
+    assert d["Length_Time_Cycle"][0] == 58799
+    assert d["Cnt_PHODet"][0, 0] == 2200       # per-det 2D: (n_sec, 6)
+    assert d["Cnt_OOCDet"][0, 0] == 201
+    assert d["Cnt_CsI_PHODet"][0, 0] == 196
+    assert d["Cnt_LargeEvt"][0, 0] == 532
+    assert d["DeadTime_PHODet"][0, 0] == 2496
+    # File should have 3600 rows for one hour
+    assert len(d["Time"]) == 3600
+
+    # Raw byte fields preserved
+    assert d["BUS_Time_Bdc"].shape == (3600, 6)
+    assert d["Error_code"].shape == (3600, 4)
