@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import sys
 
 import extract_per_sec_day as M
 
@@ -305,3 +306,58 @@ def test_extract_day_20260410(monkeypatch, require_file):
                      df[f"Sci_ACD1_{tag}"].fillna(0) +
                      df[f"Sci_ACDN_{tag}"].fillna(0))
         assert (s == partition).all()
+
+
+def test_write_parquet_atomic(tmp_path):
+    """Verify atomic write: temp file then rename."""
+    import pandas as pd
+    import numpy as np
+
+    # Create a small DataFrame
+    df = pd.DataFrame({
+        "col1": [1, 2, 3],
+        "col2": [4.0, 5.0, 6.0],
+    })
+
+    output_file = tmp_path / "test.parquet"
+
+    M.write_parquet_atomic(df, output_file)
+
+    # File should exist and be readable
+    assert output_file.exists()
+    df_read = pd.read_parquet(output_file)
+    pd.testing.assert_frame_equal(df, df_read)
+
+
+def test_main_idempotent(monkeypatch, tmp_path, require_file):
+    """Verify CLI exits 0 (no-op) if output already exists."""
+    from tests.conftest import REPO_ROOT, HE_EVT_20260410_HR07
+    require_file(HE_EVT_20260410_HR07)
+
+    monkeypatch.setenv("BLINK_1B_ROOT", str(REPO_ROOT / "data/1B"))
+    monkeypatch.setenv("BLINK_1K_ROOT", str(REPO_ROOT / "data/1K"))
+
+    output_dir = tmp_path / "per_sec_parquet"
+    output_file = output_dir / "20260410.parquet"
+
+    # First invocation: should create file
+    sys.argv = ["extract_per_sec_day.py", "20260410", "--output-dir", str(output_dir)]
+    ret = M.main()
+    assert ret == 0
+    assert output_file.exists()
+
+    # Second invocation: should exit 0 (idempotent, no-op)
+    ret = M.main()
+    assert ret == 0
+
+
+def test_main_invalid_date(monkeypatch, capsys):
+    """Verify CLI rejects invalid date format."""
+    monkeypatch.setenv("BLINK_1B_ROOT", "/nonexistent")
+    monkeypatch.setenv("BLINK_1K_ROOT", "/nonexistent")
+
+    sys.argv = ["extract_per_sec_day.py", "2026-04-10"]  # Wrong format
+    ret = M.main()
+    assert ret == 1
+    captured = capsys.readouterr()
+    assert "YYYYMMDD" in captured.err
