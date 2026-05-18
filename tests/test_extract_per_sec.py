@@ -117,3 +117,24 @@ def test_read_he_hv_synthetic(tmp_path):
     assert d["Time"][0] == 1000
     assert d["HV"][0, 0] == -1000.0
     assert d["HV"][0, 17] == -1017.0
+
+
+def test_read_orbit_20260410(require_file):
+    from tests.conftest import ORBIT_20260410_HR07
+    require_file(ORBIT_20260410_HR07)
+
+    d = M.read_orbit(ORBIT_20260410_HR07)
+
+    # Schema: dict with 10 keys
+    for key in ["Time", "X", "Y", "Z", "Vx", "Vy", "Vz", "Lon", "Lat", "Alt"]:
+        assert key in d
+
+    assert len(d["Time"]) == 3601   # 1 hour + 1 sample
+    assert d["Time"][0] == 450428403   # integer first sample
+    # Adjacent samples 1 second apart
+    assert d["Time"][1] - d["Time"][0] == 1
+
+    # Sample row 0 ground-truth (rounded to 1 decimal)
+    assert abs(d["X"][0]  - (-5008185.1)) < 1.0
+    assert abs(d["Lat"][0] - (-36.039)) < 0.01
+    assert abs(d["Alt"][0] - 536848.8) < 1.0
