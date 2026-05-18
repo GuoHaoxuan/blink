@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -347,8 +348,14 @@ def find_1k_aux_path(date: str, hour: int, product: str) -> Path | None:
         root_1k() / f"Y{ym}" / f"{date}-*"
         / f"HXMT_{date}T{hour:02d}_{product}_FFFFFF_V*_1K.FITS"
     )
-    matches = sorted(glob.glob(pattern))
-    return Path(matches[0]) if matches else None
+    matches = glob.glob(pattern)
+    if not matches:
+        return None
+    # Pick the highest V<n> revision (V2 > V1, V3 > V2, ...).
+    def _version(p: str) -> int:
+        m = re.search(r"_V(\d+)_1K\.FITS$", p)
+        return int(m.group(1)) if m else 0
+    return Path(max(matches, key=_version))
 
 
 def _box_hour_rows(

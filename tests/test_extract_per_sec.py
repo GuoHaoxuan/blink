@@ -251,6 +251,22 @@ def test_find_1k_aux_path_he_evt(monkeypatch):
     assert "HE-Evt" in p.name
 
 
+def test_find_1k_aux_path_picks_highest_version(monkeypatch, tmp_path):
+    """When multiple V<n> revisions exist, pick the highest."""
+    # Build a fake 1K layout: /Y202604/20260410-0001/HXMT_..._V1_1K.FITS, V2, V3
+    root_1k = tmp_path / "1K"
+    dir1k = root_1k / "Y202604" / "20260410-0001"
+    dir1k.mkdir(parents=True)
+    # Create three versions of HE-Evt for hour 07
+    for v in [1, 2, 3]:
+        (dir1k / f"HXMT_20260410T07_HE-Evt_FFFFFF_V{v}_1K.FITS").touch()
+    monkeypatch.setenv("BLINK_1K_ROOT", str(root_1k))
+
+    p = M.find_1k_aux_path(date="20260410", hour=7, product="HE-Evt")
+    assert p is not None
+    assert "_V3_1K.FITS" in p.name, f"expected V3, got: {p.name}"
+
+
 def test_extract_day_20260410(monkeypatch, require_file):
     """Integration test on real local 2026-04-10 data (hour 07 only)."""
     from tests.conftest import REPO_ROOT, HE_EVT_20260410_HR07
