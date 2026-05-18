@@ -358,108 +358,117 @@ def find_1k_aux_path(date: str, hour: int, product: str) -> Path | None:
     return Path(max(matches, key=_version))
 
 
-def _box_hour_rows(
+def _box_hour_arrays(
     date: str, box: str, hour: int,
     hv_lookup: dict | None,
     orbit_lookup: dict | None,
     att_lookup: dict | None,
     evt: dict | None,
-) -> list[dict]:
-    """Build all (sec × 6 det) rows for one (box, hour). Returns empty if HE_Eng missing."""
+) -> dict[str, np.ndarray] | None:
+    """Build column-arrays for all (sec × 6 det) rows of one (box, hour).
+
+    Returns None if HE_Eng missing or unreadable. Otherwise returns a dict of
+    numpy arrays, one per output column, all of length n_sec * 6.
+    """
     eng_path = find_he_eng_path(date, hour, BOX_PORTS[box])
     if eng_path is None:
-        return []
+        return None
     try:
         d = read_he_eng(eng_path)
     except Exception as e:
         print(f"[per_sec_extract] WARN: read HE_Eng {eng_path} failed: {e}",
               file=sys.stderr, flush=True)
-        return []
+        return None
+
     n_sec = len(d["Time"])
+    n_rows = n_sec * 6
     box_idx = BOX_INDEX[box]
     offset = compute_offset(int(d["UTC_Last_Bdc"][0]), int(d["sTime_Last_Bdc"][0]))
     met_float = compute_met_float(d["Time"], offset)
-    met_sec   = np.floor(met_float).astype(np.int64)
+    met_sec = np.floor(met_float).astype(np.int64)
 
-    # Orbit/HV lookup tables: built once per hour
-    orbit_vals = {}
-    if orbit_lookup is not None:
-        for c in ["X", "Y", "Z", "Vx", "Vy", "Vz", "Lon", "Lat", "Alt"]:
-            arr = np.full(n_sec, np.nan, dtype=np.float64)
+    # ── Identity columns (length n_rows) ──
+    date_str = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+    out: dict[str, np.ndarray] = {
+        "date":        np.full(n_rows, date_str, dtype=object),
+        "box":         np.full(n_rows, box, dtype=object),
+        "det":         np.repeat(np.arange(6, dtype=np.int8), n_sec),
+        "met_sec":     np.tile(met_sec, 6),
+        "time_float":  np.tile(met_float.astype(np.float64), 6),
+        "L_cycles":    np.tile(d["Length_Time_Cycle"].astype(np.int32), 6),
+    }
+
+    # ── Per-det engineering counters (shape (n_sec,6) → flattened column-major) ──
+    out["PHO"]   = d["Cnt_PHODet"].T.reshape(-1).astype(np.int32)
+    out["OOC"]   = d["Cnt_OOCDet"].T.reshape(-1).astype(np.int32)
+    out["Wide"]  = d["Cnt_CsI_PHODet"].T.reshape(-1).astype(np.int32)
+    out["Large"] = d["Cnt_LargeEvt"].T.reshape(-1).astype(np.int32)
+    out["Dt"]    = d["DeadTime_PHODet"].T.reshape(-1).astype(np.int32)
+
+    # ── HV: per (sec, det_global). Build (n_sec, 6) for this box's dets only. ──
+    hv_box = np.full((n_sec, 6), np.nan, dtype=np.float32)
+    if hv_lookup is not None:
+        idx_of = hv_lookup["__index_of"]
+        det_globals = np.arange(box_idx * 6, box_idx * 6 + 6)
+        for i, s in enumerate(met_sec):
+            j = idx_of.get(int(s))
+            if j is not None:
+                hv_box[i] = hv_lookup["HV"][j, det_globals]
+    out["HV"] = hv_box.T.reshape(-1)
+
+    # ── Sci event aggregation per det ──
+    sci_keys = ["Sci_094", "Sci_pure_094", "Sci_ACD1_094", "Sci_ACDN_094",
+                "Sci_1s",  "Sci_pure_1s",  "Sci_ACD1_1s",  "Sci_ACDN_1s"]
+    if evt is None:
+        for k in sci_keys:
+            out[k] = np.full(n_rows, np.nan, dtype=np.float32)
+    else:
+        per_det_arrays = {k: np.zeros(n_rows, dtype=np.int32) for k in sci_keys}
+        for det in range(6):
+            sci = aggregate_he_evt(evt, met_float, box_idx, det)
+            sl = slice(det * n_sec, (det + 1) * n_sec)
+            for k in sci_keys:
+                per_det_arrays[k][sl] = sci[k]
+        for k in sci_keys:
+            out[k] = per_det_arrays[k]
+
+    # ── crc_box: always NaN per spec ──
+    out["crc_box"] = np.full(n_rows, np.nan, dtype=np.float64)
+
+    # ── Status (per (box, sec), replicated to 6 dets) ──
+    out["utc_last_bdc"]   = np.tile(d["UTC_Last_Bdc"].astype(np.int64), 6)
+    out["stime_last_bdc"] = np.tile(d["sTime_Last_Bdc"].astype(np.int64), 6)
+    # Byte fields: convert each row to bytes, then tile
+    err_bytes = np.array([bytes(r) for r in d["Error_code"]], dtype=object)
+    bus_bytes = np.array([bytes(r) for r in d["BUS_Time_Bdc"]], dtype=object)
+    out["error_code"]   = np.tile(err_bytes, 6)
+    out["bus_time_bdc"] = np.tile(bus_bytes, 6)
+
+    # ── Orbit (per sec, replicated across 6 dets) ──
+    orbit_cols = ["X", "Y", "Z", "Vx", "Vy", "Vz", "Lon", "Lat", "Alt"]
+    for c in orbit_cols:
+        arr = np.full(n_sec, np.nan, dtype=np.float64)
+        if orbit_lookup is not None:
             idx_of = orbit_lookup["__index_of"]
             for i, s in enumerate(met_sec):
-                if int(s) in idx_of:
-                    arr[i] = orbit_lookup[c][idx_of[int(s)]]
-            orbit_vals[c] = arr
-    else:
-        for c in ["X", "Y", "Z", "Vx", "Vy", "Vz", "Lon", "Lat", "Alt"]:
-            orbit_vals[c] = np.full(n_sec, np.nan)
+                j = idx_of.get(int(s))
+                if j is not None:
+                    arr[i] = orbit_lookup[c][j]
+        out[c] = np.tile(arr, 6)
 
-    # HV: needs per-det extraction
-    if hv_lookup is not None:
-        hv_full = np.full((n_sec, 18), np.nan, dtype=np.float32)
-        idx_of = hv_lookup["__index_of"]
-        for i, s in enumerate(met_sec):
-            if int(s) in idx_of:
-                hv_full[i] = hv_lookup["HV"][idx_of[int(s)]]
-    else:
-        hv_full = np.full((n_sec, 18), np.nan, dtype=np.float32)
-
-    # Att: read with the actual met_sec array → all 14 cols
+    # ── Att (per sec, replicated across 6 dets) ──
+    att_cols = ["Ra", "Dec", "Delta_Ra", "Delta_Dec", "Delta",
+                "Euler_Phi", "Euler_Theta", "Euler_Psi",
+                "Q1", "Q2", "Q3",
+                "Omega_X", "Omega_Y", "Omega_Z"]
     if att_lookup is not None:
-        att_vals = att_lookup   # already indexed by met_sec
+        for c in att_cols:
+            out[c] = np.tile(att_lookup[c].astype(np.float32), 6)
     else:
-        att_vals = {k: np.full(n_sec, np.nan, dtype=np.float32) for k in [
-            "Ra", "Dec", "Delta_Ra", "Delta_Dec", "Delta",
-            "Euler_Phi", "Euler_Theta", "Euler_Psi",
-            "Q1", "Q2", "Q3",
-            "Omega_X", "Omega_Y", "Omega_Z"]}
+        for c in att_cols:
+            out[c] = np.full(n_rows, np.nan, dtype=np.float32)
 
-    # Build rows per det
-    rows = []
-    for det in range(6):
-        det_global = box_idx * 6 + det
-        if evt is not None:
-            sci = aggregate_he_evt(evt, met_float, box_idx, det)
-        else:
-            sci = {k: np.full(n_sec, np.nan) for k in [
-                "Sci_094", "Sci_pure_094", "Sci_ACD1_094", "Sci_ACDN_094",
-                "Sci_1s",  "Sci_pure_1s",  "Sci_ACD1_1s",  "Sci_ACDN_1s"]}
-
-        for i in range(n_sec):
-            row = {
-                "date":          date[:4] + "-" + date[4:6] + "-" + date[6:],
-                "box":           box,
-                "det":           det,
-                "met_sec":       int(met_sec[i]),
-                "time_float":    float(met_float[i]),
-                "L_cycles":      int(d["Length_Time_Cycle"][i]),
-                "PHO":           int(d["Cnt_PHODet"][i, det]),
-                "OOC":           int(d["Cnt_OOCDet"][i, det]),
-                "Wide":          int(d["Cnt_CsI_PHODet"][i, det]),
-                "Large":         int(d["Cnt_LargeEvt"][i, det]),
-                "Dt":            int(d["DeadTime_PHODet"][i, det]),
-                "HV":            float(hv_full[i, det_global]),
-                "Sci_094":       sci["Sci_094"][i],
-                "Sci_pure_094":  sci["Sci_pure_094"][i],
-                "Sci_ACD1_094":  sci["Sci_ACD1_094"][i],
-                "Sci_ACDN_094":  sci["Sci_ACDN_094"][i],
-                "Sci_1s":        sci["Sci_1s"][i],
-                "Sci_pure_1s":   sci["Sci_pure_1s"][i],
-                "Sci_ACD1_1s":   sci["Sci_ACD1_1s"][i],
-                "Sci_ACDN_1s":   sci["Sci_ACDN_1s"][i],
-                "crc_box":       np.nan,
-                "utc_last_bdc":  int(d["UTC_Last_Bdc"][i]),
-                "stime_last_bdc": int(d["sTime_Last_Bdc"][i]),
-                "error_code":    bytes(d["Error_code"][i]),
-                "bus_time_bdc":  bytes(d["BUS_Time_Bdc"][i]),
-            }
-            for c in ["X", "Y", "Z", "Vx", "Vy", "Vz", "Lon", "Lat", "Alt"]:
-                row[c] = float(orbit_vals[c][i])
-            for c in att_vals:
-                row[c] = float(att_vals[c][i])
-            rows.append(row)
-    return rows
+    return out
 
 
 def _index_by_time(table: dict, time_key: str = "Time") -> dict:
@@ -471,7 +480,7 @@ def _index_by_time(table: dict, time_key: str = "Time") -> dict:
 
 def extract_day(date: str) -> pd.DataFrame:
     """Build the full per-sec dataframe for one UTC date."""
-    rows: list[dict] = []
+    parts: list[dict[str, np.ndarray]] = []
     for hour in range(24):
         # Load 1K aux once per hour (covers all 18 dets)
         hv_path    = find_1k_aux_path(date, hour, "HE-HV")
@@ -488,7 +497,7 @@ def extract_day(date: str) -> pd.DataFrame:
         evt_table = _try_read(read_he_evt, evt_path, "HE-Evt", date, hour)
 
         for box in ["A", "B", "C"]:
-            # Att depends on target seconds: defer to per-(box, hour) where we know n_sec
+            # Att depends on target seconds: probe HE_Eng to get met_sec array first.
             eng_path = find_he_eng_path(date, hour, BOX_PORTS[box])
             if eng_path is None:
                 continue
@@ -510,15 +519,23 @@ def extract_day(date: str) -> pd.DataFrame:
                           file=sys.stderr, flush=True)
                     att_vals = None
 
-            rows.extend(_box_hour_rows(
+            chunk = _box_hour_arrays(
                 date, box, hour,
                 hv_lookup=hv_table,
                 orbit_lookup=orbit_table,
                 att_lookup=att_vals,
                 evt=evt_table,
-            ))
+            )
+            if chunk is not None:
+                parts.append(chunk)
 
-    return pd.DataFrame(rows)
+    if not parts:
+        return pd.DataFrame()
+
+    # Concat per-column then build DataFrame in one shot.
+    cols = list(parts[0].keys())
+    data = {c: np.concatenate([p[c] for p in parts]) for c in cols}
+    return pd.DataFrame(data)
 
 
 def write_parquet_atomic(df: pd.DataFrame, output_path: Path) -> None:
