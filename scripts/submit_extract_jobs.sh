@@ -39,14 +39,16 @@ while [ "$cur" -le "$END" ]; do
     if [ -s "$out" ]; then
         n_skipped=$((n_skipped + 1))
     else
+        # NOTE: `-argu` uses argparse nargs='+' which is greedy, so we put the
+        # jobscript path AFTER a `--` separator to stop argument capture.
         if [ -n "$DRY_RUN" ]; then
             echo "[DRY] $HEPSUB -g $HEPSUB_GROUP -m $HEPSUB_MEM_MB -wt $HEPSUB_WT \\"
             echo "        -o $LOG_DIR/${cur}.out -e $LOG_DIR/${cur}.err \\"
-            echo "        -argu $cur $WORKER"
+            echo "        -argu $cur -- $WORKER"
         else
             "$HEPSUB" -g "$HEPSUB_GROUP" -m "$HEPSUB_MEM_MB" -wt "$HEPSUB_WT" \
                 -o "$LOG_DIR/${cur}.out" -e "$LOG_DIR/${cur}.err" \
-                -argu "$cur" "$WORKER"
+                -argu "$cur" -- "$WORKER"
         fi
         n_submitted=$((n_submitted + 1))
     fi
