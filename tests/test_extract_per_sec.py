@@ -138,3 +138,113 @@ def test_read_orbit_20260410(require_file):
     assert abs(d["X"][0]  - (-5008185.1)) < 1.0
     assert abs(d["Lat"][0] - (-36.039)) < 0.01
     assert abs(d["Alt"][0] - 536848.8) < 1.0
+
+
+def test_read_att_20260410(require_file):
+    from tests.conftest import ATT_20260410_HR07
+    require_file(ATT_20260410_HR07)
+
+    import numpy as np
+
+    target_secs = np.array([450428403, 450428404, 450428405], dtype=np.int64)
+    d = M.read_att(ATT_20260410_HR07, target_secs)
+
+    # Schema: 14 keys (5 pointing + 3 euler + 3 quat + 3 omega)
+    expected_keys = {"Ra", "Dec", "Delta_Ra", "Delta_Dec", "Delta",
+                      "Euler_Phi", "Euler_Theta", "Euler_Psi",
+                      "Q1", "Q2", "Q3",
+                      "Omega_X", "Omega_Y", "Omega_Z"}
+    assert set(d.keys()) == expected_keys
+
+    # All arrays match the target_secs length
+    for k, arr in d.items():
+        assert arr.shape == (3,), f"{k} wrong shape: {arr.shape}"
+
+    # Ra/Dec sanity: not NaN at integer seconds covered by the file
+    assert np.isfinite(d["Ra"][0])
+    assert np.isfinite(d["Dec"][0])
+
+
+def test_read_he_evt_20260410(require_file):
+    from tests.conftest import HE_EVT_20260410_HR07
+    require_file(HE_EVT_20260410_HR07)
+
+    d = M.read_he_evt(HE_EVT_20260410_HR07)
+
+    import numpy as np
+
+    # Expected: dict with two arrays
+    assert "Time" in d
+    assert "Det_ID" in d
+    assert "ACD_popcount" in d
+    assert len(d["Time"]) == 27_905_540
+    assert d["Time"].min() >= 450428403
+    assert d["Time"][0] < d["Time"][-1]   # sorted
+
+    # First event ground truth from local file
+    assert d["Det_ID"][0] == 0
+    assert d["ACD_popcount"][0] == 0
+    assert d["ACD_popcount"][1] == 1   # second event has 1 ACD bit
+
+
+def test_aggregate_he_evt_synthetic():
+    """Build a tiny synthetic event stream and verify aggregation."""
+    import numpy as np
+
+    # 4 events in 1 second, det_global = 3 (box B, det 3 → B_idx=1, det=3)
+    # Times in [10.0, 10.5, 10.95, 10.99]   - first 3 in 0.94s window, all 4 in 1.0s
+    times      = np.array([10.0, 10.5, 10.95, 10.99], dtype=np.float64)
+    det_ids    = np.array([9, 9, 9, 9], dtype=np.int8)       # box B det 3 → global 9
+    popcounts  = np.array([0, 1, 2, 0], dtype=np.int8)       # pure, ACD1, ACDN, pure
+
+    evt = {"Time": times, "Det_ID": det_ids, "ACD_popcount": popcounts}
+    met_floats = np.array([10.0], dtype=np.float64)
+
+    sci = M.aggregate_he_evt(
+        evt, met_floats, box_index=1, det=3,
+        window_s_094=0.94, window_s_1s=1.0,
+    )
+    # 0.94s window picks first 3 events; ACD breakdown: 1 pure, 1 ACD1, 1 ACDN
+    assert sci["Sci_094"][0] == 3
+    assert sci["Sci_pure_094"][0] == 1
+    assert sci["Sci_ACD1_094"][0] == 1
+    assert sci["Sci_ACDN_094"][0] == 1
+    # 1.0s window picks all 4: 2 pure, 1 ACD1, 1 ACDN
+    assert sci["Sci_1s"][0] == 4
+    assert sci["Sci_pure_1s"][0] == 2
+    assert sci["Sci_ACD1_1s"][0] == 1
+    assert sci["Sci_ACDN_1s"][0] == 1
+
+
+def test_find_he_eng_path_local(monkeypatch):
+    """The function should glob the local 2017-10-01 layout when 1B root is overridden."""
+    from tests.conftest import REPO_ROOT
+    monkeypatch.setenv("BLINK_1B_ROOT", str(REPO_ROOT / "data/1B"))
+    # No reload needed: root_1b() reads env each call.
+    p = M.find_he_eng_path(date="20171001", hour=0, port="0766")
+    assert p is not None
+    assert p.exists()
+    assert p.name == "HXMT_1B_0766_20171001T000000_G002572_000_003.fits"
+
+
+def test_find_he_eng_path_missing(monkeypatch, tmp_path):
+    monkeypatch.setenv("BLINK_1B_ROOT", str(tmp_path))
+    assert M.find_he_eng_path(date="20171001", hour=0, port="0766") is None
+
+
+def test_find_1k_aux_path_local(monkeypatch):
+    """Should locate the 2026-04-10 Orbit file."""
+    from tests.conftest import REPO_ROOT
+    monkeypatch.setenv("BLINK_1K_ROOT", str(REPO_ROOT / "data/1K"))
+    p = M.find_1k_aux_path(date="20260410", hour=7, product="Orbit")
+    assert p is not None
+    assert p.exists()
+    assert "Orbit" in p.name
+
+
+def test_find_1k_aux_path_he_evt(monkeypatch):
+    from tests.conftest import REPO_ROOT
+    monkeypatch.setenv("BLINK_1K_ROOT", str(REPO_ROOT / "data/1K"))
+    p = M.find_1k_aux_path(date="20260410", hour=7, product="HE-Evt")
+    assert p is not None
+    assert "HE-Evt" in p.name

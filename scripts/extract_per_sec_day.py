@@ -15,6 +15,7 @@ CLI:
 """
 from __future__ import annotations
 
+import glob
 import os
 from pathlib import Path
 
@@ -160,6 +161,68 @@ def read_orbit(path) -> dict:
         }
 
 
+def read_he_evt(path) -> dict:
+    """Read one 1K HE-Evt FITS file. Returns dict with sorted event arrays.
+
+    Output:
+        Time:          float64 (n_events,)  — sorted MET seconds
+        Det_ID:        int8    (n_events,)  — global 0..17
+        ACD_popcount:  int8    (n_events,)  — 0..18, computed from 18-bit ACD field
+    """
+    with fits.open(path, memmap=False) as f:
+        d = f["Events"].data
+        acd = np.asarray(d["ACD"], dtype=bool)   # (n, 18)
+        return {
+            "Time":         d["Time"].astype(np.float64),
+            "Det_ID":       d["Det_ID"].astype(np.int8),
+            "ACD_popcount": count_acd_bits(acd),
+        }
+
+
+def aggregate_he_evt(
+    evt: dict,
+    met_floats: np.ndarray,
+    box_index: int,
+    det: int,
+    window_s_094: float = 0.94,
+    window_s_1s: float = 1.0,
+) -> dict:
+    """Aggregate one box/det's events into per-second counts for two windows.
+
+    For each second in ``met_floats``, emit:
+        Sci_094, Sci_pure_094, Sci_ACD1_094, Sci_ACDN_094,
+        Sci_1s,  Sci_pure_1s,  Sci_ACD1_1s,  Sci_ACDN_1s
+
+    Pre-filter events to the target det_global = box_index*6 + det.
+    """
+    det_global = box_index * 6 + det
+    mask = evt["Det_ID"] == det_global
+    # Event arrays restricted to this det, still sorted by Time.
+    t  = evt["Time"][mask]
+    pc = evt["ACD_popcount"][mask]
+
+    n = len(met_floats)
+    out = {k: np.zeros(n, dtype=np.int32) for k in [
+        "Sci_094", "Sci_pure_094", "Sci_ACD1_094", "Sci_ACDN_094",
+        "Sci_1s",  "Sci_pure_1s",  "Sci_ACD1_1s",  "Sci_ACDN_1s",
+    ]}
+
+    for i, t0 in enumerate(met_floats):
+        for tag, dt in (("094", window_s_094), ("1s", window_s_1s)):
+            i_start, i_end = window_indices(t, t0, t0 + dt)
+            pc_win = pc[i_start:i_end]
+            total = i_end - i_start
+            n_pure = int((pc_win == 0).sum())
+            n_acd1 = int((pc_win == 1).sum())
+            n_acdn = total - n_pure - n_acd1
+            out[f"Sci_{tag}"][i]      = total
+            out[f"Sci_pure_{tag}"][i] = n_pure
+            out[f"Sci_ACD1_{tag}"][i] = n_acd1
+            out[f"Sci_ACDN_{tag}"][i] = n_acdn
+
+    return out
+
+
 def _nearest_sample(att_time: np.ndarray, target_secs: np.ndarray) -> np.ndarray:
     """For each integer second in ``target_secs``, return the index of the Att
     sample whose Time is closest (in absolute distance).
@@ -204,6 +267,41 @@ def read_att(path, target_secs: np.ndarray) -> dict:
             for c in col_names:
                 out[c] = d[c][idx].astype(np.float32)
     return out
+
+
+def find_he_eng_path(date: str, hour: int, port: str) -> Path | None:
+    """Locate the 1B HE_Eng file for one (date, hour, port).
+
+    Expected layout::
+        {BLINK_1B_ROOT}/{YYYY}/{YYYYMMDD}/{port}/HXMT_1B_{port}_{YYYYMMDD}T{HH}0000_*.fits
+
+    Returns None if no matching file found.
+    """
+    year = date[:4]
+    pattern = str(
+        root_1b() / year / date / port
+        / f"HXMT_1B_{port}_{date}T{hour:02d}0000_*.fits"
+    )
+    matches = sorted(glob.glob(pattern))
+    return Path(matches[0]) if matches else None
+
+
+def find_1k_aux_path(date: str, hour: int, product: str) -> Path | None:
+    """Locate a 1K auxiliary file (HE-HV / Orbit / Att / HE-Evt) for (date, hour).
+
+    Expected layout::
+        {BLINK_1K_ROOT}/Y{YYYYMM}/{YYYYMMDD}-{seq}/HXMT_{YYYYMMDD}T{HH}_{product}_FFFFFF_V*_1K.FITS
+
+    The ``{seq}`` is the mission-day counter — we don't compute it; just glob
+    across all sequence directories for the given date.
+    """
+    ym = date[:6]
+    pattern = str(
+        root_1k() / f"Y{ym}" / f"{date}-*"
+        / f"HXMT_{date}T{hour:02d}_{product}_FFFFFF_V*_1K.FITS"
+    )
+    matches = sorted(glob.glob(pattern))
+    return Path(matches[0]) if matches else None
 
 
 if __name__ == "__main__":
