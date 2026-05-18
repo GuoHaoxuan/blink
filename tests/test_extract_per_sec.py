@@ -248,3 +248,60 @@ def test_find_1k_aux_path_he_evt(monkeypatch):
     p = M.find_1k_aux_path(date="20260410", hour=7, product="HE-Evt")
     assert p is not None
     assert "HE-Evt" in p.name
+
+
+def test_extract_day_20260410(monkeypatch, require_file):
+    """Integration test on real local 2026-04-10 data (hour 07 only)."""
+    from tests.conftest import REPO_ROOT, HE_EVT_20260410_HR07
+    require_file(HE_EVT_20260410_HR07)
+
+    monkeypatch.setenv("BLINK_1B_ROOT", str(REPO_ROOT / "data/1B"))
+    monkeypatch.setenv("BLINK_1K_ROOT", str(REPO_ROOT / "data/1K"))
+
+    df = M.extract_day("20260410")
+
+    # We expect rows only for hour 07 (only HE_Eng we have for this date).
+    # 1 hour × 3 boxes × 6 dets × 3600 sec = 64800 rows
+    assert len(df) > 0
+
+    # Schema check — required columns
+    required = {"date", "box", "det", "met_sec",
+                "time_float", "L_cycles",
+                "PHO", "OOC", "Wide", "Large", "Dt",
+                "HV",
+                "Sci_094", "Sci_pure_094", "Sci_ACD1_094", "Sci_ACDN_094",
+                "Sci_1s",  "Sci_pure_1s",  "Sci_ACD1_1s",  "Sci_ACDN_1s",
+                "crc_box",
+                "X", "Y", "Z", "Vx", "Vy", "Vz", "Lon", "Lat", "Alt",
+                "Ra", "Dec", "Delta_Ra", "Delta_Dec", "Delta",
+                "Euler_Phi", "Euler_Theta", "Euler_Psi",
+                "Q1", "Q2", "Q3",
+                "Omega_X", "Omega_Y", "Omega_Z",
+                "utc_last_bdc", "stime_last_bdc", "error_code", "bus_time_bdc"}
+    assert required.issubset(set(df.columns)), f"missing: {required - set(df.columns)}"
+
+    # All 3 boxes represented
+    assert set(df["box"].unique()) == {"A", "B", "C"}
+    # All 6 dets per box
+    for box in ["A", "B", "C"]:
+        assert set(df[df["box"] == box]["det"].unique()) == {0, 1, 2, 3, 4, 5}
+
+    # HE-HV not available locally → HV column should be all NaN
+    import numpy as np
+    assert df["HV"].isna().all()
+
+    # crc_box is the deferred NaN field
+    assert df["crc_box"].isna().all()
+
+    # Lat finite (Orbit file present)
+    assert df["Lat"].notna().any()
+    # Pointing finite (Att file present)
+    assert df["Ra"].notna().any()
+
+    # Partition invariant: Sci = pure + ACD1 + ACDN (for both windows)
+    for tag in ["094", "1s"]:
+        s = df[f"Sci_{tag}"].fillna(0)
+        partition = (df[f"Sci_pure_{tag}"].fillna(0) +
+                     df[f"Sci_ACD1_{tag}"].fillna(0) +
+                     df[f"Sci_ACDN_{tag}"].fillna(0))
+        assert (s == partition).all()
