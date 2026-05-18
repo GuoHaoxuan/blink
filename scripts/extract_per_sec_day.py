@@ -18,6 +18,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import numpy as np
+
 MET_CORRECTION = 4.0  # 1B Time → 1K MET, verified sub-microsecond
 
 BOX_PORTS = {"A": "0766", "B": "1009", "C": "1781"}
@@ -51,6 +53,25 @@ def compute_met_float(time_1b, offset: int) -> float:
     empirical 1B→1K offset (verified sub-microsecond elsewhere in the project).
     """
     return time_1b + offset + MET_CORRECTION
+
+
+def count_acd_bits(acd: np.ndarray) -> np.ndarray:
+    """Per-event popcount over the 18-bit ACD shield mask.
+
+    Input: shape (n_events, 18) boolean array.
+    Output: shape (n_events,) int8 array of popcounts (0..18).
+    """
+    return acd.sum(axis=1).astype(np.int8)
+
+
+def window_indices(times: np.ndarray, t0: float, t1: float) -> tuple[int, int]:
+    """Half-open interval [t0, t1) → (i_start, i_end) into a sorted ``times`` array.
+
+    ``times[i_start:i_end]`` are the events in the window.
+    """
+    i_start = int(np.searchsorted(times, t0, side="left"))
+    i_end = int(np.searchsorted(times, t1, side="left"))
+    return i_start, i_end
 
 
 if __name__ == "__main__":
