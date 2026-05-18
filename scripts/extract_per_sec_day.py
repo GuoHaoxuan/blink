@@ -15,8 +15,11 @@ CLI:
 """
 from __future__ import annotations
 
+import argparse
 import glob
 import os
+import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -481,5 +484,69 @@ def extract_day(date: str) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def write_parquet_atomic(df: pd.DataFrame, output_path: Path) -> None:
+    """Write DataFrame to parquet atomically: write to temp file, then rename.
+
+    This ensures that a partial write never overwrites the destination.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        suffix=".parquet",
+        dir=output_path.parent,
+        delete=False,
+    ) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        df.to_parquet(tmp_path, index=False)
+        tmp_path.replace(output_path)
+    except Exception:
+        # Clean up temp file on error
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
+def main() -> int:
+    """CLI entry point: extract per-second HXMT/HE data for one UTC date."""
+    parser = argparse.ArgumentParser(
+        description="Extract per-second HXMT/HE data (one date per invocation)."
+    )
+    parser.add_argument(
+        "date",
+        help="UTC date in YYYYMMDD format (e.g. 20260410)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("per_sec_parquet"),
+        help="Output directory for parquet files (default: per_sec_parquet)",
+    )
+
+    args = parser.parse_args()
+
+    # Validate date format
+    date_str = args.date
+    if len(date_str) != 8 or not date_str.isdigit():
+        print(f"Error: date must be in YYYYMMDD format, got '{date_str}'", file=sys.stderr)
+        return 1
+
+    output_file = args.output_dir / f"{date_str}.parquet"
+
+    # Idempotency: if output exists, exit 0 (no-op)
+    if output_file.exists():
+        print(f"Output already exists: {output_file}", file=sys.stderr)
+        return 0
+
+    print(f"Extracting {date_str}...", file=sys.stderr)
+    try:
+        df = extract_day(date_str)
+        print(f"  Loaded {len(df)} rows", file=sys.stderr)
+        write_parquet_atomic(df, output_file)
+        print(f"Wrote {output_file}", file=sys.stderr)
+        return 0
+    except Exception as e:
+        print(f"Error extracting {date_str}: {e}", file=sys.stderr)
+        return 1
+
+
 if __name__ == "__main__":
-    raise NotImplementedError("CLI is implemented in Task 12")
+    sys.exit(main())
