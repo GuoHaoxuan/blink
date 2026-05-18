@@ -191,8 +191,8 @@ def test_aggregate_he_evt_synthetic():
     """Build a tiny synthetic event stream and verify aggregation."""
     import numpy as np
 
-    # 4 events in 1 second, det_global = 3 (box B, det 3 → B_idx=1, det=3)
-    # Times in [10.0, 10.5, 10.95, 10.99]   - first 3 in 0.94s window, all 4 in 1.0s
+    # 4 events in 1 second, det_global = 9 (box B, det 3 → global 9)
+    # Times in [10.0, 10.5, 10.95, 10.99]   - first 2 in 0.94s window, all 4 in 1.0s
     times      = np.array([10.0, 10.5, 10.95, 10.99], dtype=np.float64)
     det_ids    = np.array([9, 9, 9, 9], dtype=np.int8)       # box B det 3 → global 9
     popcounts  = np.array([0, 1, 2, 0], dtype=np.int8)       # pure, ACD1, ACDN, pure
@@ -204,12 +204,12 @@ def test_aggregate_he_evt_synthetic():
         evt, met_floats, box_index=1, det=3,
         window_s_094=0.94, window_s_1s=1.0,
     )
-    # 0.94s window picks first 3 events; ACD breakdown: 1 pure, 1 ACD1, 1 ACDN
-    assert sci["Sci_094"][0] == 3
+    # 0.94s window [10.0, 10.94) picks events at 10.0, 10.5; ACD breakdown: 1 pure, 1 ACD1, 0 ACDN
+    assert sci["Sci_094"][0] == 2
     assert sci["Sci_pure_094"][0] == 1
     assert sci["Sci_ACD1_094"][0] == 1
-    assert sci["Sci_ACDN_094"][0] == 1
-    # 1.0s window picks all 4: 2 pure, 1 ACD1, 1 ACDN
+    assert sci["Sci_ACDN_094"][0] == 0
+    # 1.0s window [10.0, 11.0) picks all 4: 2 pure, 1 ACD1, 1 ACDN
     assert sci["Sci_1s"][0] == 4
     assert sci["Sci_pure_1s"][0] == 2
     assert sci["Sci_ACD1_1s"][0] == 1
