@@ -35,5 +35,23 @@ def root_1k() -> Path:
     return Path(os.environ.get("BLINK_1K_ROOT", DEFAULT_1K_ROOT))
 
 
+def compute_offset(utc_last_bdc: int, stime_last_bdc: int) -> int:
+    """1B Time-to-UTC offset for one HE_Eng file (constant across rows).
+
+    Use [0]-th element from the file's HE_Eng table — same for every row in
+    a given file.
+    """
+    return int(utc_last_bdc) - int(stime_last_bdc)
+
+
+def compute_met_float(time_1b, offset: int) -> float:
+    """Convert 1B HE_Eng ``Time`` to 1K-aligned MET (float seconds).
+
+    Works on scalars or numpy arrays. ``MET_CORRECTION = 4.0s`` is the
+    empirical 1B→1K offset (verified sub-microsecond elsewhere in the project).
+    """
+    return time_1b + offset + MET_CORRECTION
+
+
 if __name__ == "__main__":
     raise NotImplementedError("CLI is implemented in Task 12")
