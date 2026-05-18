@@ -26,7 +26,7 @@ PYTHON="python3"
 OUTPUT_DIR="per_sec_parquet"
 LOG_DIR="logs/extract"
 HEPSUB_GROUP=""    # ← fill in your hep_sub group name (or pass via env)
-HEPSUB_MEM="2GB"
+HEPSUB_MEM="6GB"
 HEPSUB_TIME="1h"
 
 mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
