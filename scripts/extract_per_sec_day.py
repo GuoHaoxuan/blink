@@ -126,5 +126,34 @@ def read_he_hv(path) -> dict:
         }
 
 
+def read_orbit(path) -> dict:
+    """Read one 1K Orbit FITS file. Returns dict of numpy arrays.
+
+    Schema (~3601 rows @ 1 Hz):
+        Time:         int64 seconds (1K MET)
+        X, Y, Z:      float64 m
+        Vx, Vy, Vz:   float64 m/s
+        Lon, Lat:     float64 degrees
+        Alt:          float64 m
+    """
+    with fits.open(path, memmap=False) as f:
+        d = f["Orbit"].data
+        # Time stored as D (float64); cast to int64 (Orbit is at integer-second
+        # cadence, verified empirically).
+        time_int = np.round(d["Time"].astype(np.float64)).astype(np.int64)
+        return {
+            "Time": time_int,
+            "X":    d["X"].astype(np.float64),
+            "Y":    d["Y"].astype(np.float64),
+            "Z":    d["Z"].astype(np.float64),
+            "Vx":   d["Vx"].astype(np.float64),
+            "Vy":   d["Vy"].astype(np.float64),
+            "Vz":   d["Vz"].astype(np.float64),
+            "Lon":  d["Lon"].astype(np.float64),
+            "Lat":  d["Lat"].astype(np.float64),
+            "Alt":  d["Alt"].astype(np.float64),
+        }
+
+
 if __name__ == "__main__":
     raise NotImplementedError("CLI is implemented in Task 12")
