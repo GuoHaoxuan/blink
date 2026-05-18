@@ -111,5 +111,20 @@ def read_he_eng(path) -> dict:
         return out
 
 
+def read_he_hv(path) -> dict:
+    """Read one 1K HE-HV FITS file. Returns dict with 'Time' and 'HV'.
+
+    HV shape: (n_sec, 18) — 18 global detectors.
+    """
+    with fits.open(path, memmap=False) as f:
+        d = f["HE_HV_PHODet"].data
+        n = len(d)
+        cols = [d[f"HV_PHODet_{j}"].astype(np.float32) for j in range(18)]
+        return {
+            "Time": d["Time"].astype(np.int64),
+            "HV":   np.stack(cols, axis=1),
+        }
+
+
 if __name__ == "__main__":
     raise NotImplementedError("CLI is implemented in Task 12")
