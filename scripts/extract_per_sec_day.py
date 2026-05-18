@@ -217,20 +217,13 @@ def read_he_evt(path) -> dict:
         Det_ID:        int8    (n_events,)  — global 0..17
         ACD_popcount:  int8    (n_events,)  — 0..18, computed from 18-bit ACD field
     """
-    # memmap=True: keep the (large, ~580 MB) Events table on disk-backed mmap.
-    # We materialise only the 3 columns we need; unread columns (Channel,
-    # Pulse_Width, Event_Type, Flag) never enter the process RSS.
-    with fits.open(path, memmap=True) as f:
+    with fits.open(path, memmap=False) as f:
         d = f["Events"].data
-        time_f64 = np.array(d["Time"], dtype=np.float64)
-        det_i8 = np.array(d["Det_ID"], dtype=np.int8)
-        acd = np.asarray(d["ACD"], dtype=bool)   # (n, 18) transient
-        popcount = count_acd_bits(acd)
-        del acd   # free the 504 MB bool array before returning
+        acd = np.asarray(d["ACD"], dtype=bool)   # (n, 18)
         return {
-            "Time":         time_f64,
-            "Det_ID":       det_i8,
-            "ACD_popcount": popcount,
+            "Time":         d["Time"].astype(np.float64),
+            "Det_ID":       d["Det_ID"].astype(np.int8),
+            "ACD_popcount": count_acd_bits(acd),
         }
 
 
