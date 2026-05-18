@@ -155,5 +155,51 @@ def read_orbit(path) -> dict:
         }
 
 
+def _nearest_sample(att_time: np.ndarray, target_secs: np.ndarray) -> np.ndarray:
+    """For each integer second in ``target_secs``, return the index of the Att
+    sample whose Time is closest (in absolute distance).
+
+    Returns shape (len(target_secs),) int64. If a target_sec is outside the Att
+    coverage, the boundary index is returned (caller must check NaN-fill later).
+    """
+    # searchsorted gives position just to the right
+    pos = np.searchsorted(att_time, target_secs.astype(np.float64))
+    # clamp
+    pos_clip = np.clip(pos, 1, len(att_time) - 1)
+    # compare distance to pos-1 vs pos
+    left  = pos_clip - 1
+    right = pos_clip
+    pick_right = (
+        np.abs(att_time[right] - target_secs) <
+        np.abs(att_time[left]  - target_secs)
+    )
+    return np.where(pick_right, right, left)
+
+
+_ATT_HDU_COLS = {
+    "ATT_Pointing": ["Ra", "Dec", "Delta_Ra", "Delta_Dec", "Delta"],
+    "ATT_Euler":    ["Euler_Phi", "Euler_Theta", "Euler_Psi"],
+    "ATT_Quater":   ["Q1", "Q2", "Q3"],
+    "ATT_Omega":    ["Omega_X", "Omega_Y", "Omega_Z"],
+}
+
+
+def read_att(path, target_secs: np.ndarray) -> dict:
+    """Read one 1K Att FITS, downsample 4 Hz → 1 Hz by nearest-frame.
+
+    ``target_secs``: int64 array of integer met_sec values to sample at.
+    Returns: dict with 14 keys, each a (len(target_secs),) float32 array.
+    """
+    out = {}
+    with fits.open(path, memmap=False) as f:
+        for hdu_name, col_names in _ATT_HDU_COLS.items():
+            d = f[hdu_name].data
+            t = d["Time"].astype(np.float64)
+            idx = _nearest_sample(t, target_secs)
+            for c in col_names:
+                out[c] = d[c][idx].astype(np.float32)
+    return out
+
+
 if __name__ == "__main__":
     raise NotImplementedError("CLI is implemented in Task 12")
