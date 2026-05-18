@@ -29,6 +29,11 @@ BOX_INDEX = {"A": 0, "B": 1, "C": 2}
 DEFAULT_1B_ROOT = "/hxmtfs/data/Archive_tmp/1B"
 DEFAULT_1K_ROOT = "/hxmt/work/HXMT-DATA/1K"
 
+# NOTE: crc_box is left NaN. CRC failures are a 1B-level artefact (events that
+# fail CRC are dropped before 1K). Recovering per-second CRC counts would
+# require running blink_cli sat-style 1B parsing — deferred to a later spec.
+# The column is preserved in the schema for forward compatibility.
+
 
 def root_1b() -> Path:
     return Path(os.environ.get("BLINK_1B_ROOT", DEFAULT_1B_ROOT))
