@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from astropy.io import fits
 
 MET_CORRECTION = 4.0  # 1B Time → 1K MET, verified sub-microsecond
@@ -96,21 +97,52 @@ def read_he_eng(path) -> dict:
     with fits.open(path, memmap=False) as f:
         d = f["HE_Eng"].data
         n = len(d)
+        col_names = set(f["HE_Eng"].columns.names)
 
-        def per_det(base: str) -> np.ndarray:
-            cols = [d[f"{base}_{i}"].astype(np.int32) for i in range(6)]
+        # Detect column naming format: 2017 uses per-box indices, 2026 uses global indices
+        # Try 2017 format first (per-box: 0-5), fall back to 2026 format if not found
+        has_per_box = all(f"Cnt_PHODet_{i}" in col_names for i in range(6))
+
+        def per_det(base: str, box_port: str | None = None) -> np.ndarray:
+            if has_per_box:
+                # 2017 format: indices 0-5 (per-box)
+                cols = [d[f"{base}_{i}"].astype(np.int32) for i in range(6)]
+            else:
+                # 2026 format: indices are global (0-5 for Box A, 6-11 for B, 12-17 for C)
+                # Infer box from port if available, or try to find available indices
+                if box_port in ["0766", None]:
+                    start_idx = 0
+                elif box_port == "1009":
+                    start_idx = 6
+                elif box_port == "1781":
+                    start_idx = 12
+                else:
+                    # Fallback: find first column and infer
+                    for i in range(18):
+                        if f"{base}_{i}" in col_names:
+                            start_idx = (i // 6) * 6
+                            break
+                cols = [d[f"{base}_{start_idx + i}"].astype(np.int32) for i in range(6)]
             return np.stack(cols, axis=1)   # (n, 6)
+
+        # Infer box port from path
+        path_str = str(path)
+        box_port = None
+        for port in ["0766", "1009", "1781"]:
+            if port in path_str:
+                box_port = port
+                break
 
         out = {
             "Time":              d["Time"].astype(np.int64),
             "Length_Time_Cycle": d["Length_Time_Cycle"].astype(np.int32),
             "UTC_Last_Bdc":      d["UTC_Last_Bdc"].astype(np.int64),
             "sTime_Last_Bdc":    d["sTime_Last_Bdc"].astype(np.int64),
-            "Cnt_PHODet":        per_det("Cnt_PHODet"),
-            "Cnt_OOCDet":        per_det("Cnt_OOCDet"),
-            "Cnt_CsI_PHODet":    per_det("Cnt_CsI_PHODet"),
-            "Cnt_LargeEvt":      per_det("Cnt_LargeEvt"),
-            "DeadTime_PHODet":   per_det("DeadTime_PHODet"),
+            "Cnt_PHODet":        per_det("Cnt_PHODet", box_port),
+            "Cnt_OOCDet":        per_det("Cnt_OOCDet", box_port),
+            "Cnt_CsI_PHODet":    per_det("Cnt_CsI_PHODet", box_port),
+            "Cnt_LargeEvt":      per_det("Cnt_LargeEvt", box_port),
+            "DeadTime_PHODet":   per_det("DeadTime_PHODet", box_port),
             "BUS_Time_Bdc":      np.asarray(d["BUS_Time_Bdc"], dtype=np.uint8).reshape(n, 6),
             "Error_code":        np.asarray(d["Error_code"], dtype=np.uint8).reshape(n, 4),
         }
@@ -302,6 +334,151 @@ def find_1k_aux_path(date: str, hour: int, product: str) -> Path | None:
     )
     matches = sorted(glob.glob(pattern))
     return Path(matches[0]) if matches else None
+
+
+def _box_hour_rows(
+    date: str, box: str, hour: int,
+    hv_lookup: dict | None,
+    orbit_lookup: dict | None,
+    att_lookup: dict | None,
+    evt: dict | None,
+) -> list[dict]:
+    """Build all (sec × 6 det) rows for one (box, hour). Returns empty if HE_Eng missing."""
+    eng_path = find_he_eng_path(date, hour, BOX_PORTS[box])
+    if eng_path is None:
+        return []
+    d = read_he_eng(eng_path)
+    n_sec = len(d["Time"])
+    box_idx = BOX_INDEX[box]
+    offset = compute_offset(int(d["UTC_Last_Bdc"][0]), int(d["sTime_Last_Bdc"][0]))
+    met_float = compute_met_float(d["Time"], offset)
+    met_sec   = np.floor(met_float).astype(np.int64)
+
+    # Orbit/HV lookup tables: built once per hour
+    orbit_vals = {}
+    if orbit_lookup is not None:
+        for c in ["X", "Y", "Z", "Vx", "Vy", "Vz", "Lon", "Lat", "Alt"]:
+            arr = np.full(n_sec, np.nan, dtype=np.float64)
+            idx_of = orbit_lookup["__index_of"]
+            for i, s in enumerate(met_sec):
+                if int(s) in idx_of:
+                    arr[i] = orbit_lookup[c][idx_of[int(s)]]
+            orbit_vals[c] = arr
+    else:
+        for c in ["X", "Y", "Z", "Vx", "Vy", "Vz", "Lon", "Lat", "Alt"]:
+            orbit_vals[c] = np.full(n_sec, np.nan)
+
+    # HV: needs per-det extraction
+    if hv_lookup is not None:
+        hv_full = np.full((n_sec, 18), np.nan, dtype=np.float32)
+        idx_of = hv_lookup["__index_of"]
+        for i, s in enumerate(met_sec):
+            if int(s) in idx_of:
+                hv_full[i] = hv_lookup["HV"][idx_of[int(s)]]
+    else:
+        hv_full = np.full((n_sec, 18), np.nan, dtype=np.float32)
+
+    # Att: read with the actual met_sec array → all 14 cols
+    if att_lookup is not None:
+        att_vals = att_lookup   # already indexed by met_sec
+    else:
+        att_vals = {k: np.full(n_sec, np.nan, dtype=np.float32) for k in [
+            "Ra", "Dec", "Delta_Ra", "Delta_Dec", "Delta",
+            "Euler_Phi", "Euler_Theta", "Euler_Psi",
+            "Q1", "Q2", "Q3",
+            "Omega_X", "Omega_Y", "Omega_Z"]}
+
+    # Build rows per det
+    rows = []
+    for det in range(6):
+        det_global = box_idx * 6 + det
+        if evt is not None:
+            sci = aggregate_he_evt(evt, met_float, box_idx, det)
+        else:
+            sci = {k: np.full(n_sec, np.nan) for k in [
+                "Sci_094", "Sci_pure_094", "Sci_ACD1_094", "Sci_ACDN_094",
+                "Sci_1s",  "Sci_pure_1s",  "Sci_ACD1_1s",  "Sci_ACDN_1s"]}
+
+        for i in range(n_sec):
+            row = {
+                "date":          date[:4] + "-" + date[4:6] + "-" + date[6:],
+                "box":           box,
+                "det":           det,
+                "met_sec":       int(met_sec[i]),
+                "time_float":    float(met_float[i]),
+                "L_cycles":      int(d["Length_Time_Cycle"][i]),
+                "PHO":           int(d["Cnt_PHODet"][i, det]),
+                "OOC":           int(d["Cnt_OOCDet"][i, det]),
+                "Wide":          int(d["Cnt_CsI_PHODet"][i, det]),
+                "Large":         int(d["Cnt_LargeEvt"][i, det]),
+                "Dt":            int(d["DeadTime_PHODet"][i, det]),
+                "HV":            float(hv_full[i, det_global]),
+                "Sci_094":       sci["Sci_094"][i],
+                "Sci_pure_094":  sci["Sci_pure_094"][i],
+                "Sci_ACD1_094":  sci["Sci_ACD1_094"][i],
+                "Sci_ACDN_094":  sci["Sci_ACDN_094"][i],
+                "Sci_1s":        sci["Sci_1s"][i],
+                "Sci_pure_1s":   sci["Sci_pure_1s"][i],
+                "Sci_ACD1_1s":   sci["Sci_ACD1_1s"][i],
+                "Sci_ACDN_1s":   sci["Sci_ACDN_1s"][i],
+                "crc_box":       np.nan,
+                "utc_last_bdc":  int(d["UTC_Last_Bdc"][i]),
+                "stime_last_bdc": int(d["sTime_Last_Bdc"][i]),
+                "error_code":    bytes(d["Error_code"][i]),
+                "bus_time_bdc":  bytes(d["BUS_Time_Bdc"][i]),
+            }
+            for c in ["X", "Y", "Z", "Vx", "Vy", "Vz", "Lon", "Lat", "Alt"]:
+                row[c] = float(orbit_vals[c][i])
+            for c in att_vals:
+                row[c] = float(att_vals[c][i])
+            rows.append(row)
+    return rows
+
+
+def _index_by_time(table: dict, time_key: str = "Time") -> dict:
+    """Attach an int64 met_sec → row-index dict for fast lookup."""
+    idx = {int(t): i for i, t in enumerate(table[time_key])}
+    table["__index_of"] = idx
+    return table
+
+
+def extract_day(date: str) -> pd.DataFrame:
+    """Build the full per-sec dataframe for one UTC date."""
+    rows: list[dict] = []
+    for hour in range(24):
+        # Load 1K aux once per hour (covers all 18 dets)
+        hv_path    = find_1k_aux_path(date, hour, "HE-HV")
+        orbit_path = find_1k_aux_path(date, hour, "Orbit")
+        att_path   = find_1k_aux_path(date, hour, "Att")
+        evt_path   = find_1k_aux_path(date, hour, "HE-Evt")
+
+        hv_table    = _index_by_time(read_he_hv(hv_path))   if hv_path    else None
+        orbit_table = _index_by_time(read_orbit(orbit_path)) if orbit_path else None
+        evt_table   = read_he_evt(evt_path)                  if evt_path   else None
+
+        for box in ["A", "B", "C"]:
+            # Att depends on target seconds: defer to per-(box, hour) where we know n_sec
+            eng_path = find_he_eng_path(date, hour, BOX_PORTS[box])
+            if eng_path is None:
+                continue
+            d_probe = read_he_eng(eng_path)
+            offset = compute_offset(int(d_probe["UTC_Last_Bdc"][0]),
+                                     int(d_probe["sTime_Last_Bdc"][0]))
+            met_sec_probe = np.floor(
+                compute_met_float(d_probe["Time"], offset)
+            ).astype(np.int64)
+            att_vals = (read_att(att_path, met_sec_probe)
+                        if att_path else None)
+
+            rows.extend(_box_hour_rows(
+                date, box, hour,
+                hv_lookup=hv_table,
+                orbit_lookup=orbit_table,
+                att_lookup=att_vals,
+                evt=evt_table,
+            ))
+
+    return pd.DataFrame(rows)
 
 
 if __name__ == "__main__":
