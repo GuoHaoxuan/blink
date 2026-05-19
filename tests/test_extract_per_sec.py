@@ -417,3 +417,22 @@ def test_find_he_eng_path_no_match(monkeypatch, tmp_path):
 
     p = M.find_he_eng_path("20220115", 5, "0766")
     assert p is None
+
+
+def test_read_he_eng_default_offset(require_file):
+    """Without override: reader returns offset from file header."""
+    from tests.conftest import HE_ENG_2017_BOXA
+    require_file(HE_ENG_2017_BOXA)
+
+    d = M.read_he_eng(HE_ENG_2017_BOXA)
+    # The reader returns the file's own offset baseline.
+    assert d["offset"] == 179821451
+
+
+def test_read_he_eng_override_offset(require_file):
+    """With override: reader returns the override value."""
+    from tests.conftest import HE_ENG_2017_BOXA
+    require_file(HE_ENG_2017_BOXA)
+
+    d = M.read_he_eng(HE_ENG_2017_BOXA, override_offset=179800000)
+    assert d["offset"] == 179800000
