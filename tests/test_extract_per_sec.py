@@ -466,3 +466,20 @@ def test_effective_offsets_single_hour():
     raw = {5: 179821369}
     out = M.effective_offsets(raw, threshold_sec=10)
     assert out == raw
+
+
+def test_probe_he_eng_offset(require_file):
+    """Probe just reads row 0 to extract offset — should be fast and correct."""
+    from tests.conftest import HE_ENG_2017_BOXA
+    require_file(HE_ENG_2017_BOXA)
+
+    off = M.probe_he_eng_offset(HE_ENG_2017_BOXA)
+    # Matches test_compute_offset_basic: 181439999 - 1618548 = 179821451
+    assert off == 179821451
+
+
+def test_probe_he_eng_offset_returns_none_for_bad_file(tmp_path):
+    """Unreadable / non-existent file returns None (extract continues gracefully)."""
+    bogus = tmp_path / "not_a_fits.fits"
+    bogus.write_bytes(b"\x00" * 100)
+    assert M.probe_he_eng_offset(bogus) is None

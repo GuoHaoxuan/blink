@@ -209,6 +209,24 @@ def read_he_eng(path) -> dict:
         return out
 
 
+def probe_he_eng_offset(path) -> int | None:
+    """Return UTC_Last_Bdc[0] - sTime_Last_Bdc[0] from an HE_Eng file.
+
+    Used by the pre-scan in ``extract_day``: reads only the first row to get
+    the offset constant, much faster than a full ``read_he_eng``. Returns
+    ``None`` on any read error (caller treats as missing hour).
+    """
+    try:
+        with fits.open(path, memmap=False) as f:
+            d = f["HE_Eng"].data
+            if len(d) == 0:
+                return None
+            return compute_offset(int(d["UTC_Last_Bdc"][0]),
+                                  int(d["sTime_Last_Bdc"][0]))
+    except Exception:
+        return None
+
+
 def read_he_hv(path) -> dict:
     """Read one 1K HE-HV FITS file. Returns dict with 'Time' and 'HV'.
 
