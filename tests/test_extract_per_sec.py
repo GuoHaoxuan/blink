@@ -502,3 +502,39 @@ def test_read_he_eng_override_offset(require_file):
 
     d = M.read_he_eng(HE_ENG_2017_BOXA, override_offset=179800000)
     assert d["offset"] == 179800000
+
+
+def test_extract_day_no_dups_for_known_offset_bug(monkeypatch):
+    """20220115 box A has a known bad offset in hour 2. After the fix, the
+    produced dataframe has zero (box, det, met_sec) duplicates."""
+    from pathlib import Path
+    src_b = Path("/hxmtfs/data/Archive_tmp/1B/2022/20220115")
+    if not src_b.exists():
+        import pytest
+        pytest.skip("Real 1B archive not mounted")
+
+    monkeypatch.setenv("BLINK_1B_ROOT", "/hxmtfs/data/Archive_tmp/1B")
+    monkeypatch.setenv("BLINK_1K_ROOT", "/hxmt/work/HXMT-DATA/1K")
+
+    df = M.extract_day("20220115")
+    assert len(df) > 0
+    dup_count = df.duplicated(subset=["box", "det", "met_sec"]).sum()
+    assert dup_count == 0, f"Expected 0 dups, got {dup_count}"
+
+
+def test_extract_day_monotonic_after_fix(monkeypatch):
+    """Each (box, det) group has strictly increasing met_sec after the fix."""
+    import numpy as np
+    from pathlib import Path
+    src_b = Path("/hxmtfs/data/Archive_tmp/1B/2022/20220115")
+    if not src_b.exists():
+        import pytest
+        pytest.skip("Real 1B archive not mounted")
+
+    monkeypatch.setenv("BLINK_1B_ROOT", "/hxmtfs/data/Archive_tmp/1B")
+    monkeypatch.setenv("BLINK_1K_ROOT", "/hxmt/work/HXMT-DATA/1K")
+
+    df = M.extract_day("20220115")
+    for (box, det), sub in df.groupby(["box", "det"]):
+        s = sub["met_sec"].to_numpy()
+        assert (np.diff(s) > 0).all(), f"non-monotonic in ({box}, {det})"

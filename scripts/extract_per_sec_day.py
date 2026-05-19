@@ -440,17 +440,21 @@ def _box_hour_arrays(
     orbit_lookup: dict | None,
     att_lookup: dict | None,
     evt: dict | None,
+    override_offset: int | None = None,
 ) -> dict[str, np.ndarray] | None:
     """Build column-arrays for all (sec × 6 det) rows of one (box, hour).
 
     Returns None if HE_Eng missing or unreadable. Otherwise returns a dict of
     numpy arrays, one per output column, all of length n_sec * 6.
+
+    ``override_offset`` is the corrected offset from ``effective_offsets``;
+    when provided, replaces the file's own UTC/sTime-derived offset.
     """
     eng_path = find_he_eng_path(date, hour, BOX_PORTS[box])
     if eng_path is None:
         return None
     try:
-        d = read_he_eng(eng_path)
+        d = read_he_eng(eng_path, override_offset=override_offset)
     except Exception as e:
         print(f"[per_sec_extract] WARN: read HE_Eng {eng_path} failed: {e}",
               file=sys.stderr, flush=True)
@@ -459,7 +463,7 @@ def _box_hour_arrays(
     n_sec = len(d["Time"])
     n_rows = n_sec * 6
     box_idx = BOX_INDEX[box]
-    offset = compute_offset(int(d["UTC_Last_Bdc"][0]), int(d["sTime_Last_Bdc"][0]))
+    offset = d["offset"]
     met_float = compute_met_float(d["Time"], offset)
     met_sec = np.floor(met_float).astype(np.int64)
 
@@ -556,6 +560,30 @@ def _index_by_time(table: dict, time_key: str = "Time") -> dict:
 
 def extract_day(date: str) -> pd.DataFrame:
     """Build the full per-sec dataframe for one UTC date."""
+    # Step 1: per-box offset pre-scan — detect anomalous-offset hours.
+    box_effective_offsets: dict[str, dict[int, int]] = {}
+    for box in ("A", "B", "C"):
+        port = BOX_PORTS[box]
+        raw: dict[int, int] = {}
+        for hour in range(24):
+            path = find_he_eng_path(date, hour, port)
+            if path is None:
+                continue
+            off = probe_he_eng_offset(path)
+            if off is not None:
+                raw[hour] = off
+        eff = effective_offsets(raw, threshold_sec=10)
+        # Emit a WARN log line for each overridden hour
+        for h in raw:
+            if eff[h] != raw[h]:
+                print(
+                    f"[per_sec_extract] WARN: box {box} hour {h:02d} offset override "
+                    f"{raw[h]} → {eff[h]} (deviation {raw[h]-eff[h]:+d}s)",
+                    file=sys.stderr, flush=True,
+                )
+        box_effective_offsets[box] = eff
+
+    # Step 2: per-hour processing — pass the effective_offset for each (box, hour).
     parts: list[dict[str, np.ndarray]] = []
     for hour in range(24):
         # Load 1K aux once per hour (covers all 18 dets)
@@ -577,13 +605,15 @@ def extract_day(date: str) -> pd.DataFrame:
             eng_path = find_he_eng_path(date, hour, BOX_PORTS[box])
             if eng_path is None:
                 continue
-            d_probe = _try_read(read_he_eng, eng_path, f"HE_Eng ({box})", date, hour)
+            override = box_effective_offsets[box].get(hour)
+            d_probe = _try_read(
+                lambda p: read_he_eng(p, override_offset=override),
+                eng_path, f"HE_Eng ({box})", date, hour,
+            )
             if d_probe is None:
                 continue
-            offset = compute_offset(int(d_probe["UTC_Last_Bdc"][0]),
-                                     int(d_probe["sTime_Last_Bdc"][0]))
             met_sec_probe = np.floor(
-                compute_met_float(d_probe["Time"], offset)
+                compute_met_float(d_probe["Time"], d_probe["offset"])
             ).astype(np.int64)
 
             att_vals = None
@@ -601,6 +631,7 @@ def extract_day(date: str) -> pd.DataFrame:
                 orbit_lookup=orbit_table,
                 att_lookup=att_vals,
                 evt=evt_table,
+                override_offset=override,
             )
             if chunk is not None:
                 parts.append(chunk)
