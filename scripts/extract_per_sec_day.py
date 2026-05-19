@@ -70,6 +70,50 @@ def compute_offset(utc_last_bdc: int, stime_last_bdc: int) -> int:
     return int(utc_last_bdc) - int(stime_last_bdc)
 
 
+def effective_offsets(
+    raw_offsets: dict[int, int],
+    threshold_sec: int = 10,
+) -> dict[int, int]:
+    """Detect and override anomalous per-hour HE_Eng offsets.
+
+    Some 1B HE_Eng files have ``UTC_Last_Bdc - sTime_Last_Bdc`` offsets that
+    deviate by hundreds of seconds from neighbouring hours, mis-placing the
+    file's met_sec by that amount. Normal hour-to-hour drift is ~1 s/day.
+
+    For each hour with deviation > ``threshold_sec`` from the day median,
+    substitute the median of immediate-neighbour hours that pass threshold.
+    Fall back to overall median if no good neighbours exist.
+
+    Args:
+        raw_offsets: ``{hour: offset}`` map for one (box, date).
+        threshold_sec: max permitted deviation from day median.
+
+    Returns:
+        ``{hour: effective_offset}`` with outliers replaced. Same keys as input.
+    """
+    if not raw_offsets:
+        return {}
+    vals = list(raw_offsets.values())
+    median = int(np.median(vals))
+    good = {h: o for h, o in raw_offsets.items() if abs(o - median) <= threshold_sec}
+
+    fixed: dict[int, int] = {}
+    for h, off in raw_offsets.items():
+        if abs(off - median) <= threshold_sec:
+            fixed[h] = off
+            continue
+        # Outlier: search immediate-neighbour good hours, expanding outward.
+        candidates = []
+        for delta in (1, 2, 3):
+            for h_n in (h - delta, h + delta):
+                if h_n in good:
+                    candidates.append(good[h_n])
+            if candidates:
+                break
+        fixed[h] = int(np.median(candidates)) if candidates else median
+    return fixed
+
+
 def compute_met_float(time_1b, offset: int) -> float:
     """Convert 1B HE_Eng ``Time`` to 1K-aligned MET (float seconds).
 

@@ -417,3 +417,52 @@ def test_find_he_eng_path_no_match(monkeypatch, tmp_path):
 
     p = M.find_he_eng_path("20220115", 5, "0766")
     assert p is None
+
+
+def test_effective_offsets_no_outlier():
+    """All hours within 10s of median: pass through unchanged."""
+    raw = {0: 179821369, 1: 179821368, 2: 179821368, 3: 179821367}
+    out = M.effective_offsets(raw, threshold_sec=10)
+    assert out == raw
+
+
+def test_effective_offsets_one_outlier_below():
+    """One hour 800s below median: replace with neighbour median."""
+    raw = {0: 179821369, 1: 179821369, 2: 179820567, 3: 179821369, 4: 179821368}
+    out = M.effective_offsets(raw, threshold_sec=10)
+    assert out[0] == 179821369
+    assert out[1] == 179821369
+    # Hour 2 is the outlier; immediate good neighbours are hours 1 and 3 (both 179821369)
+    assert out[2] == 179821369
+    assert out[3] == 179821369
+    assert out[4] == 179821368
+
+
+def test_effective_offsets_one_outlier_above():
+    """Symmetric: also catches outliers above median."""
+    raw = {0: 179821369, 1: 179822500, 2: 179821368}
+    out = M.effective_offsets(raw, threshold_sec=10)
+    # Hour 1 deviation = 1131 from median 179821369; gets overridden.
+    # Neighbours that pass threshold: hours 0 (179821369) and 2 (179821368)
+    assert out[1] in (179821368, 179821369)
+
+
+def test_effective_offsets_no_good_neighbour_uses_median():
+    """If immediate neighbours are also outliers, fall back to day median."""
+    raw = {0: 179821369, 1: 179821369, 2: 179820567, 3: 179820567, 4: 179821369}
+    out = M.effective_offsets(raw, threshold_sec=10)
+    # Median is 179821369 (3 good hours vs 2 bad). Hours 2,3 both outliers; no
+    # good immediate neighbour for hour 2's neighbour at hour 3, fallback to median.
+    assert out[2] == 179821369
+
+
+def test_effective_offsets_empty():
+    """Empty input → empty output (no crash)."""
+    assert M.effective_offsets({}, threshold_sec=10) == {}
+
+
+def test_effective_offsets_single_hour():
+    """One hour only → that hour is the median, no override."""
+    raw = {5: 179821369}
+    out = M.effective_offsets(raw, threshold_sec=10)
+    assert out == raw
