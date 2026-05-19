@@ -642,7 +642,14 @@ def extract_day(date: str) -> pd.DataFrame:
     # Concat per-column then build DataFrame in one shot.
     cols = list(parts[0].keys())
     data = {c: np.concatenate([p[c] for p in parts]) for c in cols}
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
+    # Hour-boundary cleanup: some 1B HE_Eng hour files overflow into the next
+    # hour's met_sec range (e.g. hour 7's last row at met_sec X is also hour
+    # 8's first row at X). Hours are processed in order, so the later row
+    # carries the correct HE-Evt match (its own hour's HE-Evt file covers X).
+    # keep='last' picks that one.
+    df = df.drop_duplicates(subset=["box", "det", "met_sec"], keep="last")
+    return df.reset_index(drop=True)
 
 
 def write_parquet_atomic(df: pd.DataFrame, output_path: Path) -> None:
