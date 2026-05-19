@@ -38,6 +38,18 @@ earlier than they should be.
 
 Across all 2022 Q1 parquets, ~1.88% of `(box, det, met_sec)` keys are affected.
 
+### Component 2a — Hour-boundary cycle overlap (discovered during deployment)
+
+Some 1B HE_Eng hour files contain rows whose met_sec overlaps the next hour's
+range. Example on 20220115: hour 7 file has N=4300 rows (>3600) and its last
+row's met_sec equals hour 8's first row's met_sec. The two rows are distinct
+HE_Eng cycles (different PHO/OOC counts) but both share the same met_sec.
+
+This is independent of the offset bug — even after offset correction, ~2 dup
+keys per box × 18 dets = 36 rows per day remain at hour boundaries.
+
+**Fix:** after concat in `extract_day`, `drop_duplicates(subset=['box','det','met_sec'], keep='last')`. Since hours are processed in order (0 → 23), the "last" row is from hour N+1's file — which is correct because hour N+1's HE-Evt file covers that met_sec (the hour N "ghost" row had Sci_1s=0 because hour N's HE-Evt didn't reach that far).
+
 ### Component 2 — Multi-segment hour files use earliest segment
 
 `find_he_eng_path` returns `sorted(glob)[0]` — the alphabetically first match.
