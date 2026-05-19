@@ -483,3 +483,22 @@ def test_probe_he_eng_offset_returns_none_for_bad_file(tmp_path):
     bogus = tmp_path / "not_a_fits.fits"
     bogus.write_bytes(b"\x00" * 100)
     assert M.probe_he_eng_offset(bogus) is None
+
+
+def test_read_he_eng_default_offset(require_file):
+    """Without override: reader returns offset from file header."""
+    from tests.conftest import HE_ENG_2017_BOXA
+    require_file(HE_ENG_2017_BOXA)
+
+    d = M.read_he_eng(HE_ENG_2017_BOXA)
+    # The reader returns the file's own offset baseline.
+    assert d["offset"] == 179821451
+
+
+def test_read_he_eng_override_offset(require_file):
+    """With override: reader returns the override value."""
+    from tests.conftest import HE_ENG_2017_BOXA
+    require_file(HE_ENG_2017_BOXA)
+
+    d = M.read_he_eng(HE_ENG_2017_BOXA, override_offset=179800000)
+    assert d["offset"] == 179800000

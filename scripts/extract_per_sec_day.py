@@ -142,7 +142,7 @@ def window_indices(times: np.ndarray, t0: float, t1: float) -> tuple[int, int]:
     return i_start, i_end
 
 
-def read_he_eng(path) -> dict:
+def read_he_eng(path, *, override_offset: int | None = None) -> dict:
     """Read one 1B HE_Eng FITS file. Returns dict of numpy arrays.
 
     Schema (per-second, ~3600 rows per file):
@@ -153,6 +153,14 @@ def read_he_eng(path) -> dict:
         DeadTime_PHODet:                        shape (n, 6)       int  (per-det)
         BUS_Time_Bdc:                           shape (n, 6)       uint8 (raw)
         Error_code:                             shape (n, 4)       uint8 (raw)
+        offset:                                 scalar int         MET offset for this file
+
+    The ``offset`` key holds the integer offset used to convert 1B ``Time``
+    values to 1K-aligned MET via :func:`compute_met_float`.  By default it is
+    derived from the file header as
+    ``compute_offset(UTC_Last_Bdc[0], sTime_Last_Bdc[0])``.  Pass
+    ``override_offset`` to substitute a caller-supplied value instead (useful
+    when stitching files that share a common offset baseline).
     """
     with fits.open(path, memmap=False) as f:
         d = f["HE_Eng"].data
@@ -193,6 +201,7 @@ def read_he_eng(path) -> dict:
                 box_port = port
                 break
 
+        file_offset = compute_offset(int(d["UTC_Last_Bdc"][0]), int(d["sTime_Last_Bdc"][0]))
         out = {
             "Time":              d["Time"].astype(np.int64),
             "Length_Time_Cycle": d["Length_Time_Cycle"].astype(np.int32),
@@ -205,6 +214,7 @@ def read_he_eng(path) -> dict:
             "DeadTime_PHODet":   per_det("DeadTime_PHODet", box_port),
             "BUS_Time_Bdc":      np.asarray(d["BUS_Time_Bdc"], dtype=np.uint8).reshape(n, 6),
             "Error_code":        np.asarray(d["Error_code"], dtype=np.uint8).reshape(n, 4),
+            "offset":            int(override_offset) if override_offset is not None else file_offset,
         }
         return out
 
