@@ -323,6 +323,10 @@ def find_he_eng_path(date: str, hour: int, port: str) -> Path | None:
     Expected layout::
         {BLINK_1B_ROOT}/{YYYY}/{YYYYMMDD}/{port}/HXMT_1B_{port}_{YYYYMMDD}T{HH}0000_*.fits
 
+    When the archive contains multiple segments for one hour
+    (``..._000_004.fits`` and ``..._001_004.fits``), returns the highest-numbered
+    segment, which observation has shown to be the more-complete version.
+
     Returns None if no matching file found.
     """
     year = date[:4]
@@ -331,7 +335,7 @@ def find_he_eng_path(date: str, hour: int, port: str) -> Path | None:
         / f"HXMT_1B_{port}_{date}T{hour:02d}0000_*.fits"
     )
     matches = sorted(glob.glob(pattern))
-    return Path(matches[0]) if matches else None
+    return Path(matches[-1]) if matches else None
 
 
 def find_1k_aux_path(date: str, hour: int, product: str) -> Path | None:
