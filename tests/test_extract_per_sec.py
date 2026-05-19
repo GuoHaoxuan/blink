@@ -377,3 +377,43 @@ def test_main_invalid_date(monkeypatch, capsys):
     assert ret == 1
     captured = capsys.readouterr()
     assert "YYYYMMDD" in captured.err
+
+
+def test_find_he_eng_path_picks_highest_segment(monkeypatch, tmp_path):
+    """When multiple segments exist for one hour, pick the highest number."""
+    # Build a synthetic 1B directory layout with two segments for hour 3.
+    yr = tmp_path / "1B" / "2022" / "20220115" / "0766"
+    yr.mkdir(parents=True)
+    (yr / "HXMT_1B_0766_20220115T030000_G040183_000_004.fits").touch()
+    (yr / "HXMT_1B_0766_20220115T030000_G040183_001_004.fits").touch()
+    (yr / "HXMT_1B_0766_20220115T030000_G040183_002_004.fits").touch()
+
+    monkeypatch.setenv("BLINK_1B_ROOT", str(tmp_path / "1B"))
+
+    p = M.find_he_eng_path("20220115", 3, "0766")
+    assert p is not None
+    assert p.name == "HXMT_1B_0766_20220115T030000_G040183_002_004.fits"
+
+
+def test_find_he_eng_path_single_segment_unchanged(monkeypatch, tmp_path):
+    """When only one segment exists, behaviour unchanged."""
+    yr = tmp_path / "1B" / "2022" / "20220115" / "0766"
+    yr.mkdir(parents=True)
+    (yr / "HXMT_1B_0766_20220115T040000_G040184_000_004.fits").touch()
+
+    monkeypatch.setenv("BLINK_1B_ROOT", str(tmp_path / "1B"))
+
+    p = M.find_he_eng_path("20220115", 4, "0766")
+    assert p is not None
+    assert p.name == "HXMT_1B_0766_20220115T040000_G040184_000_004.fits"
+
+
+def test_find_he_eng_path_no_match(monkeypatch, tmp_path):
+    """When no segment exists, returns None."""
+    yr = tmp_path / "1B" / "2022" / "20220115" / "0766"
+    yr.mkdir(parents=True)
+
+    monkeypatch.setenv("BLINK_1B_ROOT", str(tmp_path / "1B"))
+
+    p = M.find_he_eng_path("20220115", 5, "0766")
+    assert p is None
