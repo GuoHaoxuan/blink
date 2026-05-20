@@ -144,6 +144,13 @@ def _apply_stage3_spatial(df):
     return df.loc[mask].copy()
 
 
+def _apply_stage4_burst(df, burst_catalog):
+    """Drop rows whose met_sec is within ±window_sec of any GBM trigger."""
+    times = df["met_sec"].to_numpy().astype(np.int64)
+    drop_mask = burst_catalog.any_within(times)
+    return df.loc[~drop_mask].copy()
+
+
 # ============================================================
 # CLI entry point (filled out in later tasks)
 # ============================================================
