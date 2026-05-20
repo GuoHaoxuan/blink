@@ -253,8 +253,133 @@ def process_one_day(date_str, input_dir, partial_dir, burst_catalog):
 
 
 # ============================================================
-# CLI entry point (filled out in later tasks)
+# Module 5: run_build (main pipeline) + CLI
 # ============================================================
 
+from functools import partial as _functools_partial
+
+
+def _process_one_day_for_pool(date_str, input_dir, partial_dir, gbm_cache, window_sec):
+    """Top-level wrapper for multiprocessing.Pool.
+
+    Re-loads BurstCatalog from cache in each worker (fast, ~ms; avoids serialising
+    a 3000+ entry array per worker invocation)."""
+    cat = BurstCatalog.fetch_or_load(gbm_cache, window_sec=window_sec, allow_fetch=False)
+    try:
+        return process_one_day(date_str, input_dir, partial_dir, cat)
+    except Exception as exc:
+        print(f"[worker] {date_str}: FAILED with {type(exc).__name__}: {exc}")
+        raise
+
+
+def run_build(input_dir, output, partial_dir, gbm_cache, dates, workers=8, min_rows=1_000_000):
+    """Top-level pipeline: per-day fan-out via multiprocessing.Pool, then concat + assertions."""
+    from pathlib import Path
+    from multiprocessing import Pool
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    input_dir = Path(input_dir)
+    output = Path(output)
+    partial_dir = Path(partial_dir)
+    gbm_cache = Path(gbm_cache)
+    partial_dir.mkdir(parents=True, exist_ok=True)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    worker = _functools_partial(
+        _process_one_day_for_pool,
+        input_dir=input_dir,
+        partial_dir=partial_dir,
+        gbm_cache=gbm_cache,
+        window_sec=300,
+    )
+
+    print(f"Starting pool with {workers} workers over {len(dates)} dates")
+    if workers == 1:
+        partials = [worker(d) for d in dates]
+    else:
+        with Pool(processes=workers) as pool:
+            partials = pool.map(worker, dates)
+
+    written = [p for p in partials if p is not None]
+    print(f"Day-level done: {len(written)}/{len(dates)} days wrote partials")
+
+    if not written:
+        raise AssertionError("No partials written — entire run produced zero rows")
+
+    print("Concatenating partials...")
+    tables = [pq.read_table(p) for p in written]
+    combined = pa.concat_tables(tables)
+    tmp_out = output.with_suffix(output.suffix + ".tmp")
+    pq.write_table(combined, tmp_out, compression="zstd")
+
+    n_rows = combined.num_rows
+    print(f"Concatenated {n_rows:,} rows")
+
+    df = combined.to_pandas()
+    assert n_rows >= min_rows, f"Final row count {n_rows:,} below minimum {min_rows:,}"
+    assert (df["Lat"].abs() < LAT_MAX_ABS).all(), "Lat assertion failed"
+    assert (~((df["Lon"] >= SAA_LON_LO) & (df["Lon"] <= SAA_LON_HI))).all(), "Lon assertion failed"
+    for w in ("094", "1s"):
+        lhs = df[f"Sci_pure_{w}"] + df[f"Sci_ACD1_{w}"] + df[f"Sci_ACDN_{w}"]
+        assert (lhs == df[f"Sci_{w}"]).all(), f"Sci invariant failed for window {w}"
+
+    tmp_out.rename(output)
+    print(f"Final cache written: {output} ({output.stat().st_size / 1e6:.1f} MB)")
+    for p in written:
+        p.unlink()
+    print(f"Partial files cleaned up")
+    return output
+
+
+def _parse_args():
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--input-dir", required=True, help="Dir of per_sec_parquet/{YYYYMMDD}.parquet")
+    p.add_argument("--output", required=True, help="Output parquet path")
+    p.add_argument("--partial-dir", required=True, help="Scratch dir for per-day partials")
+    p.add_argument("--gbm-cache", required=True, help="Path to GBM trigger parquet")
+    p.add_argument("--workers", type=int, default=8)
+    p.add_argument("--start", default="2020-01-01")
+    p.add_argument("--end", default="2020-06-30")
+    p.add_argument("--allow-fetch", action="store_true",
+                    help="If GBM cache missing, fetch from HEASARC (needs HTTPS)")
+    return p.parse_args()
+
+
+def main():
+    args = _parse_args()
+    from pathlib import Path
+    gbm_cache = Path(args.gbm_cache)
+
+    # Pre-fetch the GBM cache up front (before forking workers) if requested
+    if args.allow_fetch and not gbm_cache.exists():
+        print("Fetching GBM triggers from HEASARC...")
+        BurstCatalog.fetch_or_load(gbm_cache, window_sec=300, allow_fetch=True)
+        print(f"  cached: {gbm_cache}")
+    elif not gbm_cache.exists():
+        raise FileNotFoundError(
+            f"GBM cache missing ({gbm_cache}); pass --allow-fetch to download from HEASARC"
+        )
+
+    from datetime import date, timedelta
+    d_start = date.fromisoformat(args.start)
+    d_end = date.fromisoformat(args.end)
+    dates = []
+    d = d_start
+    while d <= d_end:
+        dates.append(d.strftime("%Y%m%d"))
+        d += timedelta(days=1)
+
+    run_build(
+        input_dir=args.input_dir,
+        output=args.output,
+        partial_dir=args.partial_dir,
+        gbm_cache=gbm_cache,
+        dates=dates,
+        workers=args.workers,
+    )
+
+
 if __name__ == "__main__":
-    raise SystemExit("not yet implemented")
+    main()
