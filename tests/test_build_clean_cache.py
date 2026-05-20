@@ -225,16 +225,16 @@ def test_filter_excludes_saa_lon_box():
     import build_clean_cache as M
     df = make_df([
         make_row(Lon=120.0),    # keep (Pacific)
-        make_row(Lon=-120.0),   # keep (Pacific)
-        make_row(Lon=-90.1),    # keep (just outside SAA, below lower bound)
-        make_row(Lon=-90.0),    # drop (boundary, inclusive)
+        make_row(Lon=240.0),    # keep (Pacific, was Lon=-120 in [-180,180])
+        make_row(Lon=269.9),    # keep (just west of SAA, was Lon=-90.1)
+        make_row(Lon=270.0),    # drop (boundary, west edge of SAA)
         make_row(Lon=0.0),      # drop (in SAA)
-        make_row(Lon=30.0),     # drop (boundary, inclusive)
-        make_row(Lon=30.1),     # keep
+        make_row(Lon=30.0),     # drop (boundary, east edge of SAA)
+        make_row(Lon=30.1),     # keep (just east of SAA)
     ])
     out = M._apply_stage3_spatial(df)
     assert len(out) == 4
-    assert ((out["Lon"] < -90) | (out["Lon"] > 30)).all()
+    assert ((out["Lon"] > 30.0) & (out["Lon"] < 270.0)).all()
 
 
 # ------------------- apply_filters stage 4 -------------------
