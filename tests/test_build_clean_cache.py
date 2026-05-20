@@ -235,3 +235,32 @@ def test_filter_excludes_saa_lon_box():
     out = M._apply_stage3_spatial(df)
     assert len(out) == 4
     assert ((out["Lon"] < -90) | (out["Lon"] > 30)).all()
+
+
+# ------------------- apply_filters stage 4 -------------------
+
+def test_filter_drops_rows_within_burst_window():
+    import build_clean_cache as M
+    cat = M.BurstCatalog.from_array(np.array([252633600], dtype=np.int64), window_sec=300)
+    df = make_df([
+        make_row(met_sec=252633600),         # drop (exact hit)
+        make_row(met_sec=252633600 + 299),   # drop (inside ±300)
+        make_row(met_sec=252633600 + 300),   # drop (boundary inclusive)
+        make_row(met_sec=252633600 + 301),   # keep (outside ±300)
+        make_row(met_sec=252633600 - 1000),  # keep
+        make_row(met_sec=252633600 + 1000),  # keep
+    ])
+    out = M._apply_stage4_burst(df, cat)
+    assert len(out) == 3
+    keeps = set(out["met_sec"].tolist())
+    assert 252633600 + 301 in keeps
+    assert 252633600 - 1000 in keeps
+    assert 252633600 + 1000 in keeps
+
+
+def test_filter_burst_empty_catalog_keeps_all():
+    import build_clean_cache as M
+    cat = M.BurstCatalog.from_array(np.array([], dtype=np.int64), window_sec=300)
+    df = make_df([make_row(met_sec=t) for t in (1000, 2000, 3000)])
+    out = M._apply_stage4_burst(df, cat)
+    assert len(out) == 3
