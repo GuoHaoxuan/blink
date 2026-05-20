@@ -214,6 +214,45 @@ def derive_columns(df):
 
 
 # ============================================================
+# Module 4: process_one_day
+# ============================================================
+
+def process_one_day(date_str, input_dir, partial_dir, burst_catalog):
+    """Load one day's per_sec_parquet, run filters + derives, write a partial.
+
+    Args:
+        date_str: 'YYYYMMDD'
+        input_dir: Path to directory containing {date_str}.parquet
+        partial_dir: Path where {date_str}.parquet partial is written
+        burst_catalog: BurstCatalog instance
+
+    Returns: Path to written partial, or None if no rows survived / input missing.
+    """
+    from pathlib import Path
+    import pandas as pd
+
+    input_dir = Path(input_dir)
+    partial_dir = Path(partial_dir)
+    in_path = input_dir / f"{date_str}.parquet"
+
+    if not in_path.exists():
+        print(f"[process_one_day] {date_str}: input parquet missing, skipping")
+        return None
+
+    df = pd.read_parquet(in_path)
+    df, counts = apply_filters(df, burst_catalog)
+    print(f"[process_one_day] {date_str}: {counts}")
+
+    if len(df) == 0:
+        return None
+
+    df = derive_columns(df)
+    out_path = partial_dir / f"{date_str}.parquet"
+    df.to_parquet(out_path, compression="zstd")
+    return out_path
+
+
+# ============================================================
 # CLI entry point (filled out in later tasks)
 # ============================================================
 

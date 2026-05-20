@@ -373,3 +373,56 @@ def test_derive_includes_all_expected_columns():
     }
     missing = expected_new - set(out.columns)
     assert not missing, f"missing derived columns: {missing}"
+
+
+# ------------------- process_one_day -------------------
+
+def test_process_one_day_writes_partial(tmp_path):
+    import build_clean_cache as M
+
+    input_dir = tmp_path / "per_sec_parquet"
+    input_dir.mkdir()
+    df = make_df(make_complete_groupsec(date="2020-01-15", met_sec=252633600))
+    df.to_parquet(input_dir / "20200115.parquet")
+
+    cat = M.BurstCatalog.from_array(np.array([], dtype=np.int64), window_sec=300)
+    out_dir = tmp_path / "partials"
+    out_dir.mkdir()
+
+    result = M.process_one_day("20200115", input_dir, out_dir, cat)
+
+    assert result is not None
+    assert result.exists()
+    pq = pd.read_parquet(result)
+    assert len(pq) == 18  # all 18 rows survive (Lat=0.5, Lon=120 → safe)
+    assert "pho_rate" in pq.columns  # derived columns applied
+
+
+def test_process_one_day_returns_none_when_no_rows_survive(tmp_path):
+    import build_clean_cache as M
+
+    input_dir = tmp_path / "per_sec_parquet"
+    input_dir.mkdir()
+    # All rows have Lat=10° → Stage 3 kills everything
+    df = make_df(make_complete_groupsec(date="2020-01-15", Lat=10.0))
+    df.to_parquet(input_dir / "20200115.parquet")
+
+    cat = M.BurstCatalog.from_array(np.array([], dtype=np.int64), window_sec=300)
+    out_dir = tmp_path / "partials"
+    out_dir.mkdir()
+
+    result = M.process_one_day("20200115", input_dir, out_dir, cat)
+    assert result is None
+    assert not (out_dir / "20200115.parquet").exists()
+
+
+def test_process_one_day_missing_input_returns_none(tmp_path):
+    import build_clean_cache as M
+    input_dir = tmp_path / "per_sec_parquet"
+    input_dir.mkdir()
+    cat = M.BurstCatalog.from_array(np.array([], dtype=np.int64), window_sec=300)
+    out_dir = tmp_path / "partials"
+    out_dir.mkdir()
+
+    result = M.process_one_day("99999999", input_dir, out_dir, cat)
+    assert result is None
