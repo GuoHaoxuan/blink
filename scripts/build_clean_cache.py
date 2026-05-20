@@ -111,7 +111,9 @@ class BurstCatalog:
 L_CYCLES_MIN = 50_000           # Stage 1: livetime > 0.8s
 HV_LO, HV_HI = -1100.0, -900.0  # Stage 1: detector operating range (exclusive both sides)
 LAT_MAX_ABS = 3.0               # Stage 3: equatorial belt half-width
-SAA_LON_LO, SAA_LON_HI = -90.0, 30.0   # Stage 3: SAA longitude box (inclusive both sides)
+# HXMT 1K Orbit Lon is [0, 360). SAA box [-90, +30] in [-180, +180] convention
+# maps to [270, 360) ∪ [0, 30]. Keep window is the complement: (30, 270).
+SAA_LON_KEEP_LO, SAA_LON_KEEP_HI = 30.0, 270.0
 
 _RAW_COUNTERS = [
     "PHO", "OOC", "Wide", "Large", "Dt",
@@ -141,10 +143,8 @@ def _apply_stage2_integrity(df):
 
 
 def _apply_stage3_spatial(df):
-    """Keep rows in equatorial belt AND outside SAA Lon box."""
-    mask = (df["Lat"].abs() < LAT_MAX_ABS) & ~(
-        (df["Lon"] >= SAA_LON_LO) & (df["Lon"] <= SAA_LON_HI)
-    )
+    """Keep rows in equatorial belt AND outside SAA Lon box (Lon in (30, 270))."""
+    mask = (df["Lat"].abs() < LAT_MAX_ABS) & (df["Lon"] > SAA_LON_KEEP_LO) & (df["Lon"] < SAA_LON_KEEP_HI)
     return df.loc[mask].copy()
 
 
@@ -323,7 +323,7 @@ def run_build(input_dir, output, partial_dir, gbm_cache, dates, workers=8, min_r
     df = combined.to_pandas()
     assert n_rows >= min_rows, f"Final row count {n_rows:,} below minimum {min_rows:,}"
     assert (df["Lat"].abs() < LAT_MAX_ABS).all(), "Lat assertion failed"
-    assert (~((df["Lon"] >= SAA_LON_LO) & (df["Lon"] <= SAA_LON_HI))).all(), "Lon assertion failed"
+    assert ((df["Lon"] > SAA_LON_KEEP_LO) & (df["Lon"] < SAA_LON_KEEP_HI)).all(), "Lon assertion failed"
     for w in ("094", "1s"):
         lhs = df[f"Sci_pure_{w}"] + df[f"Sci_ACD1_{w}"] + df[f"Sci_ACDN_{w}"]
         assert (lhs == df[f"Sci_{w}"]).all(), f"Sci invariant failed for window {w}"
