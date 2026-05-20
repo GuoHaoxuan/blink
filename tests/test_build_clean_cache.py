@@ -138,3 +138,100 @@ def test_gbm_iso_to_hxmt_met_2020_01_01():
     met = M.gbm_iso_to_hxmt_met("2020-01-01T00:00:00")
     # ±5 second tolerance for any leap-second / epoch convention drift.
     assert abs(met - 252460803) < 5
+
+
+# ------------------- apply_filters stages 1-3 -------------------
+
+def test_filter_drops_low_lcycles():
+    import build_clean_cache as M
+    df = make_df([
+        make_row(L_cycles=60_000),    # keep
+        make_row(L_cycles=50_000),    # drop (strict >)
+        make_row(L_cycles=10_000),    # drop
+    ])
+    out = M._apply_stage1_detector_state(df)
+    assert len(out) == 1
+    assert out["L_cycles"].iloc[0] == 60_000
+
+
+def test_filter_drops_bad_hv():
+    import build_clean_cache as M
+    df = make_df([
+        make_row(HV=-1000),   # keep
+        make_row(HV=-1100),   # drop (strict >)
+        make_row(HV=-900),    # drop (strict <)
+        make_row(HV=-1200),   # drop
+        make_row(HV=-800),    # drop
+    ])
+    out = M._apply_stage1_detector_state(df)
+    assert len(out) == 1
+    assert out["HV"].iloc[0] == -1000
+
+
+def test_filter_drops_nan_in_critical_cols():
+    import build_clean_cache as M
+    df = make_df([
+        make_row(),
+        make_row(HV=np.nan),
+        make_row(Lat=np.nan),
+        make_row(Lon=np.nan),
+    ])
+    out = M._apply_stage2_integrity(df)
+    assert len(out) == 1
+
+
+def test_filter_drops_negative_counters():
+    import build_clean_cache as M
+    df = make_df([
+        make_row(),
+        make_row(PHO=-1),
+        make_row(Wide=-5),
+        make_row(Dt=-1),
+    ])
+    out = M._apply_stage2_integrity(df)
+    assert len(out) == 1
+
+
+def test_filter_drops_sci_breakdown_mismatch():
+    import build_clean_cache as M
+    df = make_df([
+        # Good: 80 = 70 + 8 + 2
+        make_row(Sci_094=80, Sci_pure_094=70, Sci_ACD1_094=8, Sci_ACDN_094=2),
+        # Bad: 80 != 70 + 8 + 3
+        make_row(Sci_094=80, Sci_pure_094=70, Sci_ACD1_094=8, Sci_ACDN_094=3),
+        # Bad 1s window
+        make_row(Sci_1s=85, Sci_pure_1s=74, Sci_ACD1_1s=8, Sci_ACDN_1s=4),
+    ])
+    out = M._apply_stage2_integrity(df)
+    assert len(out) == 1
+
+
+def test_filter_keeps_equator_belt():
+    import build_clean_cache as M
+    df = make_df([
+        make_row(Lat=0.0),    # keep
+        make_row(Lat=2.9),    # keep
+        make_row(Lat=-2.9),   # keep
+        make_row(Lat=3.0),    # drop (strict <)
+        make_row(Lat=10.0),   # drop
+        make_row(Lat=-50.0),  # drop
+    ])
+    out = M._apply_stage3_spatial(df)
+    assert len(out) == 3
+    assert out["Lat"].abs().max() < 3.0
+
+
+def test_filter_excludes_saa_lon_box():
+    import build_clean_cache as M
+    df = make_df([
+        make_row(Lon=120.0),    # keep (Pacific)
+        make_row(Lon=-120.0),   # keep (Pacific)
+        make_row(Lon=-90.1),    # keep (just outside SAA, below lower bound)
+        make_row(Lon=-90.0),    # drop (boundary, inclusive)
+        make_row(Lon=0.0),      # drop (in SAA)
+        make_row(Lon=30.0),     # drop (boundary, inclusive)
+        make_row(Lon=30.1),     # keep
+    ])
+    out = M._apply_stage3_spatial(df)
+    assert len(out) == 4
+    assert ((out["Lon"] < -90) | (out["Lon"] > 30)).all()
