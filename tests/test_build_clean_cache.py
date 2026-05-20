@@ -107,3 +107,34 @@ def test_burstcatalog_any_within_unsorted_input_triggers_sorted_internally():
     cat = M.BurstCatalog.from_array(np.array([9000, 1000, 5000], dtype=np.int64), window_sec=300)
     out = cat.any_within(np.array([1100], dtype=np.int64))
     assert out.tolist() == [True]
+
+
+# ------------------- BurstCatalog.fetch_or_load -------------------
+
+def test_burstcatalog_loads_from_existing_parquet(tmp_path):
+    import build_clean_cache as M
+
+    cache = tmp_path / "gbm.parquet"
+    # Pretend we already fetched: write a tiny parquet with one trigger at MET 12345.
+    pd.DataFrame({"trigger_met_hxmt": [12345]}).to_parquet(cache)
+
+    cat = M.BurstCatalog.fetch_or_load(cache, window_sec=300, allow_fetch=False)
+    assert cat.triggers_met.tolist() == [12345]
+    assert cat.window_sec == 300
+
+
+def test_burstcatalog_raises_when_missing_and_fetch_disabled(tmp_path):
+    import build_clean_cache as M
+
+    cache = tmp_path / "nonexistent.parquet"
+    with pytest.raises(FileNotFoundError):
+        M.BurstCatalog.fetch_or_load(cache, window_sec=300, allow_fetch=False)
+
+
+def test_gbm_iso_to_hxmt_met_2020_01_01():
+    """2020-01-01 00:00:00 UTC ≈ HXMT MET 252460803 (2922 days × 86400 + 3 leap-seconds)."""
+    import build_clean_cache as M
+
+    met = M.gbm_iso_to_hxmt_met("2020-01-01T00:00:00")
+    # ±5 second tolerance for any leap-second / epoch convention drift.
+    assert abs(met - 252460803) < 5
