@@ -426,3 +426,67 @@ def test_process_one_day_missing_input_returns_none(tmp_path):
 
     result = M.process_one_day("99999999", input_dir, out_dir, cat)
     assert result is None
+
+
+# ------------------- run_build integration -------------------
+
+def test_run_build_writes_final_parquet_and_passes_assertions(tmp_path):
+    import build_clean_cache as M
+
+    input_dir = tmp_path / "per_sec_parquet"
+    input_dir.mkdir()
+    for date_str, date_iso in [("20200115", "2020-01-15"),
+                                 ("20200116", "2020-01-16"),
+                                 ("20200117", "2020-01-17")]:
+        # Two seconds per day, all clean
+        rows = (make_complete_groupsec(date=date_iso, met_sec=252633600)
+                + make_complete_groupsec(date=date_iso, met_sec=252633700))
+        make_df(rows).to_parquet(input_dir / f"{date_str}.parquet")
+
+    # Empty GBM cache so we don't try to fetch
+    gbm_cache = tmp_path / "gbm.parquet"
+    pd.DataFrame({"trigger_met_hxmt": []}).to_parquet(gbm_cache)
+
+    output = tmp_path / "clean.parquet"
+    partial_dir = tmp_path / "partial"
+    partial_dir.mkdir()
+
+    M.run_build(
+        input_dir=input_dir,
+        output=output,
+        partial_dir=partial_dir,
+        gbm_cache=gbm_cache,
+        dates=["20200115", "20200116", "20200117"],
+        workers=2,
+        min_rows=1,        # lower the assertion floor for tests
+    )
+
+    assert output.exists()
+    df = pd.read_parquet(output)
+    # 3 days × 2 seconds × 18 rows = 108
+    assert len(df) == 108
+    assert "pho_rate" in df.columns
+
+
+def test_run_build_raises_when_under_min_rows(tmp_path):
+    import build_clean_cache as M
+    input_dir = tmp_path / "per_sec_parquet"
+    input_dir.mkdir()
+    # One day, all dropped (Lat too high)
+    make_df(make_complete_groupsec(date="2020-01-15", Lat=10.0)).to_parquet(
+        input_dir / "20200115.parquet"
+    )
+    gbm_cache = tmp_path / "gbm.parquet"
+    pd.DataFrame({"trigger_met_hxmt": []}).to_parquet(gbm_cache)
+    (tmp_path / "partial").mkdir()
+
+    with pytest.raises(AssertionError, match="No partials"):
+        M.run_build(
+            input_dir=input_dir,
+            output=tmp_path / "clean.parquet",
+            partial_dir=tmp_path / "partial",
+            gbm_cache=gbm_cache,
+            dates=["20200115"],
+            workers=1,
+            min_rows=1,
+        )
