@@ -68,3 +68,42 @@ def test_builder_complete_groupsec_makes_18_rows():
     assert len(df) == 18
     assert sorted(df["box"].unique().tolist()) == ["A", "B", "C"]
     assert sorted(df["det"].unique().tolist()) == [0, 1, 2, 3, 4, 5]
+
+
+# ------------------- BurstCatalog.any_within -------------------
+
+def test_burstcatalog_any_within_empty_catalog():
+    import build_clean_cache as M
+    cat = M.BurstCatalog.from_array(np.array([], dtype=np.int64), window_sec=300)
+    times = np.array([1000, 2000, 3000], dtype=np.int64)
+    out = cat.any_within(times)
+    assert out.tolist() == [False, False, False]
+
+
+def test_burstcatalog_any_within_exact_hit():
+    import build_clean_cache as M
+    cat = M.BurstCatalog.from_array(np.array([5000], dtype=np.int64), window_sec=300)
+    out = cat.any_within(np.array([5000], dtype=np.int64))
+    assert out.tolist() == [True]
+
+
+def test_burstcatalog_any_within_at_boundary():
+    """A trigger at T, window ±300s: T+300 and T-300 inclusive are within."""
+    import build_clean_cache as M
+    cat = M.BurstCatalog.from_array(np.array([5000], dtype=np.int64), window_sec=300)
+    out = cat.any_within(np.array([4700, 4699, 5300, 5301], dtype=np.int64))
+    assert out.tolist() == [True, False, True, False]
+
+
+def test_burstcatalog_any_within_multi_trigger():
+    import build_clean_cache as M
+    cat = M.BurstCatalog.from_array(np.array([1000, 5000, 9000], dtype=np.int64), window_sec=300)
+    out = cat.any_within(np.array([1100, 5500, 9000, 3000, 7000], dtype=np.int64))
+    assert out.tolist() == [True, False, True, False, False]
+
+
+def test_burstcatalog_any_within_unsorted_input_triggers_sorted_internally():
+    import build_clean_cache as M
+    cat = M.BurstCatalog.from_array(np.array([9000, 1000, 5000], dtype=np.int64), window_sec=300)
+    out = cat.any_within(np.array([1100], dtype=np.int64))
+    assert out.tolist() == [True]
