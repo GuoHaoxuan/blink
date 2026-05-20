@@ -27,21 +27,25 @@ def gbm_iso_to_hxmt_met(iso_string: str) -> int:
 
 
 def _fetch_gbm_triggers_from_heasarc():
-    """Query HEASARC's fermigtrig table for all triggers, return DataFrame with
-    a single column 'trigger_met_hxmt' (int64 HXMT MET seconds).
+    """Query HEASARC fermigtrig via ADQL, return DataFrame with 'trigger_met_hxmt'.
 
-    Network call; runs on a node with HTTPS access to HEASARC.
+    Network call; runs on a node with HTTPS access to HEASARC. Uses astroquery's
+    TAP/ADQL path (query_region is broken in 0.4.11 — auto-generated query is rejected
+    by HEASARC TAP). The fermigtrig table exposes trigger_time as MJD (UTC, float).
     """
     import pandas as pd
     from astroquery.heasarc import Heasarc
+    from astropy.time import Time
 
     heasarc = Heasarc()
-    # query_region with a huge radius effectively returns the whole table
-    table = heasarc.query_region(
-        position="0d 0d", mission="fermigtrig", radius="180 deg", resultmax=100000
-    )
-    times_iso = [str(t).strip() for t in table["TIME"]]
-    metsec = [gbm_iso_to_hxmt_met(s) for s in times_iso if s and s != "--"]
+    tab = heasarc.query_tap(
+        query="SELECT trigger_name, trigger_time FROM fermigtrig"
+    ).to_table()
+    # trigger_time is MJD (UTC). Vectorised astropy conversion to HXMT MET.
+    mjd = tab["trigger_time"].data  # float64 array
+    t = Time(mjd, format="mjd", scale="utc")
+    epoch = Time(_HXMT_EPOCH_ISO, format="isot", scale="utc")
+    metsec = ((t - epoch).sec).round().astype("int64")
     return pd.DataFrame({"trigger_met_hxmt": metsec})
 
 
