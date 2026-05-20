@@ -264,3 +264,65 @@ def test_filter_burst_empty_catalog_keeps_all():
     df = make_df([make_row(met_sec=t) for t in (1000, 2000, 3000)])
     out = M._apply_stage4_burst(df, cat)
     assert len(out) == 3
+
+
+# ------------------- apply_filters stage 5 (completeness) -------------------
+
+def test_completeness_keeps_full_18_row_second():
+    import build_clean_cache as M
+    df = make_df(make_complete_groupsec(met_sec=252633600))
+    out = M._apply_stage5_completeness(df)
+    assert len(out) == 18
+
+
+def test_completeness_drops_second_missing_one_det():
+    import build_clean_cache as M
+    rows = make_complete_groupsec(met_sec=252633600)
+    # Drop box-A det-3
+    rows = [r for r in rows if not (r["box"] == "A" and r["det"] == 3)]
+    df = make_df(rows)
+    out = M._apply_stage5_completeness(df)
+    assert len(out) == 0
+
+
+def test_completeness_drops_second_missing_one_box():
+    import build_clean_cache as M
+    rows = make_complete_groupsec(met_sec=252633600)
+    # Drop entire box C
+    rows = [r for r in rows if r["box"] != "C"]
+    df = make_df(rows)
+    out = M._apply_stage5_completeness(df)
+    assert len(out) == 0
+
+
+def test_completeness_mixed_seconds():
+    """One full second + one broken second → only the full one survives."""
+    import build_clean_cache as M
+    good = make_complete_groupsec(met_sec=252633600)
+    bad = [r for r in make_complete_groupsec(met_sec=252633700) if r["box"] != "B"]
+    df = make_df(good + bad)
+    out = M._apply_stage5_completeness(df)
+    assert len(out) == 18
+    assert out["met_sec"].unique().tolist() == [252633600]
+
+
+# ------------------- apply_filters orchestrator -------------------
+
+def test_apply_filters_runs_all_stages_and_logs():
+    import build_clean_cache as M
+    cat = M.BurstCatalog.from_array(np.array([], dtype=np.int64), window_sec=300)
+    df = make_df(make_complete_groupsec(met_sec=252633600))
+    out, counts = M.apply_filters(df, cat)
+    assert len(out) == 18
+    assert counts["start"] == 18
+    assert counts["after_stage1"] == 18
+    assert counts["after_stage5"] == 18
+
+
+def test_apply_filters_drops_all_when_lat_too_high():
+    import build_clean_cache as M
+    cat = M.BurstCatalog.from_array(np.array([], dtype=np.int64), window_sec=300)
+    df = make_df(make_complete_groupsec(met_sec=252633600, Lat=10.0))
+    out, counts = M.apply_filters(df, cat)
+    assert len(out) == 0
+    assert counts["after_stage3"] == 0
