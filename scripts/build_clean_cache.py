@@ -100,6 +100,51 @@ class BurstCatalog:
 
 
 # ============================================================
+# Module 2: apply_filters (Stages 1-5)
+# ============================================================
+
+# Constants from spec
+L_CYCLES_MIN = 50_000           # Stage 1: livetime > 0.8s
+HV_LO, HV_HI = -1100.0, -900.0  # Stage 1: detector operating range (exclusive both sides)
+LAT_MAX_ABS = 3.0               # Stage 3: equatorial belt half-width
+SAA_LON_LO, SAA_LON_HI = -90.0, 30.0   # Stage 3: SAA longitude box (inclusive both sides)
+
+_RAW_COUNTERS = [
+    "PHO", "OOC", "Wide", "Large", "Dt",
+    "Sci_094", "Sci_pure_094", "Sci_ACD1_094", "Sci_ACDN_094",
+    "Sci_1s", "Sci_pure_1s", "Sci_ACD1_1s", "Sci_ACDN_1s",
+]
+
+
+def _apply_stage1_detector_state(df):
+    """Keep rows with L_cycles > 50_000 AND HV strictly inside (-1100, -900)."""
+    mask = (df["L_cycles"] > L_CYCLES_MIN) & (df["HV"] > HV_LO) & (df["HV"] < HV_HI)
+    return df.loc[mask].copy()
+
+
+def _apply_stage2_integrity(df):
+    """Drop NaN in HV/Lat/Lon, negative counters, Sci-partition violations."""
+    # NaN check
+    mask = df[["HV", "Lat", "Lon"]].notna().all(axis=1)
+    # Non-negative counters
+    for c in _RAW_COUNTERS:
+        mask &= (df[c] >= 0)
+    # Sci breakdown invariant for both windows
+    for w in ("094", "1s"):
+        lhs = df[f"Sci_pure_{w}"] + df[f"Sci_ACD1_{w}"] + df[f"Sci_ACDN_{w}"]
+        mask &= (lhs == df[f"Sci_{w}"])
+    return df.loc[mask].copy()
+
+
+def _apply_stage3_spatial(df):
+    """Keep rows in equatorial belt AND outside SAA Lon box."""
+    mask = (df["Lat"].abs() < LAT_MAX_ABS) & ~(
+        (df["Lon"] >= SAA_LON_LO) & (df["Lon"] <= SAA_LON_HI)
+    )
+    return df.loc[mask].copy()
+
+
+# ============================================================
 # CLI entry point (filled out in later tasks)
 # ============================================================
 
