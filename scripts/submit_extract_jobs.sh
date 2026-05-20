@@ -27,7 +27,7 @@ LOG_DIR="logs/extract"
 HEPSUB="/afs/ihep.ac.cn/soft/common/sysgroup/hep_job/bin/hep_sub"
 HEPSUB_GROUP="gecam"
 HEPSUB_MEM_MB="6000"     # observed peak ~4 GB; 6 GB has safety margin
-HEPSUB_WT="short"        # short queue (1h max wall); single day takes ~15 min
+HEPSUB_WT="short"        # 30min wall, high concurrency; ~2% of days exceed → hlogin fan-out
 
 mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
 
