@@ -326,3 +326,50 @@ def test_apply_filters_drops_all_when_lat_too_high():
     out, counts = M.apply_filters(df, cat)
     assert len(out) == 0
     assert counts["after_stage3"] == 0
+
+
+# ------------------- derive_columns -------------------
+
+def test_derive_length_and_dt_frac():
+    import build_clean_cache as M
+    df = make_df([make_row(L_cycles=62_500, Dt=12_500)])  # 1s livetime, dt_frac=0.2
+    out = M.derive_columns(df)
+    assert abs(out["length"].iloc[0] - 1.0) < 1e-6
+    assert abs(out["dt_frac"].iloc[0] - 0.2) < 1e-6
+
+
+def test_derive_rates():
+    import build_clean_cache as M
+    df = make_df([make_row(L_cycles=62_500, PHO=100, Wide=50, Sci_094=80, Sci_1s=85)])
+    out = M.derive_columns(df)
+    # length = 1.0, so rate = count
+    assert abs(out["pho_rate"].iloc[0] - 100) < 1e-3
+    assert abs(out["wide_rate"].iloc[0] - 50) < 1e-3
+    assert abs(out["sci_rate_094"].iloc[0] - 80) < 1e-3
+    assert abs(out["sci_rate_1s"].iloc[0] - 85) < 1e-3
+
+
+def test_derive_sci_acd_sums():
+    import build_clean_cache as M
+    df = make_df([make_row(Sci_ACD1_094=8, Sci_ACDN_094=2, Sci_ACD1_1s=8, Sci_ACDN_1s=3)])
+    out = M.derive_columns(df)
+    assert out["Sci_ACD_094"].iloc[0] == 10
+    assert out["Sci_ACD_1s"].iloc[0] == 11
+
+
+def test_derive_includes_all_expected_columns():
+    import build_clean_cache as M
+    df = make_df([make_row()])
+    out = M.derive_columns(df)
+    expected_new = {
+        "length", "dt_frac",
+        "Sci_ACD_094", "Sci_ACD_1s",
+        "pho_rate", "ooc_rate", "wide_rate", "large_rate",
+        "sci_rate_094", "sci_rate_1s",
+        "scipure_rate_094", "scipure_rate_1s",
+        "acd1_rate_094", "acd1_rate_1s",
+        "acdn_rate_094", "acdn_rate_1s",
+        "acd_rate_094", "acd_rate_1s",
+    }
+    missing = expected_new - set(out.columns)
+    assert not missing, f"missing derived columns: {missing}"
