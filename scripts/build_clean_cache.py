@@ -151,6 +151,35 @@ def _apply_stage4_burst(df, burst_catalog):
     return df.loc[~drop_mask].copy()
 
 
+def _apply_stage5_completeness(df):
+    """Keep only (date, met_sec) groups where all 18 (3 boxes × 6 dets) rows are present."""
+    counts = df.groupby(["date", "met_sec"]).size()
+    full_keys = counts[counts == 18].index
+    df_idx = df.set_index(["date", "met_sec"])
+    keep = df_idx.index.isin(full_keys)
+    return df_idx.loc[keep].reset_index()
+
+
+def apply_filters(df, burst_catalog):
+    """Run all 5 filter stages in order; return (filtered_df, counts_dict).
+
+    counts_dict keys: start, after_stage1, after_stage2, after_stage3, after_stage4,
+    after_stage5 — for logging row counts at each stage.
+    """
+    counts = {"start": len(df)}
+    df = _apply_stage1_detector_state(df)
+    counts["after_stage1"] = len(df)
+    df = _apply_stage2_integrity(df)
+    counts["after_stage2"] = len(df)
+    df = _apply_stage3_spatial(df)
+    counts["after_stage3"] = len(df)
+    df = _apply_stage4_burst(df, burst_catalog)
+    counts["after_stage4"] = len(df)
+    df = _apply_stage5_completeness(df)
+    counts["after_stage5"] = len(df)
+    return df, counts
+
+
 # ============================================================
 # CLI entry point (filled out in later tasks)
 # ============================================================
