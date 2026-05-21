@@ -89,20 +89,22 @@ GBM trigger 时间从 GBM MET（自 2001-01-01 TT 计秒）转换到 HXMT MET（
 
 **粒度**: 一行 = 一个 `(date, box, det, met_sec)`，与输入一致
 
-**大小估算**: ~50 min/天 赤道带 × 60 s/min × 182 天 × 18 dets × 21 列 × ~4 B/cell × ~0.5 留存率 ≈ **~120 MB 磁盘**（zstd 后），~1.7 GB 内存（pandas DataFrame）
+**实际大小**: **261 MB 磁盘**（zstd 后），~3 GB 内存（pandas DataFrame，包含完整姿态/轨道 passthrough）
 
-### 列单（21 列）
+### 列单（48 列，全部来自 extract，cache 不再添加任何派生列）
 
 | 分组 | 列 | 含义 |
 |---|---|---|
-| 身份 | `date`, `box`, `det`, `met_sec` | (date string, box A/B/C, det 0-5, int64 MET) |
-| 几何（瞬时） | `Lat`, `Lon` (float32) | 1K Orbit @ met_sec 采样 |
-| 工程计数器（0.94s 周期） | `L_cycles`, `PHO`, `OOC`, `Wide`, `Large`, `Dt` (int32) | PDAU 47×20ms 周期累计 |
-| 探测器状态（瞬时） | `HV` (float32) | 1K HE-HV @ met_sec 采样 |
-| 事件 0.94s 窗口 | `Sci_094`, `Sci_pure_094`, `Sci_ACD1_094`, `Sci_ACDN_094` (int32) | 与工程周期同窗口 |
-| 事件 1.0s 窗口 | `Sci_1s`, `Sci_pure_1s`, `Sci_ACD1_1s`, `Sci_ACDN_1s` (int32) | 比工程周期多 60ms 的事例 |
+| 身份 (4) | `date`, `box`, `det`, `met_sec` | date string, box A/B/C, det 0-5, int64 MET |
+| 包头/sanity (6) | `time_float`, `crc_box`, `utc_last_bdc`, `stime_last_bdc`, `error_code`, `bus_time_bdc` | CCSDS 包头字段，故障排查用 |
+| 工程计数器（0.94s 周期，6） | `L_cycles`, `PHO`, `OOC`, `Wide`, `Large`, `Dt` (int32) | PDAU 47×20ms 周期累计 |
+| 探测器状态（瞬时，1） | `HV` (float32) | 1K HE-HV @ met_sec 采样 |
+| 事件 0.94s 窗口 (4) | `Sci_094`, `Sci_pure_094`, `Sci_ACD1_094`, `Sci_ACDN_094` (int32) | 与工程周期同窗口 |
+| 事件 1.0s 窗口 (4) | `Sci_1s`, `Sci_pure_1s`, `Sci_ACD1_1s`, `Sci_ACDN_1s` (int32) | 比工程周期多 60ms 的事例 |
+| 轨道（瞬时，9） | `X`, `Y`, `Z`, `Vx`, `Vy`, `Vz`, `Lon`, `Lat`, `Alt` | 1K Orbit @ met_sec 采样 |
+| 姿态（瞬时，14） | `Ra`, `Dec`, `Delta_Ra`, `Delta_Dec`, `Delta`, `Euler_Phi`, `Euler_Theta`, `Euler_Psi`, `Q1`, `Q2`, `Q3`, `Omega_X`, `Omega_Y`, `Omega_Z` | 1K Att @ met_sec 采样 |
 
-共 **21 列**。
+共 **48 列**。Filter 链只用 identity + Lat + Lon + L_cycles + HV + 工程/事件计数 这少数几个，其余字段全 passthrough，方便下游做姿态相关分析。
 
 ## 实现
 
