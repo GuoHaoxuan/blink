@@ -185,36 +185,25 @@ def apply_filters(df, burst_catalog):
 
 
 # ============================================================
-# Module 3: derive_columns
+# Module 3: (no derivations — cache is raw counts only)
 # ============================================================
-
-CYCLE_SEC = 16e-6   # 16 µs per L_cycles tick
-
-# (raw_col, derived_col) for the standard "/length" rate transform.
-_RATE_PAIRS = [
-    ("PHO", "pho_rate"), ("OOC", "ooc_rate"), ("Wide", "wide_rate"), ("Large", "large_rate"),
-    ("Sci_094", "sci_rate_094"), ("Sci_1s", "sci_rate_1s"),
-    ("Sci_pure_094", "scipure_rate_094"), ("Sci_pure_1s", "scipure_rate_1s"),
-    ("Sci_ACD1_094", "acd1_rate_094"), ("Sci_ACD1_1s", "acd1_rate_1s"),
-    ("Sci_ACDN_094", "acdn_rate_094"), ("Sci_ACDN_1s", "acdn_rate_1s"),
-]
-
-
-def derive_columns(df):
-    """Add length, dt_frac, Sci_ACD_*, and all *_rate columns.
-
-    Returns a new DataFrame (does not mutate the input).
-    """
-    df = df.copy()
-    df["length"] = df["L_cycles"].astype("float32") * CYCLE_SEC
-    df["dt_frac"] = (df["Dt"].astype("float32") / df["L_cycles"].astype("float32")).astype("float32")
-    df["Sci_ACD_094"] = (df["Sci_ACD1_094"] + df["Sci_ACDN_094"]).astype("int32")
-    df["Sci_ACD_1s"]  = (df["Sci_ACD1_1s"] + df["Sci_ACDN_1s"]).astype("int32")
-    for raw, derived in _RATE_PAIRS:
-        df[derived] = (df[raw].astype("float32") / df["length"]).astype("float32")
-    df["acd_rate_094"] = (df["Sci_ACD_094"].astype("float32") / df["length"]).astype("float32")
-    df["acd_rate_1s"]  = (df["Sci_ACD_1s"].astype("float32") / df["length"]).astype("float32")
-    return df
+#
+# By design, this cache stores ONLY raw counts and instantaneous samples.
+# All normalisations (rates, dead-time corrections, sums like Sci_ACD =
+# Sci_ACD1 + Sci_ACDN) are downstream concerns.
+#
+# Convenient downstream conventions:
+#   length    = L_cycles × 16e-6   (engineering cycle wallclock ≈ 0.94s; NOT livetime)
+#   dt_frac   = Dt / L_cycles      (dead-time fraction within the 0.94s cycle)
+#   live_frac = 1 - dt_frac
+#   pho_rate  = PHO / 0.94         (events / 1s wallclock; same for OOC/Wide/Large)
+#   sci_rate_094 = Sci_094 / 0.94  (events / 1s wallclock from 0.94s window)
+#   sci_rate_1s  = Sci_1s  / 1.0   (events / 1s wallclock from 1s window; the 1s
+#                                    window extends 60ms past the engineering cycle)
+#
+# Dead-time correction (PHO/Large unaffected; Sci/Wide affected):
+#   To compare front-end vs eventizer counts on the same livetime footing,
+#   scale PHO and Large by live_frac, then compare to Sci + Wide.
 
 
 # ============================================================
@@ -250,7 +239,6 @@ def process_one_day(date_str, input_dir, partial_dir, burst_catalog):
     if len(df) == 0:
         return None
 
-    df = derive_columns(df)
     out_path = partial_dir / f"{date_str}.parquet"
     df.to_parquet(out_path, compression="zstd")
     return out_path

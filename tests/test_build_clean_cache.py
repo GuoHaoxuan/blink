@@ -328,51 +328,24 @@ def test_apply_filters_drops_all_when_lat_too_high():
     assert counts["after_stage3"] == 0
 
 
-# ------------------- derive_columns -------------------
+# ------------------- raw-only cache: no derivations -------------------
 
-def test_derive_length_and_dt_frac():
-    import build_clean_cache as M
-    df = make_df([make_row(L_cycles=62_500, Dt=12_500)])  # 1s livetime, dt_frac=0.2
-    out = M.derive_columns(df)
-    assert abs(out["length"].iloc[0] - 1.0) < 1e-6
-    assert abs(out["dt_frac"].iloc[0] - 0.2) < 1e-6
-
-
-def test_derive_rates():
-    import build_clean_cache as M
-    df = make_df([make_row(L_cycles=62_500, PHO=100, Wide=50, Sci_094=80, Sci_1s=85)])
-    out = M.derive_columns(df)
-    # length = 1.0, so rate = count
-    assert abs(out["pho_rate"].iloc[0] - 100) < 1e-3
-    assert abs(out["wide_rate"].iloc[0] - 50) < 1e-3
-    assert abs(out["sci_rate_094"].iloc[0] - 80) < 1e-3
-    assert abs(out["sci_rate_1s"].iloc[0] - 85) < 1e-3
-
-
-def test_derive_sci_acd_sums():
-    import build_clean_cache as M
-    df = make_df([make_row(Sci_ACD1_094=8, Sci_ACDN_094=2, Sci_ACD1_1s=8, Sci_ACDN_1s=3)])
-    out = M.derive_columns(df)
-    assert out["Sci_ACD_094"].iloc[0] == 10
-    assert out["Sci_ACD_1s"].iloc[0] == 11
-
-
-def test_derive_includes_all_expected_columns():
+def test_no_derived_columns_in_cache_output():
+    """Cache must contain only raw counts, no rate/dt_frac/length/Sci_ACD_* columns."""
     import build_clean_cache as M
     df = make_df([make_row()])
-    out = M.derive_columns(df)
-    expected_new = {
-        "length", "dt_frac",
-        "Sci_ACD_094", "Sci_ACD_1s",
+    # Whatever process_one_day writes, it must not contain rate-style derived cols.
+    forbidden = {
         "pho_rate", "ooc_rate", "wide_rate", "large_rate",
         "sci_rate_094", "sci_rate_1s",
         "scipure_rate_094", "scipure_rate_1s",
         "acd1_rate_094", "acd1_rate_1s",
         "acdn_rate_094", "acdn_rate_1s",
         "acd_rate_094", "acd_rate_1s",
+        "length", "dt_frac", "Sci_ACD_094", "Sci_ACD_1s",
     }
-    missing = expected_new - set(out.columns)
-    assert not missing, f"missing derived columns: {missing}"
+    present = forbidden & set(df.columns)
+    assert not present, f"raw input unexpectedly contains derived cols: {present}"
 
 
 # ------------------- process_one_day -------------------
@@ -395,7 +368,10 @@ def test_process_one_day_writes_partial(tmp_path):
     assert result.exists()
     pq = pd.read_parquet(result)
     assert len(pq) == 18  # all 18 rows survive (Lat=0.5, Lon=120 → safe)
-    assert "pho_rate" in pq.columns  # derived columns applied
+    # Raw counts preserved, no derived columns
+    assert "PHO" in pq.columns
+    assert "Sci_1s" in pq.columns
+    assert "pho_rate" not in pq.columns
 
 
 def test_process_one_day_returns_none_when_no_rows_survive(tmp_path):
@@ -465,7 +441,8 @@ def test_run_build_writes_final_parquet_and_passes_assertions(tmp_path):
     df = pd.read_parquet(output)
     # 3 days × 2 seconds × 18 rows = 108
     assert len(df) == 108
-    assert "pho_rate" in df.columns
+    assert "PHO" in df.columns
+    assert "pho_rate" not in df.columns
 
 
 def test_run_build_raises_when_under_min_rows(tmp_path):
