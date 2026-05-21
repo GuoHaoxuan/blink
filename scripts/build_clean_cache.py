@@ -192,14 +192,14 @@ def apply_filters(df, burst_catalog):
 # All normalisations (rates, dead-time corrections, sums like Sci_ACD =
 # Sci_ACD1 + Sci_ACDN) are downstream concerns.
 #
-# Convenient downstream conventions:
-#   length    = L_cycles × 16e-6   (engineering cycle wallclock ≈ 0.94s; NOT livetime)
-#   dt_frac   = Dt / L_cycles      (dead-time fraction within the 0.94s cycle)
+# Convenient downstream conventions (use per-row `length`, NOT hardcoded 0.94):
+#   length    = L_cycles × 16e-6   (engineering cycle wallclock per row; ≈0.94s nominal but varies ±0.7%; NOT livetime)
+#   dt_frac   = Dt / L_cycles      (dead-time fraction within the cycle)
 #   live_frac = 1 - dt_frac
-#   pho_rate  = PHO / 0.94         (events / 1s wallclock; same for OOC/Wide/Large)
-#   sci_rate_094 = Sci_094 / 0.94  (events / 1s wallclock from 0.94s window)
-#   sci_rate_1s  = Sci_1s  / 1.0   (events / 1s wallclock from 1s window; the 1s
-#                                    window extends 60ms past the engineering cycle)
+#   pho_rate  = PHO / length       (events / 1s wallclock; same for OOC/Wide/Large)
+#   sci_rate_094 = Sci_094 / length  (events / 1s wallclock from 0.94s event window)
+#   sci_rate_1s  = Sci_1s  / 1.0   (events / 1s wallclock from 1s event window; the 1s
+#                                    window is fixed by extract spec, not cycle-aligned)
 #
 # Dead-time correction (PHO/Large unaffected; Sci/Wide affected):
 #   To compare front-end vs eventizer counts on the same livetime footing,
