@@ -56,17 +56,18 @@ def _density_color_array(x: np.ndarray, y: np.ndarray, xb: np.ndarray, yb: np.nd
     return density
 
 
-PDAU_CYCLE_SEC = 0.94  # one PDAU engineering cycle = 47 × 20ms = 0.94s
+L_CYCLES_TO_SEC = 16e-6  # 16 µs per L_cycles tick
 
 def make_perdet_plot(df: pd.DataFrame, out_path: Path) -> None:
     df = df.copy()
-    # Cache stores raw counts only — compute dt_frac inline.
+    # Per-row cycle wallclock (~0.94s, ±0.7%) and dt fraction from raw cache.
+    length = df["L_cycles"].astype("float32") * L_CYCLES_TO_SEC
     dt_frac = df["Dt"].astype("float32") / df["L_cycles"].astype("float32")
     live_frac = 1.0 - dt_frac
     # 1.0s-wallclock equivalent counts with dead-time correction.
     # PHO and Large are dt-immune front-end counters; scale by (1 - dt_frac)
     # to compare to eventizer-visible counts. Wide is eventizer-output.
-    df["sci_pred"] = ((df["PHO"] - df["Large"]) * live_frac - df["Wide"]) / PDAU_CYCLE_SEC
+    df["sci_pred"] = ((df["PHO"] - df["Large"]) * live_frac - df["Wide"]) / length
     df["sci_obs"] = df["Sci_1s"]
 
     # Global axis range — wide enough to include the high-rate outlier tail

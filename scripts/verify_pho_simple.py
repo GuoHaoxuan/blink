@@ -33,12 +33,18 @@ def exclude_psd_anomaly(df: pd.DataFrame) -> pd.DataFrame:
     return df.loc[mask].copy()
 
 
-PDAU_CYCLE_SEC = 0.94  # one PDAU engineering cycle = 47 × 20ms = 0.94s
+L_CYCLES_TO_SEC = 16e-6  # 16 µs per L_cycles tick (per A1005 / PDAUA.c)
 
 
 def derive_inline(df: pd.DataFrame) -> pd.DataFrame:
-    """Compute downstream conveniences from raw cache columns (cache stores raw only)."""
+    """Compute downstream conveniences from raw cache columns (cache stores raw only).
+
+    `length` is the per-row engineering cycle wallclock duration (≈0.94s nominally
+    but varies ±0.7%), so we use it instead of a hardcoded 0.94 for all
+    engineering-counter rate scalings.
+    """
     df = df.copy()
+    df["length"] = df["L_cycles"].astype("float32") * L_CYCLES_TO_SEC
     df["dt_frac"] = df["Dt"].astype("float32") / df["L_cycles"].astype("float32")
     return df
 
@@ -50,11 +56,14 @@ def compute_residual(df: pd.DataFrame) -> pd.Series:
     of eventizer state (no dead-time loss). Sci and Wide are eventizer outputs
     that miss events during dead-time intervals. Scale PHO and Large by
     (1 - dt_frac) to represent the count the eventizer would have processed.
+
+    All engineering rates use per-row `length` (= L_cycles × 16μs ≈ 0.94s)
+    so the cycle-duration variability is properly accounted for.
     """
     live_frac = 1.0 - df["dt_frac"]
-    pho_per_1s_live = df["PHO"] / PDAU_CYCLE_SEC * live_frac
-    large_per_1s_live = df["Large"] / PDAU_CYCLE_SEC * live_frac
-    wide_per_1s = df["Wide"] / PDAU_CYCLE_SEC
+    pho_per_1s_live = df["PHO"] / df["length"] * live_frac
+    large_per_1s_live = df["Large"] / df["length"] * live_frac
+    wide_per_1s = df["Wide"] / df["length"]
     return pho_per_1s_live - df["Sci_1s"] - large_per_1s_live - wide_per_1s
 
 
@@ -123,7 +132,7 @@ def main():
     df = derive_inline(df)
     df["residual_rate"] = compute_residual(df)
 
-    df["pho_per_1s"] = df["PHO"] / PDAU_CYCLE_SEC
+    df["pho_per_1s"] = df["PHO"] / df["length"]
     print("\nGlobal stats (per 1.0s wallclock):")
     print(f"  mean residual:   {df['residual_rate'].mean():+.2f} cnt/s")
     print(f"  std residual:    {df['residual_rate'].std():.2f} cnt/s")

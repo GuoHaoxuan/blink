@@ -65,16 +65,16 @@ GBM trigger 时间从 GBM MET（自 2001-01-01 TT 计秒）转换到 HXMT MET（
 
 **无**——cache 只存原始计数。所有归一化（速率、死时间修正、ACD 求和）一律下游处理。
 
-**下游约定**（脚本里 inline 计算即可）：
+**下游约定**（脚本里 inline 计算即可，**所有工程速率使用 per-row length，不要 hardcode 0.94**）：
 
 | 量 | 公式 | 说明 |
 |------|------|------|
-| `length` | `L_cycles × 16e-6` | 工程周期 wallclock 时长（≈ 0.94s），**不是 livetime** |
-| `dt_frac` | `Dt / L_cycles` | 0.94s 周期内死时间占比 |
+| `length` | `L_cycles × 16e-6` | 工程周期 wallclock 时长（per row，≈ 0.94s 标称但实际波动 ±0.7%），**不是 livetime** |
+| `dt_frac` | `Dt / L_cycles` | 周期内死时间占比 |
 | `live_frac` | `1 - dt_frac` | 活时间占比 |
-| `pho_rate`（events / 1s wallclock） | `PHO / 0.94` | OOC/Wide/Large 同理 |
-| `sci_rate_094` | `Sci_094 / 0.94` | 0.94s 窗口的事例速率 |
-| `sci_rate_1s` | `Sci_1s / 1.0 = Sci_1s` | 1s 窗口的事例速率（注意 1s 窗口比工程周期多 60ms） |
+| `pho_rate`（events / 1s wallclock） | `PHO / length` | OOC/Wide/Large 同理用 `length` |
+| `sci_rate_094` | `Sci_094 / length` | 0.94s 事件窗口（跟工程周期同窗口对齐） |
+| `sci_rate_1s` | `Sci_1s / 1.0 = Sci_1s` | 1s 事件窗口是 extract spec 硬编码，**不**用 length |
 | `Sci_ACD_*` | `Sci_ACD1_* + Sci_ACDN_*` | per-window 求和 |
 
 **死时间影响**（per A1005 + 用户领域知识）：
