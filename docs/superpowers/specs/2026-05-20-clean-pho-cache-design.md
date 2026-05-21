@@ -1,7 +1,7 @@
 # 干净 PHO 验证数据集 (2020-H1)
 
 **日期**: 2026-05-20
-**范围**: 从 `per_sec_parquet/` 抽取 2020-01-01 至 2020-06-30 的子集，过滤+派生后输出**单个 parquet 文件**，用于验证更简洁系数的 PHO 重建模型。旧的 `cache_training.py` / `partition_cache.py` / `train_cache.parquet` / `perdet_npz/` 全部弃用——本方案替代。
+**范围**: 从 `per_sec_parquet/` 抽取 2020-01-01 至 2020-06-30 的子集，过滤后输出**单个 parquet 文件**（仅原始计数，所有归一化下游处理），用于验证更简洁系数的 PHO 重建模型。旧的 `cache_training.py` / `partition_cache.py` / `train_cache.parquet` / `perdet_npz/` 全部弃用——本方案替代。
 
 ## 动机
 
@@ -63,13 +63,25 @@ GBM trigger 时间从 GBM MET（自 2001-01-01 TT 计秒）转换到 HXMT MET（
 
 ## 派生列
 
-过滤链结束后、写入前计算：
+**无**——cache 只存原始计数。所有归一化（速率、死时间修正、ACD 求和）一律下游处理。
 
-- `length = L_cycles · 16e-6`（实活时间秒数）
-- `*_rate = raw_count / length`，针对：`PHO`, `OOC`, `Wide`, `Large`, `Sci_094`, `Sci_1s`, `Sci_pure_094`, `Sci_pure_1s`, `Sci_ACD1_094`, `Sci_ACD1_1s`, `Sci_ACDN_094`, `Sci_ACDN_1s`
-- `dt_frac = Dt / L_cycles`（死时间占比）
-- `Sci_ACD_094 = Sci_ACD1_094 + Sci_ACDN_094`，`Sci_ACD_1s = Sci_ACD1_1s + Sci_ACDN_1s`
-- `Sci_ACD_rate_094`, `Sci_ACD_rate_1s`
+**下游约定**（脚本里 inline 计算即可）：
+
+| 量 | 公式 | 说明 |
+|------|------|------|
+| `length` | `L_cycles × 16e-6` | 工程周期 wallclock 时长（≈ 0.94s），**不是 livetime** |
+| `dt_frac` | `Dt / L_cycles` | 0.94s 周期内死时间占比 |
+| `live_frac` | `1 - dt_frac` | 活时间占比 |
+| `pho_rate`（events / 1s wallclock） | `PHO / 0.94` | OOC/Wide/Large 同理 |
+| `sci_rate_094` | `Sci_094 / 0.94` | 0.94s 窗口的事例速率 |
+| `sci_rate_1s` | `Sci_1s / 1.0 = Sci_1s` | 1s 窗口的事例速率（注意 1s 窗口比工程周期多 60ms） |
+| `Sci_ACD_*` | `Sci_ACD1_* + Sci_ACDN_*` | per-window 求和 |
+
+**死时间影响**（per A1005 + 用户领域知识）：
+- **PHO / Large** 是前端 trigger 计数，**不受死时间影响**——每次触发都计
+- **Wide / Sci** 是事件机产物，**受死时间影响**——死时间内丢失事件
+
+→ 对比时若想统一到 eventizer-visible 计数，把 PHO/Large 乘以 `live_frac`，Wide/Sci 维持原值。
 
 ## 输出
 
@@ -77,19 +89,20 @@ GBM trigger 时间从 GBM MET（自 2001-01-01 TT 计秒）转换到 HXMT MET（
 
 **粒度**: 一行 = 一个 `(date, box, det, met_sec)`，与输入一致
 
-**大小估算**: ~50 min/天 赤道带 × 60 s/min × 182 天 × 18 dets × ~38 列 × ~4 B/cell × ~0.5 留存率 ≈ **~200 MB 磁盘**（zstd 后），~3 GB 内存（pandas DataFrame）
+**大小估算**: ~50 min/天 赤道带 × 60 s/min × 182 天 × 18 dets × 21 列 × ~4 B/cell × ~0.5 留存率 ≈ **~120 MB 磁盘**（zstd 后），~1.7 GB 内存（pandas DataFrame）
 
-### 列单
+### 列单（21 列）
 
-| 分组 | 列 |
-|---|---|
-| 身份 | `date` (string `YYYY-MM-DD`), `box` (categorical `A/B/C`), `det` (int8 0–5), `met_sec` (int64) |
-| 几何（仅 sanity） | `Lat`, `Lon` (float32) |
-| 探测器工况 | `L_cycles` (int32), `length` (float32), `HV` (float32), `dt_frac` (float32) |
-| Raw 计数 | `PHO`, `OOC`, `Wide`, `Large`, `Dt`, `Sci_094`, `Sci_pure_094`, `Sci_ACD1_094`, `Sci_ACDN_094`, `Sci_ACD_094`, `Sci_1s`, `Sci_pure_1s`, `Sci_ACD1_1s`, `Sci_ACDN_1s`, `Sci_ACD_1s` (int32) |
-| Rates | `pho_rate`, `ooc_rate`, `wide_rate`, `large_rate`, `sci_rate_094`, `sci_rate_1s`, `scipure_rate_094`, `scipure_rate_1s`, `acd1_rate_094`, `acd1_rate_1s`, `acdn_rate_094`, `acdn_rate_1s`, `acd_rate_094`, `acd_rate_1s` (float32) |
+| 分组 | 列 | 含义 |
+|---|---|---|
+| 身份 | `date`, `box`, `det`, `met_sec` | (date string, box A/B/C, det 0-5, int64 MET) |
+| 几何（瞬时） | `Lat`, `Lon` (float32) | 1K Orbit @ met_sec 采样 |
+| 工程计数器（0.94s 周期） | `L_cycles`, `PHO`, `OOC`, `Wide`, `Large`, `Dt` (int32) | PDAU 47×20ms 周期累计 |
+| 探测器状态（瞬时） | `HV` (float32) | 1K HE-HV @ met_sec 采样 |
+| 事件 0.94s 窗口 | `Sci_094`, `Sci_pure_094`, `Sci_ACD1_094`, `Sci_ACDN_094` (int32) | 与工程周期同窗口 |
+| 事件 1.0s 窗口 | `Sci_1s`, `Sci_pure_1s`, `Sci_ACD1_1s`, `Sci_ACDN_1s` (int32) | 比工程周期多 60ms 的事例 |
 
-约 38 列。
+共 **21 列**。
 
 ## 实现
 
@@ -101,8 +114,7 @@ GBM trigger 时间从 GBM MET（自 2001-01-01 TT 计秒）转换到 HXMT MET（
 |---|---|---|
 | `BurstCatalog`（class） | 没缓存时从 HEASARC fetch；暴露排序后的 MET `int64` 数组；提供 `any_within(met_sec_array, ±300s) -> bool[]` 通过 `np.searchsorted` 实现 | ~80 |
 | `apply_filters(df, catalog) -> df` | 顺序应用 Stage 1–5；每阶段后日志记录行数 | ~120 |
-| `derive_columns(df) -> df` | 计算 `length`、所有 `*_rate`、`dt_frac`、`Sci_ACD_*` | ~40 |
-| `process_one_day(date_str, out_dir) -> Path` | 加载日 parquet → 过滤 → 派生 → 写 `partial/{date}.parquet` | ~30 |
+| `process_one_day(date_str, out_dir) -> Path` | 加载日 parquet → 过滤 → 写 `partial/{date}.parquet`（不做派生） | ~30 |
 | `main()` | `multiprocessing.Pool(processes=8)` 遍历 182 天，concat 所有 partials，写最终 parquet，跑断言 | ~60 |
 
 **依赖**: `pandas`, `pyarrow`, `numpy`, `requests`（HEASARC fetch）, `astropy.time`（MET 时间转换）
@@ -136,8 +148,8 @@ GBM trigger 时间从 GBM MET（自 2001-01-01 TT 计秒）转换到 HXMT MET（
 
 1. 单独跑 `process_one_day("20200115")`——选个 mid-window 平淡的一天
 2. 打印每个 filter stage 后的行数
-3. 打印每个派生 rate 列的 dtype / NaN 数 / 取值范围
-4. 看上去有异常就先调过滤阈值或派生表达式，再上全量
+3. 打印每个 raw 列的 dtype / NaN 数 / 取值范围
+4. 看上去有异常就先调过滤阈值再上全量
 
 ## 不在本方案范围内
 
@@ -145,4 +157,4 @@ GBM trigger 时间从 GBM MET（自 2001-01-01 TT 计秒）转换到 HXMT MET（
 - **其他时间窗**——本次只搞 2020-H1。同一脚本理论上 CLI 改个日期即可重定向到别的窗口，但其他窗口不在本方案的验证范围
 - **GECAM catalog**——无关（2020-12 才发射）
 - **HXMT 自家 `tgfs.json`**——故意排除（用户对其质量有顾虑）
-- **per-(box, det) NPZ 拆分**——旧 `perdet_npz/` 弃用；200 MB 单 parquet 秒级加载，没必要预拆
+- **per-(box, det) NPZ 拆分**——旧 `perdet_npz/` 弃用；单 parquet 秒级加载，没必要预拆
