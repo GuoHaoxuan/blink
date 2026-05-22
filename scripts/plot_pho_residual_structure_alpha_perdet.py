@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Diagnostic plot: residual rate vs Sci_1s rate, per (box, det).
+"""Residual structure plot WITH per-det α correction on Large.
 
-For each detector, show how the zero-param hypothesis residual changes with
-Sci rate. Flat residual → just a constant offset is missing. Slope ≠ 0 →
-Sci coefficient or some rate-dependent term is needed.
+residual = [ (PHO − α_(box,det)·Large)·(1−dt) − Wide ] / length − Sci_1s
 
-A linear regression line (residual = b + m × Sci_1s) is overlaid per panel.
+For each (box, det), α is fitted by least-squares (same fit as
+plot_pho_simple_perdet_alpha_perdet.py). Then we plot residual vs Sci_1s.
 
-Usage:
-    python3 scripts/plot_pho_residual_structure.py [--cache PATH] [--out PATH]
+If the multi-counting hypothesis fully explains the original baseline, the
+residual cloud should be centered on 0 with no slope. Any leftover slope or
+non-zero baseline reveals residual structure not captured by α.
+
+Output: plots/pho_residual_structure_alpha_perdet.png (new file, doesn't overwrite).
 """
 from __future__ import annotations
 
@@ -21,11 +23,11 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
 DEFAULT_CACHE = Path("n_below_study/clean_2020H1.parquet")
-DEFAULT_PLOT = Path("plots/pho_residual_structure.png")
+DEFAULT_OUT = Path("plots/pho_residual_structure_alpha_perdet.png")
 
 PSD_ANOMALY_START = "2020-04-30"
 PSD_ANOMALY_END = "2020-05-31"
-L_CYCLES_TO_SEC = 16e-6  # 16 µs per L_cycles tick
+L_CYCLES_TO_SEC = 16e-6
 
 N_SCATTER_PER_DET = 30_000
 N_BINS = 120
@@ -34,6 +36,19 @@ N_BINS = 120
 def exclude_psd_anomaly(df: pd.DataFrame) -> pd.DataFrame:
     mask = ~((df["date"] >= PSD_ANOMALY_START) & (df["date"] <= PSD_ANOMALY_END))
     return df.loc[mask].copy()
+
+
+def fit_alpha_per_det(df: pd.DataFrame) -> dict:
+    alphas = {}
+    for box in "ABC":
+        for det in range(6):
+            sub = df[(df["box"] == box) & (df["det"] == det)]
+            L = sub["L_cycles"].astype("float64") * L_CYCLES_TO_SEC
+            lf = 1.0 - sub["Dt"] / sub["L_cycles"]
+            rhs = (sub["PHO"] * lf - sub["Wide"] - sub["Sci_1s"] * L).values
+            x = (sub["Large"] * lf).values
+            alphas[(box, det)] = float((x * rhs).sum() / (x * x).sum())
+    return alphas
 
 
 def _density_color(x, y, xb, yb):
@@ -45,21 +60,21 @@ def _density_color(x, y, xb, yb):
     return density
 
 
-def make_residual_structure_plot(df: pd.DataFrame, out_path: Path) -> None:
+def make_plot(df: pd.DataFrame, alphas: dict, out_path: Path) -> None:
     df = df.copy()
     length = df["L_cycles"].astype("float32") * L_CYCLES_TO_SEC
     dt_frac = df["Dt"].astype("float32") / df["L_cycles"].astype("float32")
     live_frac = 1.0 - dt_frac
+    alpha_row = df.apply(lambda r: alphas[(r["box"], r["det"])], axis=1).astype("float32")
     df["sci_obs"] = df["Sci_1s"].astype("float32")
     df["residual"] = (
-        (df["PHO"] - df["Large"]) * live_frac / length
+        (df["PHO"] - alpha_row * df["Large"]) * live_frac / length
         - df["Wide"] / length
         - df["sci_obs"]
     )
 
-    # Global axis range
     x_lo, x_hi = 50.0, 1500.0
-    y_lo, y_hi = -50.0, 400.0
+    y_lo, y_hi = -250.0, 250.0  # tighter than α=1 version since residuals should be small
 
     xb = np.linspace(x_lo, x_hi, N_BINS)
     yb = np.linspace(y_lo, y_hi, N_BINS)
@@ -67,8 +82,7 @@ def make_residual_structure_plot(df: pd.DataFrame, out_path: Path) -> None:
     fig, axes = plt.subplots(3, 6, figsize=(24, 13), sharex=True, sharey=True)
     rng = np.random.RandomState(0)
     last_sc = None
-
-    fit_coefs = []  # records (box, det, intercept, slope, n)
+    fit_coefs = []
 
     for row, box in enumerate("ABC"):
         for col in range(6):
@@ -77,7 +91,6 @@ def make_residual_structure_plot(df: pd.DataFrame, out_path: Path) -> None:
             x = sub["sci_obs"].values
             y = sub["residual"].values
 
-            # In-range mask for density + scatter
             mask = (x >= x_lo) & (x <= x_hi) & (y >= y_lo) & (y <= y_hi)
             x_m, y_m = x[mask], y[mask]
 
@@ -94,7 +107,6 @@ def make_residual_structure_plot(df: pd.DataFrame, out_path: Path) -> None:
                                  s=1.0, alpha=0.5, rasterized=True, edgecolor="none")
                 last_sc = sc
 
-            # Linear fit on full sub (no subsample, no range filter)
             if len(sub) > 100:
                 X = np.column_stack([np.ones(len(sub)), sub["sci_obs"].values])
                 coef, *_ = np.linalg.lstsq(X, sub["residual"].values, rcond=None)
@@ -102,9 +114,9 @@ def make_residual_structure_plot(df: pd.DataFrame, out_path: Path) -> None:
                 xx = np.linspace(x_lo, x_hi, 50)
                 yy = b_fit + m_fit * xx
                 ax.plot(xx, yy, color="red", lw=1.0, label="lstsq fit")
-                fit_coefs.append((box, col, b_fit, m_fit, len(sub)))
+                fit_coefs.append((box, col, b_fit, m_fit, len(sub), alphas[(box, col)]))
                 ax.text(0.04, 0.96,
-                         f"b={b_fit:.1f}\nm={m_fit:+.4f}\nN={len(sub):,}",
+                         f"α={alphas[(box, col)]:.3f}\nb={b_fit:+.1f}\nm={m_fit:+.4f}\nN={len(sub):,}",
                          transform=ax.transAxes, ha="left", va="top",
                          fontsize=9, bbox=dict(boxstyle="round,pad=0.3",
                                                 facecolor="white", alpha=0.75,
@@ -129,26 +141,25 @@ def make_residual_structure_plot(df: pd.DataFrame, out_path: Path) -> None:
 
     fig.suptitle(
         r"$\mathrm{Residual} = "
-        r"\dfrac{(\mathrm{PHO}-\mathrm{Large}) \cdot (1 - \mathrm{DeadTime}/\mathrm{L_{cycles}}) - \mathrm{Wide}}"
+        r"\dfrac{(\mathrm{PHO}-\alpha_{(\mathrm{box},\mathrm{det})}\cdot\mathrm{Large}) \cdot (1 - \mathrm{DeadTime}/\mathrm{L_{cycles}}) - \mathrm{Wide}}"
         r"{\mathrm{L_{cycles}} \cdot 16\,\mu\mathrm{s}} - \mathrm{Sci}_{1\mathrm{s}}$" + "\n"
-        "Residual vs Sci_1s observed   per (box, det)",
+        "Residual vs Sci_1s observed   per (box, det)   (per-det α fitted, 2020-H1 clean, PSD anomaly excluded)",
         fontsize=13, fontweight="bold", y=0.97)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
     plt.close(fig)
 
-    # Print summary table
-    print("\nPer (box, det) linear fit  residual = b + m × Sci_1s:")
-    print(f"  {'box':<4}{'det':<4}{'b (cnt/s)':>12}{'m (slope)':>12}{'N':>10}")
-    for box, det, b, m, n in fit_coefs:
-        print(f"  {box:<4}{det:<4}{b:>+12.2f}{m:>+12.5f}{n:>10,}")
+    print("\nPer (box, det) — α + post-α residual fit:")
+    print(f"  {'(box,det)':<10}{'α':>8}{'b (cnt/s)':>12}{'m (slope)':>12}{'N':>10}")
+    for box, det, b, m, n, alpha in fit_coefs:
+        print(f"  {box}-{det}      {alpha:>7.3f}{b:>+12.2f}{m:>+12.5f}{n:>10,}")
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--cache", default=str(DEFAULT_CACHE))
-    p.add_argument("--out", default=str(DEFAULT_PLOT))
+    p.add_argument("--out", default=str(DEFAULT_OUT))
     args = p.parse_args()
 
     cache = Path(args.cache)
@@ -162,8 +173,11 @@ def main():
     df = exclude_psd_anomaly(df)
     print(f"  after PSD anomaly exclusion: {len(df):,} ({n_before - len(df):,} dropped)")
 
+    print("Fitting per-(box, det) α...")
+    alphas = fit_alpha_per_det(df)
+
     print(f"Generating plot at {out}...")
-    make_residual_structure_plot(df, out)
+    make_plot(df, alphas, out)
     print("Done.")
 
 
