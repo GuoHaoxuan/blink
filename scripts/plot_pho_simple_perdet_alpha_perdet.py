@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
-"""Per-(box, det) verification plot for the simplest PHO hypothesis.
+"""Per-(box, det) verification plot with PER-DET α correction.
 
-Hypothesis (zero free params): PHO_rate == sci_rate_094 + large_rate + wide_rate.
+For each (box, det), fit α via least-squares so that residual ≈ 0:
+    α_(box,det) = argmin Σ_row [ (PHO − α·Large)·(1−dt) − Wide − Sci_1s·length ]²
 
-For each detector we plot Sci predicted (= pho_rate − large_rate − wide_rate)
-against Sci observed (sci_rate_094). If the hypothesis holds, points fall on y=x.
+Then apply the detector's own α in the prediction:
+    Sci_1s = [ (PHO − α_(box,det)·Large)·(1−dt) − Wide ] / length
 
-Layout:
-    3 rows (Box A/B/C) × 6 cols (det 0-5) = 18 panels.
-    Each panel: log-log density-colored scatter + y=x dashed line + RMS annotation.
+If the multi-counting hypothesis is correct and uniform within each detector,
+each panel's residual cloud should hug y=x with mean ≈ 0.
 
-Density-color technique (matches plot_sci_pred_M7merged_perdet_with_260226A.py):
-    Compute 2D histogram in log space, look up each point's local count, color
-    the scatter by that count with LogNorm. Subsample for plot performance.
-
-Usage:
-    python3 scripts/plot_pho_simple_perdet.py [--cache PATH] [--out PATH]
+Output: plots/pho_simple_perdet_alpha_perdet.png  (new file, doesn't overwrite).
 """
 from __future__ import annotations
 
@@ -28,26 +23,39 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
 DEFAULT_CACHE = Path("n_below_study/clean_2020H1.parquet")
-DEFAULT_PLOT = Path("plots/pho_simple_perdet.png")
+DEFAULT_PLOT = Path("plots/pho_simple_perdet_alpha_perdet.png")
 
-# 2020-04-30 → 2020-05-31: on-board PSD threshold was changed, classifying many
-# NaI events as wide-pulse (Wide). Drop this 32-day window.
 PSD_ANOMALY_START = "2020-04-30"
 PSD_ANOMALY_END = "2020-05-31"
+L_CYCLES_TO_SEC = 16e-6
 
-# Plot config
-N_SCATTER_PER_DET = 40_000  # subsample cap per panel
-N_BINS = 120                 # density grid resolution
+N_SCATTER_PER_DET = 40_000
+N_BINS = 120
 
 
 def exclude_psd_anomaly(df: pd.DataFrame) -> pd.DataFrame:
-    """Drop the 2020-05 PSD-threshold-anomaly period (inclusive)."""
     mask = ~((df["date"] >= PSD_ANOMALY_START) & (df["date"] <= PSD_ANOMALY_END))
     return df.loc[mask].copy()
 
 
-def _density_color_array(x: np.ndarray, y: np.ndarray, xb: np.ndarray, yb: np.ndarray) -> np.ndarray:
-    """Per-point local density via 2D histogram lookup."""
+def fit_alpha_per_det(df: pd.DataFrame) -> dict:
+    """Per (box, det), solve α via least squares so model residual is minimized."""
+    alphas = {}
+    for box in "ABC":
+        for det in range(6):
+            sub = df[(df["box"] == box) & (df["det"] == det)]
+            L = sub["L_cycles"].astype("float64") * L_CYCLES_TO_SEC
+            lf = 1.0 - sub["Dt"] / sub["L_cycles"]
+            # Want: (PHO - α·Large)·lf - Wide - Sci_1s·L = 0
+            # Let rhs = PHO·lf - Wide - Sci_1s·L, x = Large·lf → α·x = rhs → α = sum(x·rhs)/sum(x²)
+            rhs = (sub["PHO"] * lf - sub["Wide"] - sub["Sci_1s"] * L).values
+            x = (sub["Large"] * lf).values
+            alpha = (x * rhs).sum() / (x * x).sum()
+            alphas[(box, det)] = float(alpha)
+    return alphas
+
+
+def _density_color_array(x, y, xb, yb):
     H, xedges, yedges = np.histogram2d(x, y, bins=[xb, yb])
     ix = np.clip(np.searchsorted(xedges, x) - 1, 0, len(xedges) - 2)
     iy = np.clip(np.searchsorted(yedges, y) - 1, 0, len(yedges) - 2)
@@ -56,22 +64,18 @@ def _density_color_array(x: np.ndarray, y: np.ndarray, xb: np.ndarray, yb: np.nd
     return density
 
 
-L_CYCLES_TO_SEC = 16e-6  # 16 µs per L_cycles tick
-
-def make_perdet_plot(df: pd.DataFrame, out_path: Path) -> None:
+def make_perdet_plot(df: pd.DataFrame, alphas: dict, out_path: Path) -> None:
     df = df.copy()
-    # Per-row cycle wallclock (~0.94s, ±0.7%) and dt fraction from raw cache.
+    # Compute sci_pred with per-det α
     length = df["L_cycles"].astype("float32") * L_CYCLES_TO_SEC
     dt_frac = df["Dt"].astype("float32") / df["L_cycles"].astype("float32")
     live_frac = 1.0 - dt_frac
-    # 1.0s-wallclock equivalent counts with dead-time correction.
-    # PHO and Large are dt-immune front-end counters; scale by (1 - dt_frac)
-    # to compare to eventizer-visible counts. Wide is eventizer-output.
-    df["sci_pred"] = ((df["PHO"] - df["Large"]) * live_frac - df["Wide"]) / length
+    # Build per-row α using (box, det) lookup
+    alpha_per_row = df.apply(lambda r: alphas[(r["box"], r["det"])], axis=1).astype("float32")
+    df["alpha_row"] = alpha_per_row
+    df["sci_pred"] = ((df["PHO"] - df["alpha_row"] * df["Large"]) * live_frac - df["Wide"]) / length
     df["sci_obs"] = df["Sci_1s"]
 
-    # Global axis range — wide enough to include the high-rate outlier tail
-    # (the suspicious PHO>>Sci+Large+Wide rows) so the asymmetry is visible.
     pos = df[(df["sci_obs"] > 0) & (df["sci_pred"] > 0)]
     lo = max(20.0, min(float(pos["sci_obs"].quantile(0.01)),
                          float(pos["sci_pred"].quantile(0.01))) * 0.5)
@@ -107,15 +111,15 @@ def make_perdet_plot(df: pd.DataFrame, out_path: Path) -> None:
                                  s=1.5, alpha=0.6, rasterized=True, edgecolor="none")
                 last_sc = sc
 
-            # y=x reference
             ax.plot([lo, hi], [lo, hi], "r--", lw=1,
                      label="y = x" if (row == 0 and col == 0) else None)
 
-            # Stats: use ALL rows for this det (not subsampled), linear-space RMS + median residual
             full_sub = df[(df["box"] == box) & (df["det"] == col)]
             rms = float(np.sqrt(np.mean((full_sub["sci_pred"] - full_sub["sci_obs"]) ** 2)))
             resid_med = float((full_sub["sci_pred"] - full_sub["sci_obs"]).median())
-            ax.text(0.96, 0.05, f"RMS={rms:.0f}\nmed={resid_med:+.0f}\nN={len(full_sub):,}",
+            alpha_d = alphas[(box, col)]
+            ax.text(0.96, 0.05,
+                     f"α={alpha_d:.3f}\nRMS={rms:.0f}\nmed={resid_med:+.0f}\nN={len(full_sub):,}",
                      transform=ax.transAxes, ha="right", va="bottom",
                      fontsize=9, bbox=dict(boxstyle="round,pad=0.3",
                                             facecolor="white", alpha=0.75, edgecolor="none"))
@@ -134,7 +138,6 @@ def make_perdet_plot(df: pd.DataFrame, out_path: Path) -> None:
             if row == 0 and col == 0:
                 ax.legend(loc="upper left", fontsize=9)
 
-    # Layout: leave generous top margin for 2-line LaTeX suptitle
     fig.subplots_adjust(left=0.06, right=0.93, top=0.86, bottom=0.07,
                           hspace=0.22, wspace=0.10)
     if last_sc is not None:
@@ -142,10 +145,10 @@ def make_perdet_plot(df: pd.DataFrame, out_path: Path) -> None:
         fig.colorbar(last_sc, cax=cbar_ax, label="2020-H1 local density (log)")
 
     fig.suptitle(
-        r"Hypothesis   $\mathrm{Sci}_{1\mathrm{s}} = "
-        r"\dfrac{(\mathrm{PHO}-\mathrm{Large}) \cdot (1 - \mathrm{DeadTime}/\mathrm{L_{cycles}}) - \mathrm{Wide}}"
+        r"Hypothesis with per-det α   $\mathrm{Sci}_{1\mathrm{s}} = "
+        r"\dfrac{(\mathrm{PHO}-\alpha_{(\mathrm{box},\mathrm{det})}\cdot\mathrm{Large}) \cdot (1 - \mathrm{DeadTime}/\mathrm{L_{cycles}}) - \mathrm{Wide}}"
         r"{\mathrm{L_{cycles}} \cdot 16\,\mu\mathrm{s}}$" + "\n"
-        "(zero free params, 2020-H1 clean, PSD-anomaly month excluded)",
+        "α fitted independently per (box, det) by least-squares.   2020-H1 clean, PSD anomaly excluded.",
         fontsize=13, fontweight="bold", y=0.97)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -168,11 +171,19 @@ def main():
 
     n_before = len(df)
     df = exclude_psd_anomaly(df)
-    print(f"  after PSD anomaly exclusion ({PSD_ANOMALY_START} to {PSD_ANOMALY_END}): "
-          f"{len(df):,} rows ({n_before - len(df):,} dropped)")
+    print(f"  after PSD anomaly exclusion: {len(df):,} ({n_before - len(df):,} dropped)")
+
+    print("Fitting per-(box, det) α...")
+    alphas = fit_alpha_per_det(df)
+    print("  α per detector:")
+    for box in "ABC":
+        row = "  " + "  ".join(f"{box}-{d}: {alphas[(box, d)]:.3f}" for d in range(6))
+        print(row)
+    a_vals = list(alphas.values())
+    print(f"  range: [{min(a_vals):.3f}, {max(a_vals):.3f}],  mean: {np.mean(a_vals):.3f},  std: {np.std(a_vals):.3f}")
 
     print(f"Generating plot at {out}...")
-    make_perdet_plot(df, out)
+    make_perdet_plot(df, alphas, out)
     print("Done.")
 
 
