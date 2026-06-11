@@ -6,7 +6,7 @@ C25 engineering model and FIFO reset bands. Optional zoom rows show per-reset-
 cluster activity and per-detector breakdown for the saturated box.
 
 Usage:
-    ./target/release/blink_cli sat report <TRIGGER> --before <s> --after <s> -o <pack>
+    ./target/release/blink sat report <TRIGGER> --before <s> --after <s> -o <pack>
     python3 scripts/plot_burst_report.py --pack <pack> -o <PNG>
 """
 from __future__ import annotations

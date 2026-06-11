@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run end-to-end burst saturation diagnostic:
-#   1. blink_cli sat report  → data pack
+#   1. blink sat report  → data pack
 #   2. plot_burst_report.py  → diagnostic PNG
 #
 # Pack is written to a temp directory and removed after plotting unless
@@ -100,9 +100,9 @@ done
 }
 
 # ── prerequisites ──────────────────────────────────────────────────────────
-cli="./target/release/blink_cli"
+cli="./target/release/blink"
 [[ -x "$cli" ]] || {
-    echo "error: $cli not found; run 'cargo build -p blink_cli --release' first" >&2
+    echo "error: $cli not found; run 'cargo build -p blink --release' first" >&2
     exit 1
 }
 [[ -f scripts/plot_burst_report.py ]] || {
@@ -126,7 +126,7 @@ cleanup() {
 trap cleanup EXIT
 
 # ── step 1: report ─────────────────────────────────────────────────────────
-echo "[1/2] blink_cli sat report → $pack_dir" >&2
+echo "[1/2] blink sat report → $pack_dir" >&2
 "$cli" sat report "$trigger" \
     --before "$before" --after "$after" -o "$pack_dir"
 

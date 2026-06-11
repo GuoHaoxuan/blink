@@ -8,7 +8,7 @@ HXMT HE 饱和分析与 TGF 探测命令行工具。本文档覆盖 `sat` 子命
 
 ```bash
 cargo build -p blink_cli --release
-./target/release/blink_cli sat <COMMAND>
+./target/release/blink sat <COMMAND>
 ```
 
 CLI 通过两个环境变量定位数据:
@@ -96,7 +96,7 @@ box_c/  ...
 
 **例**:
 ```bash
-./target/release/blink_cli sat report 2026-06-01T19:12:49.900 \
+./target/release/blink sat report 2026-06-01T19:12:49.900 \
     --before 50 --after 350 -o /tmp/burst_pack
 python3 scripts/plot_burst_report.py --pack /tmp/burst_pack -o plots/burst.png
 ```

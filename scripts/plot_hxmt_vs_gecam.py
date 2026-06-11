@@ -65,7 +65,7 @@ def compute_time_offset():
 
 def load_hxmt_reconstruct(before, after):
     """Load HXMT 1B reconstructed events."""
-    cmd = ["./target/release/blink_cli", "sat", "reconstruct", HXMT_TRIGGER_UTC,
+    cmd = ["./target/release/blink", "sat", "reconstruct", HXMT_TRIGGER_UTC,
            "--before", str(before), "--after", str(after)]
     env = os.environ.copy()
     env.setdefault("HXMT_1B_DIR", "data/1B")

@@ -24,7 +24,7 @@ GBM_TRIGGER_MET = 793795080.95811  # Fermi MET (TT seconds since 2001-01-01 UTC)
 # GBM detectors: n0, n3 triggered; b0, b1 BGO
 GBM_DETS = ["n0", "n3", "b0", "b1"]
 
-# HXMT trigger in HXMT MET (naive, same convention as blink_cli)
+# HXMT trigger in HXMT MET (naive, same convention as blink)
 HXMT_TRIGGER_MET = (datetime.strptime(HXMT_TRIGGER_UTC, "%Y-%m-%dT%H:%M:%S")
                      .replace(tzinfo=timezone.utc) - HXMT_MET_EPOCH).total_seconds()
 
@@ -32,9 +32,9 @@ HXMT_TRIGGER_MET = (datetime.strptime(HXMT_TRIGGER_UTC, "%Y-%m-%dT%H:%M:%S")
 #
 # Time systems:
 #   HXMT/HE: MET counts SI seconds since 2012-01-01T00:00:00 UTC.
-#     blink_cli uses naive (chrono) subtraction, same as Python datetime:
+#     blink uses naive (chrono) subtraction, same as Python datetime:
 #     both give MET=446726273 for the string "10:37:53", ignoring 3 leap seconds
-#     (2012-06, 2015-06, 2016-12). The actual UTC is 10:37:50, but blink_cli
+#     (2012-06, 2015-06, 2016-12). The actual UTC is 10:37:50, but blink
 #     output METs use the same naive basis, so relative times are self-consistent.
 #   Fermi/GBM: TIMESYS=TT, MET in TT seconds since MJD 51910.0 UTC (2001-01-01).
 #     MJDREFF = 64.184/86400 = TT-UTC at epoch. No leap second within the
@@ -58,7 +58,7 @@ GBM_TO_HXMT_OFFSET = 5.958  # GBM T=0 is 5.958s after HXMT T=0
 
 def load_hxmt_reconstruct(before, after):
     """Load HXMT 1B reconstructed events (observed + filled)."""
-    cmd = ["./target/release/blink_cli", "sat", "reconstruct", HXMT_TRIGGER_UTC,
+    cmd = ["./target/release/blink", "sat", "reconstruct", HXMT_TRIGGER_UTC,
            "--before", str(before), "--after", str(after)]
     env = os.environ.copy()
     env.setdefault("HXMT_1B_DIR", "data/1B")
