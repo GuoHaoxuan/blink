@@ -88,8 +88,8 @@ else
     log "Re-running solve and reconstruct on 221009A (FRESH_RUN=1 or no cache)"
     for box in a b c; do
         BOXU=$(echo "$box" | tr a-z A-Z)
-        ./target/release/blink_cli sat 2022-10-09T13 --box "$box" \
-            solve 2022-10-09T13:17:02 --before 50 --after 750 \
+        ./target/release/blink_cli sat extract 2022-10-09T13:17:02 \
+            --source 1b --box "$box" --before 50 --after 750 \
             > /tmp/freeze_221009_${box}.csv 2>>"$LOG"
         TOTAL=$(awk -F, 'NR>1 && $2=="EVT"' /tmp/freeze_221009_${box}.csv | wc -l)
         COVERED=$(awk -F, 'NR>1 && $2=="EVT" && $3!="NaN"' /tmp/freeze_221009_${box}.csv | wc -l)
@@ -126,8 +126,8 @@ if [[ "${FRESH_RUN:-}" == "1" ]]; then
     log "Attempting fresh compare on 260226A — requires T13 hour archive locally"
     # Note: with only T10 hour locally, this will fail. Server-side run only.
     if HXMT_1B_DIR="$HXMT_1B_DIR" HXMT_1K_DIR="$HXMT_1K_DIR" \
-       ./target/release/blink_cli sat 2026-02-26T13 --box a \
-       compare 2026-02-26T13:18:21 --before 50 --after 100 --csv \
+       ./target/release/blink_cli sat compare 2026-02-26T13:18:21 \
+       --box a --before 50 --after 100 --csv \
        > /tmp/freeze_compare_260226.csv 2>>"$LOG"; then
         log "260226A compare succeeded — parse for residual"
         # actual residual extraction depends on compare output format
