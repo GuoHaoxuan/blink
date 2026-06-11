@@ -1,4 +1,4 @@
-# blink_cli 使用文档
+# blink CLI 使用文档
 
 HXMT HE 饱和分析与 TGF 探测命令行工具。本文档覆盖 `sat` 子命令树
 (饱和分析), `search` (TGF 扫描) 和 `filter` (闪电关联) 是独立栈,
@@ -7,7 +7,7 @@ HXMT HE 饱和分析与 TGF 探测命令行工具。本文档覆盖 `sat` 子命
 ## 构建与运行环境
 
 ```bash
-cargo build -p blink_cli --release
+cargo build -p blink --release
 ./target/release/blink sat <COMMAND>
 ```
 
