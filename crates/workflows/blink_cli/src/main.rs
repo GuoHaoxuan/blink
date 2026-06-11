@@ -540,7 +540,7 @@ fn cmd_reconstruct(
 
 fn cmd_dump_times(
     args: &DumpBurstArgs,
-    boxes: &[(String, SciFile, f64)],
+    boxes: &[&(String, SciFile, f64)],
 ) {
     let met_min = args.met_min();
     let met_max = args.met_max();
@@ -601,11 +601,13 @@ fn cmd_dump_packets(
     for (box_name, sci, offset) in filtered_boxes {
         let packet_times = reconstruct_with_wrap_tracking_labeled(sci, *offset, box_name);
         for (pkt_idx, times) in packet_times.iter().enumerate() {
-            if times.is_empty() {
+            let mut clean: Vec<f64> = times.iter().copied().filter(|t| !t.is_nan()).collect();
+            if clean.is_empty() {
                 continue;
             }
-            let min_t = *times.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-            let max_t = *times.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+            clean.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let min_t = clean[0];
+            let max_t = clean[clean.len() - 1];
             if max_t >= met_min && min_t <= met_max {
                 println!("{},{},{:.6},{:.6},{}", box_name, pkt_idx, min_t, max_t, times.len());
             }
@@ -706,7 +708,7 @@ fn cmd_dump_hist(
 
 fn cmd_dump_diag(
     args: &DumpBurstArgs,
-    boxes: &[(String, SciFile, f64)],
+    boxes: &[&(String, SciFile, f64)],
 ) {
     let met_min = args.met_min();
     let met_max = args.met_max();
@@ -801,9 +803,10 @@ fn cmd_compare(
     let mut b1: Vec<(String, Vec<f64>)> = Vec::new();
     for (box_name, sci, offset) in boxes {
         if let Some(fb) = filter_box {
-            if box_name != fb { continue; }
+            if !box_name.eq_ignore_ascii_case(fb) { continue; }
         }
         let mut times = reconstruct_met_times(sci, *offset);
+        times.retain(|t| !t.is_nan());
         times.sort_by(|a, b| a.partial_cmp(b).unwrap());
         eprintln!("  1B Box {}: {} events", box_name, times.len());
         b1.push((box_name.clone(), times));
@@ -818,7 +821,7 @@ fn cmd_compare(
     let mut k1: Vec<(String, Vec<f64>)> = Vec::new();
     for (bname, d_lo, d_hi) in &box_ranges {
         if let Some(fb) = filter_box {
-            if fb != bname { continue; }
+            if !bname.eq_ignore_ascii_case(fb) { continue; }
         }
         let mut times: Vec<f64> = k1_times
             .iter()
@@ -1324,7 +1327,8 @@ fn main() {
                 DumpCommands::Times(a) => {
                     let epoch = parse_epoch(&a.epoch);
                     let boxes = load_boxes(epoch);
-                    cmd_dump_times(&a, &boxes);
+                    let filtered = filter_boxes(&boxes, &a.box_filter);
+                    cmd_dump_times(&a, &filtered);
                 }
                 DumpCommands::Packets(a) => {
                     let epoch = parse_epoch(&a.epoch);
@@ -1347,7 +1351,8 @@ fn main() {
                 DumpCommands::Diag(a) => {
                     let epoch = parse_epoch(&a.epoch);
                     let boxes = load_boxes(epoch);
-                    cmd_dump_diag(&a, &boxes);
+                    let filtered = filter_boxes(&boxes, &a.box_filter);
+                    cmd_dump_diag(&a, &filtered);
                 }
                 DumpCommands::Ptime(a) => {
                     let epoch = parse_epoch(&a.epoch);
