@@ -52,13 +52,13 @@ def load_box_events(pack: Path, box: str):
     """Return (obs_met, obs_det_local, fill_met, k1_met, resets_array)."""
     d = pack / f"box_{box.lower()}"
 
-    # events_obs.csv columns: met,channel,det_id,pkt_idx,evt_idx,aminfo,pulinfo,is_second,is_error
+    # events_obs.csv columns: met,channel,det_id,pkt_idx,evt_idx,is_second
     obs = load_pack_csv(d / "events_obs.csv")
     if obs is None:
         obs_met = np.array([])
         obs_det = np.array([], dtype=int)
     else:
-        mask = (obs[:, 7] == 0) & (obs[:, 8] == 0)
+        mask = obs[:, 5] == 0
         obs_met = obs[mask, 0]
         obs_det = obs[mask, 2].astype(int)
 

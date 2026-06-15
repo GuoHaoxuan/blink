@@ -9,37 +9,20 @@ pub fn cmd_extract_1b(
     met_max: f64,
 ) {
     eprintln!("Extracting 1B events in [{:.3}, {:.3}]", met_min, met_max);
-    println!("box,type,met,channel,det_id,pkt_idx,evt_idx,aminfo,pulinfo");
+    println!("box,type,met,channel,det_id,pkt_idx,evt_idx");
     for (box_name, sci, offset) in filtered_boxes {
         let events = solve_events(sci, *offset, Some(met_min), Some(met_max));
         let mut n_evt = 0u64;
         let mut n_sec = 0u64;
-        let mut n_err = 0u64;
-        let mut n_acd = 0u64;
         for evt in &events {
-            let typ = if evt.is_error {
-                "CRC"
-            } else if evt.is_second {
-                "SEC"
-            } else {
-                "EVT"
-            };
+            let typ = if evt.is_second { "SEC" } else { "EVT" };
             println!(
-                "{},{},{:.6},{},{},{},{},{},{}",
+                "{},{},{:.6},{},{},{},{}",
                 box_name, typ, evt.met, evt.channel, evt.det_id, evt.pkt_index, evt.evt_index,
-                evt.aminfo, evt.pulinfo,
             );
-            if evt.is_error { n_err += 1; }
-            else if evt.is_second { n_sec += 1; }
-            else {
-                n_evt += 1;
-                if evt.aminfo != 0 { n_acd += 1; }
-            }
+            if evt.is_second { n_sec += 1; } else { n_evt += 1; }
         }
-        eprintln!("  Box {}: {} events ({} ACD-flagged, {:.2}%), {} seconds, {} CRC errors",
-                  box_name, n_evt, n_acd,
-                  if n_evt > 0 { 100.0 * n_acd as f64 / n_evt as f64 } else { 0.0 },
-                  n_sec, n_err);
+        eprintln!("  Box {}: {} events, {} seconds", box_name, n_evt, n_sec);
     }
 }
 

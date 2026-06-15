@@ -109,21 +109,19 @@ pub fn cmd_report(args: &ReportArgs) -> std::io::Result<()> {
         let box_dir = args.out.join(format!("box_{}", box_name.to_lowercase()));
         create_dir_all(&box_dir)?;
 
-        // events_obs.csv (observed 1B events in window, full detail incl. det_id/aminfo)
+        // events_obs.csv (observed 1B events in window, full detail incl. det_id)
         let obs_path = box_dir.join("events_obs.csv");
         let mut w = BufWriter::new(File::create(&obs_path)?);
-        writeln!(w, "met,channel,det_id,pkt_idx,evt_idx,aminfo,pulinfo,is_second,is_error")?;
+        writeln!(w, "met,channel,det_id,pkt_idx,evt_idx,is_second")?;
         let detailed = solve_events(sci, *offset, Some(met_min), Some(met_max));
         let mut n_obs = 0u64;
         for e in &detailed {
             writeln!(
-                w, "{:.6},{},{},{},{},{},{},{},{}",
+                w, "{:.6},{},{},{},{},{}",
                 e.met, e.channel, e.det_id, e.pkt_index, e.evt_index,
-                e.aminfo, e.pulinfo,
                 if e.is_second { 1 } else { 0 },
-                if e.is_error { 1 } else { 0 },
             )?;
-            if !e.is_second && !e.is_error { n_obs += 1; }
+            if !e.is_second { n_obs += 1; }
         }
         w.flush()?;
 
