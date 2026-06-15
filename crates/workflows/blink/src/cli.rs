@@ -1,0 +1,218 @@
+use chrono::prelude::*;
+use clap::{Args, Parser, Subcommand};
+use std::path::PathBuf;
+
+use crate::util::{epoch_hour_of_met, parse_met_or_utc};
+
+#[derive(Parser)]
+#[command(about = "HXMT HE analysis toolkit")]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: TopCommands,
+}
+
+#[derive(Subcommand)]
+pub enum TopCommands {
+    /// Saturation analysis (detect FIFO resets, reconstruct gaps, generate reports)
+    Sat {
+        #[command(subcommand)]
+        command: SatCommands,
+    },
+    /// TGF search (scan date range for candidate signals)
+    Search {
+        /// Start date (YYYY-MM-DD)
+        from: String,
+        /// End date (YYYY-MM-DD)
+        to: String,
+    },
+    /// TGF filter (lightning association for detected signals)
+    Filter,
+}
+
+#[derive(Subcommand)]
+pub enum SatCommands {
+    /// Full diagnostic data pack for one burst (events, resets, summary)
+    Report(ReportArgs),
+    /// Detect FIFO resets in a burst window
+    Detect(BurstArgs),
+    /// Gap-filled light curve (1B + cross-box reconstruction)
+    Reconstruct(ReconstructArgs),
+    /// Per-event dump from 1B (raw) or 1K pipeline
+    Extract(ExtractArgs),
+    /// Compare 1B vs 1K event data
+    Compare(CompareArgs),
+    /// Scan a 1B hour for FIFO resets (no trigger; for offline sweeps)
+    Scan(ScanArgs),
+    /// Low-level diagnostic dumps
+    Dump {
+        #[command(subcommand)]
+        sub: DumpCommands,
+    },
+}
+
+/// Shared positional + flags for burst-centric subcommands.
+/// EPOCH is derived from TRIGGER (1B archive is per-hour partitioned).
+#[derive(Args)]
+pub struct BurstWindow {
+    /// Trigger time (MET number or UTC datetime, e.g. 2020-04-15T08:48:05.560)
+    pub trigger: String,
+    /// Seconds before trigger
+    #[arg(long)]
+    pub before: f64,
+    /// Seconds after trigger
+    #[arg(long)]
+    pub after: f64,
+    /// Filter to a single box (a, b, or c). If omitted, all boxes.
+    #[arg(long = "box")]
+    pub box_filter: Option<String>,
+}
+
+impl BurstWindow {
+    pub fn trigger_met(&self) -> f64 {
+        parse_met_or_utc(&self.trigger)
+    }
+    pub fn met_min(&self) -> f64 {
+        self.trigger_met() - self.before
+    }
+    pub fn met_max(&self) -> f64 {
+        self.trigger_met() + self.after
+    }
+    pub fn epoch(&self) -> DateTime<Utc> {
+        epoch_hour_of_met(self.trigger_met())
+    }
+}
+
+#[derive(Args)]
+pub struct BurstArgs {
+    #[command(flatten)]
+    pub window: BurstWindow,
+}
+
+#[derive(Args)]
+pub struct ReportArgs {
+    /// Trigger time (MET number or UTC datetime)
+    pub trigger: String,
+    /// Seconds before trigger
+    #[arg(long)]
+    pub before: f64,
+    /// Seconds after trigger
+    #[arg(long)]
+    pub after: f64,
+    /// Output directory for the data pack
+    #[arg(long, short = 'o')]
+    pub out: PathBuf,
+}
+
+#[derive(Args)]
+pub struct ReconstructArgs {
+    #[command(flatten)]
+    pub window: BurstWindow,
+    /// Bin width in seconds
+    #[arg(long, default_value_t = 1.0)]
+    pub bin: f64,
+}
+
+#[derive(Args)]
+pub struct ExtractArgs {
+    #[command(flatten)]
+    pub window: BurstWindow,
+    /// Source: 1b (raw with MET reconstruction) or 1k (pipeline)
+    #[arg(long, default_value = "1b")]
+    pub source: String,
+}
+
+#[derive(Args)]
+pub struct CompareArgs {
+    #[command(flatten)]
+    pub window: BurstWindow,
+    /// Coarse bin width in seconds
+    #[arg(long, default_value_t = 1.0)]
+    pub coarse_bin: f64,
+    /// Fine bin width in seconds
+    #[arg(long, default_value_t = 0.1)]
+    pub fine_bin: f64,
+    /// Max lag in ms for cross-correlation
+    #[arg(long, default_value_t = 50)]
+    pub max_lag: usize,
+    /// Threshold percentage for flagging fine bins
+    #[arg(long, default_value_t = 30.0)]
+    pub threshold: f64,
+    /// Output CSV format
+    #[arg(long)]
+    pub csv: bool,
+}
+
+#[derive(Args)]
+pub struct ScanArgs {
+    /// Epoch in YYYY-MM-DDTHH format
+    #[arg(long)]
+    pub epoch: String,
+    /// Filter to a single box (a, b, or c). If omitted, all boxes.
+    #[arg(long = "box")]
+    pub box_filter: Option<String>,
+}
+
+#[derive(Subcommand)]
+pub enum DumpCommands {
+    /// Dump event MET times
+    Times(DumpBurstArgs),
+    /// Dump packet time ranges
+    Packets(DumpBurstArgs),
+    /// Dump event details
+    Events(DumpBurstArgs),
+    /// Histogram of events
+    Hist(DumpHistArgs),
+    /// Per-packet diagnostics
+    Diag(DumpBurstArgs),
+    /// Dump ptime/UTC mapping for a packet range
+    Ptime(DumpRangeArgs),
+    /// Check byte offsets for CRC for a packet range
+    CheckOffset(DumpRangeArgs),
+}
+
+#[derive(Args)]
+pub struct DumpBurstArgs {
+    /// Epoch in YYYY-MM-DDTHH format
+    #[arg(long)]
+    pub epoch: String,
+    /// Trigger time (MET number or UTC datetime)
+    pub trigger: String,
+    /// Seconds before trigger
+    #[arg(long, default_value_t = 10.0)]
+    pub before: f64,
+    /// Seconds after trigger
+    #[arg(long, default_value_t = 100.0)]
+    pub after: f64,
+    /// Filter to a single box (a, b, or c). If omitted, all boxes.
+    #[arg(long = "box")]
+    pub box_filter: Option<String>,
+}
+
+impl DumpBurstArgs {
+    pub fn trigger_met(&self) -> f64 { parse_met_or_utc(&self.trigger) }
+    pub fn met_min(&self) -> f64 { self.trigger_met() - self.before }
+    pub fn met_max(&self) -> f64 { self.trigger_met() + self.after }
+}
+
+#[derive(Args)]
+pub struct DumpHistArgs {
+    #[command(flatten)]
+    pub window: DumpBurstArgs,
+    /// Bin width in seconds
+    #[arg(long, default_value_t = 0.01)]
+    pub bin: f64,
+}
+
+#[derive(Args)]
+pub struct DumpRangeArgs {
+    /// Epoch in YYYY-MM-DDTHH format
+    #[arg(long)]
+    pub epoch: String,
+    /// Minimum packet index
+    pub pkt_min: usize,
+    /// Maximum packet index
+    pub pkt_max: usize,
+    /// Filter to a single box (a, b, or c). If omitted, all boxes.
+    #[arg(long = "box")]
+    pub box_filter: Option<String>,
+}
