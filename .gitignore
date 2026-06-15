@@ -66,3 +66,24 @@ NE1_HR_LC_SR_W_DR/
 build/
 
 data
+
+# Saturation analysis intermediates
+dump_*.txt
+/*.png
+/*.csv
+!saturation.csv
+!saturation_grb.csv
+!saturation_tgf.csv
+
+# Paper figures and template files: source-tracked despite generic LaTeX patterns
+!paper/figures/*.pdf
+!paper/figures/*.png
+!paper/figures/*.eps
+!paper/scpma.bst
+!paper/scpma_template_reference.pdf
+*.resolved
+*_stderr.txt
+tgfs.json
+sat_intervals.txt
+session_summary*.md
+

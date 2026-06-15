@@ -35,9 +35,16 @@ pub fn search(chunk: &Chunk) -> Vec<Signal<Event>> {
         10,
     );
 
+    // 先获取合并的饱和区间列表，再批量过滤
+    let saturation_intervals = chunk.get_saturation_intervals();
+
     let results = results
         .into_iter()
-        .filter(|candidate| !chunk.check_saturation(candidate.start))
+        .filter(|candidate| {
+            let idx = saturation_intervals.partition_point(|iv| iv.1 < candidate.start);
+            // 不在任何饱和区间内才保留
+            !(idx < saturation_intervals.len() && saturation_intervals[idx].0 <= candidate.start)
+        })
         .collect::<Vec<_>>();
 
     results

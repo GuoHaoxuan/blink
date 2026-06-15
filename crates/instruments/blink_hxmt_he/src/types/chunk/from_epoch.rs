@@ -1,6 +1,6 @@
 use crate::{
     io::{
-        level_1b::{EngFile, SciFile, get_all_filenames},
+        level_1b::{SciFile, get_eng_filenames, get_sci_filenames, read_stime_offset},
         level_1k::{AttFile, EventFile, OrbitFile},
     },
     types::HxmtHe,
@@ -15,22 +15,28 @@ pub(super) fn from_epoch(epoch: &DateTime<Utc>) -> Result<Chunk, Error> {
     let orbit_file = OrbitFile::from_epoch(epoch)?;
     let att_file = AttFile::from_epoch(epoch)?;
 
-    let [eng_files, sci_files] = get_all_filenames(*epoch)?;
-    let eng_files = [
-        EngFile::new(&eng_files[0])?,
-        EngFile::new(&eng_files[1])?,
-        EngFile::new(&eng_files[2])?,
-    ];
-    let sci_files = [
-        SciFile::new(&sci_files[0])?,
-        SciFile::new(&sci_files[1])?,
-        SciFile::new(&sci_files[2])?,
-    ];
+    let sci_pairs = get_sci_filenames(*epoch);
+    let eng_pairs = get_eng_filenames(*epoch);
+
+    let mut sci_files = Vec::new();
+    let mut stime_offsets = Vec::new();
+
+    for (box_name, sci_path) in &sci_pairs {
+        let sci = SciFile::new(sci_path)?;
+        // 找对应的 eng 文件
+        let offset = eng_pairs
+            .iter()
+            .find(|(bn, _)| bn == box_name)
+            .and_then(|(_, eng_path)| read_stime_offset(eng_path).ok())
+            .unwrap_or(0.0);
+        sci_files.push((box_name.clone(), sci));
+        stime_offsets.push((box_name.clone(), offset));
+    }
 
     Ok(Chunk {
         event_file,
-        eng_files,
         sci_files,
+        stime_offsets,
         orbit_file,
         att_file,
         span: [
