@@ -20,27 +20,45 @@ HXMT_TRIGGER_UTC = "2026-02-26T10:37:53"
 HXMT_EPOCH = "2026-02-26T10"
 
 GBM_DIR = "data/fermi_gbm/bn260226443"
-GBM_TRIGGER_MET = 793795080.95811  # Fermi MET
+GBM_TRIGGER_MET = 793795080.95811  # Fermi MET (TT seconds since 2001-01-01 UTC)
 # GBM detectors: n0, n3 triggered; b0, b1 BGO
 GBM_DETS = ["n0", "n3", "b0", "b1"]
 
-# HXMT trigger in HXMT MET
+# HXMT trigger in HXMT MET (naive, same convention as blink_cli)
 HXMT_TRIGGER_MET = (datetime.strptime(HXMT_TRIGGER_UTC, "%Y-%m-%dT%H:%M:%S")
                      .replace(tzinfo=timezone.utc) - HXMT_MET_EPOCH).total_seconds()
 
-# Time alignment (computed with astropy, accounting for leap seconds):
-# GBM trigger UTC:  2026-02-26 10:37:55.958 (Fermi MET in TT seconds from 2001-01-01 UTC)
-# HXMT trigger UTC: 2026-02-26 10:37:50.000 (HXMT MET in SI seconds from 2012-01-01 UTC)
-# Note: Python datetime ignores 3 leap seconds (2012-06, 2015-06, 2016-12),
-#       giving the wrong result 10:37:53. Must use astropy for correct conversion.
-# Light travel time between two LEO satellites: <47ms, negligible at 0.5s bins.
+# ── Time alignment ──
+#
+# Time systems:
+#   HXMT/HE: MET counts SI seconds since 2012-01-01T00:00:00 UTC.
+#     blink_cli uses naive (chrono) subtraction, same as Python datetime:
+#     both give MET=446726273 for the string "10:37:53", ignoring 3 leap seconds
+#     (2012-06, 2015-06, 2016-12). The actual UTC is 10:37:50, but blink_cli
+#     output METs use the same naive basis, so relative times are self-consistent.
+#   Fermi/GBM: TIMESYS=TT, MET in TT seconds since MJD 51910.0 UTC (2001-01-01).
+#     MJDREFF = 64.184/86400 = TT-UTC at epoch. No leap second within the
+#     ~10-minute observation window, so relative TT times equal relative UTC times.
+#
+# Absolute trigger times (astropy, accounting for leap seconds + TT-UTC):
+#   GBM trigger UTC:  2026-02-26 10:37:55.958
+#   HXMT trigger UTC: 2026-02-26 10:37:50.000
+#   Offset: GBM T=0 is 5.958s after HXMT T=0
+#
+# Light travel time correction:
+#   Fermi ECI at trigger: [4761, 4718, 1491] km, projection = +22.8 ms
+#   HXMT in LEO (~550 km): max projection = +23.1 ms
+#   Maximum differential LTT between the two LEO satellites: <47 ms
+#   Negligible at 0.5s bin resolution.
+#
+# The correct HXMT trigger UTC for labeling is 10:37:50, not 10:37:53.
+HXMT_TRIGGER_UTC_LABEL = "2026-02-26T10:37:50"
 GBM_TO_HXMT_OFFSET = 5.958  # GBM T=0 is 5.958s after HXMT T=0
 
 
 def load_hxmt_reconstruct(before, after):
     """Load HXMT 1B reconstructed events (observed + filled)."""
-    cmd = ["./target/release/blink_cli", "sat", HXMT_EPOCH,
-           "reconstruct", HXMT_TRIGGER_UTC,
+    cmd = ["./target/release/blink_cli", "sat", "reconstruct", HXMT_TRIGGER_UTC,
            "--before", str(before), "--after", str(after)]
     env = os.environ.copy()
     env.setdefault("HXMT_1B_DIR", "data/1B")
@@ -65,34 +83,16 @@ def load_hxmt_reconstruct(before, after):
     return np.array(obs), np.array(fill)
 
 
-def load_gbm_tte(det, before, after, emin=200, emax=900):
-    """Load Fermi/GBM TTE events for one detector, filtered to energy range."""
+def load_gbm_tte(det, before, after):
+    """Load Fermi/GBM TTE events for one detector, all channels (no energy filter)."""
     path = os.path.join(GBM_DIR, f"glg_tte_{det}_bn260226443_v00.fit")
     if not os.path.exists(path):
         return np.array([])
     with fits.open(path, memmap=True) as f:
         times = f["EVENTS"].data["TIME"]
-        pha = f["EVENTS"].data["PHA"]
-        ebounds = f["EBOUNDS"].data
-    # Find channels matching energy range
-    ch_min = None
-    ch_max = None
-    for row in ebounds:
-        if ch_min is None and row["E_MAX"] >= emin:
-            ch_min = row["CHANNEL"]
-        if row["E_MIN"] <= emax:
-            ch_max = row["CHANNEL"]
-    if ch_min is None or ch_max is None:
-        return np.array([])
-    # Exclude overflow channel
-    overflow = 127 if det.startswith("n") else 127
-    ch_max = min(ch_max, overflow - 1)
-    print(f"    {det}: ch {ch_min}-{ch_max} = {ebounds[ch_min]['E_MIN']:.0f}-{ebounds[ch_max]['E_MAX']:.0f} keV",
-          file=sys.stderr)
-    # Filter
     # Convert to time relative to HXMT trigger (apply offset)
     t = (times - GBM_TRIGGER_MET) + GBM_TO_HXMT_OFFSET
-    mask = (t >= -before) & (t <= after) & (pha >= ch_min) & (pha <= ch_max)
+    mask = (t >= -before) & (t <= after)
     return t[mask]
 
 
@@ -103,8 +103,8 @@ def main():
     parser.add_argument("--after", type=float, default=80.0)
     parser.add_argument("--det", type=str, nargs="+", default=["n0", "n3"],
                         help="GBM detectors to use")
-    parser.add_argument("--emin", type=float, default=200, help="GBM energy min (keV)")
-    parser.add_argument("--emax", type=float, default=900, help="GBM energy max (keV)")
+    # Energy filtering removed: use all channels, let scale factor absorb
+    # effective area / energy band differences
     parser.add_argument("--bkg", type=float, nargs=4, default=[-10, -2, 60, 80],
                         metavar=("T1", "T2", "T3", "T4"),
                         help="Background intervals: [T1,T2] and [T3,T4]")
@@ -122,7 +122,7 @@ def main():
     gbm_events = {}
     for det in args.det:
         print(f"Loading GBM {det}...", file=sys.stderr)
-        evts = load_gbm_tte(det, args.before, args.after, args.emin, args.emax)
+        evts = load_gbm_tte(det, args.before, args.after)
         gbm_events[det] = evts
         print(f"  {det}: {len(evts):,} events", file=sys.stderr)
 
@@ -170,37 +170,26 @@ def main():
 
     # ── Plot ──
     fig, (ax_lc, ax_ratio) = plt.subplots(
-        2, 1, figsize=(16, 8), sharex=True,
-        gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06})
+        2, 1, figsize=(12, 7), sharex=True,
+        gridspec_kw={"height_ratios": [3, 1], "hspace": 0.05})
 
-    C0, C1, C2 = plt.cm.tab10(0), plt.cm.tab10(1), plt.cm.tab10(2)
-    # 1) HXMT observed: // C0
-    ax_lc.fill_between(x, np.maximum(net_hxmt_obs, 0), step="post",
-                       facecolor="none", hatch="//", edgecolor=C0, alpha=0.5,
-                       linewidth=0, zorder=2,
-                       label=f"HXMT/HE observed")
-    ax_lc.step(x, net_hxmt_obs, where="post", color=C0, lw=1.0, zorder=3)
-    # 2) HXMT filled part only (between obs and total): // C1
-    ax_lc.fill_between(x, np.maximum(net_hxmt_obs, 0), np.maximum(net_hxmt_all, 0),
-                       step="post",
-                       facecolor="none", hatch="//", edgecolor=C1, alpha=0.5,
-                       linewidth=0, zorder=4,
-                       label=f"HXMT/HE filled (+{len(hxmt_fill):,})")
-    ax_lc.step(x, net_hxmt_all, where="post", color=C1, lw=1.0, zorder=5)
-    # 3) GBM: \\ C2
-    ax_lc.fill_between(x, np.maximum(net_gbm_scaled, 0), step="post",
-                       facecolor="none", hatch="\\\\", edgecolor=C2, alpha=0.5,
-                       linewidth=0, zorder=6,
-                       label=f"Fermi/GBM {'+'.join(args.det)} (×{scale:.1f})")
-    ax_lc.step(x, net_gbm_scaled, where="post", color=C2, lw=1.0, zorder=7)
+    # 1) HXMT observed (blue)
+    ax_lc.step(x, net_hxmt_obs, where="post", color="C0", lw=0.8,
+               label="HXMT/HE observed", zorder=3)
+    ax_lc.fill_between(x, 0, net_hxmt_obs, step="post", alpha=0.15, color="C0")
+    # 2) HXMT observed + filled (orange)
+    ax_lc.step(x, net_hxmt_all, where="post", color="C1", lw=0.8,
+               label=f"HXMT/HE + reconstructed (+{len(hxmt_fill):,})", zorder=2)
+    ax_lc.fill_between(x, net_hxmt_obs, net_hxmt_all, step="post", alpha=0.3, color="C1")
+    # 3) Reference instrument (green)
+    ax_lc.step(x, net_gbm_scaled, where="post", color="C2", lw=1.0,
+               label=f"Fermi/GBM {'+'.join(args.det)} (\u00d7{scale:.1f})", zorder=4)
 
-    ax_lc.set_ylabel("Net count rate (evt/s)", fontsize=13)
-    ax_lc.legend(loc="upper right", fontsize=10)
-    ax_lc.set_ylim(bottom=0)
-    ax_lc.grid(alpha=0.15)
-    ax_lc.set_title(f"GRB 260226A: HXMT/HE (reconstructed) vs Fermi/GBM  "
-                     f"[{args.emin:.0f}-{args.emax:.0f} keV, {bin_w}s bins, bkg subtracted]",
-                     fontsize=13, fontweight="bold")
+    ax_lc.set_ylabel("Net count rate (evt/s)")
+    ax_lc.legend(loc="upper right")
+    ax_lc.axhline(0, color="gray", lw=0.5, ls="--")
+    ax_lc.set_title(f"GRB 260226A: HXMT/HE vs Fermi/GBM  [{bin_w}s bins, geocentric]",
+                    fontweight="bold")
 
     # Ratio panel
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -208,13 +197,17 @@ def main():
         peak_gbm = np.nanmax(net_gbm_scaled)
         threshold = max(peak_gbm * 0.05, 100)
         ratio = np.where(net_gbm_scaled > threshold, net_hxmt_all / net_gbm_scaled, np.nan)
-    ax_ratio.step(x, ratio, where="post", color="#333333", lw=0.8, zorder=2)
-    ax_ratio.axhline(1.0, color="black", lw=0.5, ls="--", alpha=0.5)
-    ax_ratio.set_ylabel("HXMT / GBM", fontsize=13)
+    ax_ratio.step(x, ratio, where="post", color="k", lw=0.8)
+    ax_ratio.axhline(1.0, color="gray", lw=0.5, ls="--")
+    ax_ratio.set_ylabel("HXMT / GBM")
     ax_ratio.set_ylim(0.5, 1.5)
-    ax_ratio.grid(alpha=0.15)
-    ax_ratio.set_xlabel(f"Time since HXMT trigger (s)  [T₀ = {HXMT_TRIGGER_UTC} UTC]",
-                        fontsize=12)
+    # Add ratio stats
+    rv = ratio[~np.isnan(ratio)]
+    if len(rv) > 0:
+        ax_ratio.text(0.98, 0.85, f"ratio = {np.mean(rv):.2f} ± {np.std(rv):.2f} ({len(rv)} bins)",
+                      transform=ax_ratio.transAxes, ha="right", va="top", fontsize=9,
+                      bbox=dict(facecolor="white", alpha=0.8))
+    ax_ratio.set_xlabel(f"Time since HXMT trigger (s)  [$T_0$ = {HXMT_TRIGGER_UTC_LABEL} UTC]")
     ax_ratio.set_xlim(-args.before, args.after)
 
     plt.tight_layout()
