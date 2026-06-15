@@ -87,3 +87,16 @@ tgfs.json
 sat_intervals.txt
 session_summary*.md
 
+# Build / cache / generated
+**/__pycache__/
+*.stderr
+plots/
+.playwright-mcp/
+test-results/
+
+# Local data caches (large, regeneratable)
+n_below_study/
+
+# Tool run logs
+scripts/freeze_numbers_run.log
+
