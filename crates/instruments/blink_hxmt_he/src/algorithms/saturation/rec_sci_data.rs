@@ -9,9 +9,12 @@ use blink_core::types::MissionElapsedTime;
 
 const PTIME_MOD: u64 = 1 << 19; // 524288
 
-/// 1B→1K 时间校正 (秒)。精确到亚微秒：在 2026-02-26T10 一小时窗口
-/// （Box A，9.46M 事件）逐事例匹配，中位差 0.000μs，100% 事件落在 ±0.5μs。
-/// 推测是 1K 管线内嵌的固定 4.0s 延迟，非经验拟合值。
+/// 1B→1K 时间校正 (秒)。在 2026-02-26T10 一小时 Box A 重叠窗口
+/// （MET 446724004..446727603，3599 s, 9.52M 匹配事件）逐事例匹配：
+/// 中位差 +0.0596μs（恰好 1 ulp of double MET at this magnitude），
+/// σ = 0.0375μs，|max| = 0.238μs；1B-only = 0，1K-only = 42（均在
+/// SEC 端点 1-5 ticks 内）。4.0 s 修正精确到优于 1μs，是 1K 管线
+/// 固定延迟而非经验拟合。
 const MET_CORRECTION: f64 = 4.0;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -567,6 +570,73 @@ pub fn reconstruct_with_wrap_tracking_labeled(
         }
     }
 
+    // =====================================================================
+    // Step 4: 单边锚点外推（首/末 SEC 之外的事件）
+    // =====================================================================
+    // Step 3 的 windows(2) 只解算相邻 SEC 之间的事件。文件首个有效 SEC 之前、
+    // 末个有效 SEC 之后的事件没有 pair 可以夹住，会被遗漏（典型每文件每盒
+    // 约 3000 个）。这些事件相对最近的单边锚点距离均 < 1 ptime wrap 周期
+    // （1.048576 s），所以 (锚点ptime ± 事件ptime) mod PMOD 唯一确定 elapsed，
+    // 不存在 wrap 歧义。
+    //
+    //   leading edge:  event_met = first.met - ((first.pt - evt.pt) mod PMOD) × 2μs
+    //   trailing edge: event_met = last.met  + ((evt.pt - last.pt) mod PMOD)  × 2μs
+    //
+    // 保守：要求 elapsed ≤ PMOD - 1（即 < 1.048574 s）。超出说明可能跨过缺失
+    // 的 SEC，无法消歧，留 NaN。
+    let pmod = PTIME_MOD as i64;
+    let elapsed_max: i64 = pmod - 1;  // 524287 ticks ≈ 1.048574 s
+    let mut n_lead = 0u64;
+    let mut n_trail = 0u64;
+
+    if let (Some(&first_vi), Some(&last_vi)) = (valid_indices.first(), valid_indices.last()) {
+        // ----- Leading edge: events before the first valid SEC -----
+        let first_sec = &all_secs[first_vi];
+        let first_met = first_sec.met + MET_CORRECTION;
+        let first_pt = first_sec.ptime as i64;
+        let pkt_first = first_sec.pkt_idx;
+        let evt_first = first_sec.evt_idx;
+
+        for pkt_idx in 0..=pkt_first {
+            let end = if pkt_idx == pkt_first { evt_first } else { parsed[pkt_idx].len() };
+            for local_idx in 0..end {
+                let evt = &parsed[pkt_idx][local_idx];
+                if evt.stime.is_some() { continue; }                      // skip SECs (incl. ghosts)
+                if !result[pkt_idx][local_idx].is_nan() { continue; }     // already resolved
+
+                let pt = evt.ptime as i64;
+                let elapsed_back = (first_pt - pt).rem_euclid(pmod);
+                if elapsed_back > elapsed_max { continue; }
+
+                result[pkt_idx][local_idx] = first_met - elapsed_back as f64 * 2e-6;
+                n_lead += 1;
+            }
+        }
+
+        // ----- Trailing edge: events after the last valid SEC -----
+        let last_sec = &all_secs[last_vi];
+        let last_met = last_sec.met + MET_CORRECTION;
+        let last_pt = last_sec.ptime as i64;
+        let pkt_last = last_sec.pkt_idx;
+        let evt_last = last_sec.evt_idx;
+
+        for pkt_idx in pkt_last..parsed.len() {
+            let start = if pkt_idx == pkt_last { evt_last + 1 } else { 0 };
+            for local_idx in start..parsed[pkt_idx].len() {
+                let evt = &parsed[pkt_idx][local_idx];
+                if evt.stime.is_some() { continue; }
+                if !result[pkt_idx][local_idx].is_nan() { continue; }
+
+                let pt = evt.ptime as i64;
+                let elapsed_fwd = (pt - last_pt).rem_euclid(pmod);
+                if elapsed_fwd > elapsed_max { continue; }
+
+                result[pkt_idx][local_idx] = last_met + elapsed_fwd as f64 * 2e-6;
+                n_trail += 1;
+            }
+        }
+    }
+
     if debug {
         let n_total_events: usize = parsed.iter().map(|p| p.len()).sum();
         let n_nan = result.iter().flat_map(|p| p.iter()).filter(|m| m.is_nan()).count();
@@ -577,6 +647,10 @@ pub fn reconstruct_with_wrap_tracking_labeled(
         eprintln!(
             "  ghosts: {} dead-zone + {} order-violation = {} total",
             n_ghost_deadzone, n_ghost_order, n_ghost_deadzone + n_ghost_order
+        );
+        eprintln!(
+            "STEP4 single-anchor edges: {} leading + {} trailing = {} events resolved",
+            n_lead, n_trail, n_lead + n_trail
         );
         eprintln!(
             "  coverage: {}/{} events have MET ({:.1}%), {} NaN",

@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
-"""Plot HXMT/HE reconstructed light curve vs Fermi/GBM.
+"""Plot HXMT/HE reconstructed light curve vs Fermi/GBM + engineering-channel prediction.
 
 Usage:
-    python3 scripts/plot_hxmt_vs_gbm.py --bin 0.1
+    python3 scripts/plot_hxmt_vs_gbm.py --bin 0.5
     python3 scripts/plot_hxmt_vs_gbm.py --bin 1.0 --before 20 --after 200
+
+Adds a 4th trace (purple step) showing $\widehat{S}_{rec}^{eng}$ from the C25 model
+applied to per-second engineering counters, summed over 18 detectors.
 """
 
-import argparse, subprocess, os, sys
+import argparse, subprocess, os, sys, json
+from pathlib import Path
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from astropy.io import fits
 from datetime import datetime, timezone, timedelta
+from scipy.interpolate import RegularGridInterpolator
 
 # ── Config ──
 HXMT_MET_EPOCH = datetime(2012, 1, 1, tzinfo=timezone.utc)
@@ -20,44 +25,130 @@ HXMT_TRIGGER_UTC = "2026-02-26T10:37:53"
 HXMT_EPOCH = "2026-02-26T10"
 
 GBM_DIR = "data/fermi_gbm/bn260226443"
-GBM_TRIGGER_MET = 793795080.95811  # Fermi MET (TT seconds since 2001-01-01 UTC)
-# GBM detectors: n0, n3 triggered; b0, b1 BGO
+GBM_TRIGGER_MET = 793795080.95811
 GBM_DETS = ["n0", "n3", "b0", "b1"]
 
-# HXMT trigger in HXMT MET (naive, same convention as blink)
 HXMT_TRIGGER_MET = (datetime.strptime(HXMT_TRIGGER_UTC, "%Y-%m-%dT%H:%M:%S")
                      .replace(tzinfo=timezone.utc) - HXMT_MET_EPOCH).total_seconds()
-
-# ── Time alignment ──
-#
-# Time systems:
-#   HXMT/HE: MET counts SI seconds since 2012-01-01T00:00:00 UTC.
-#     blink uses naive (chrono) subtraction, same as Python datetime:
-#     both give MET=446726273 for the string "10:37:53", ignoring 3 leap seconds
-#     (2012-06, 2015-06, 2016-12). The actual UTC is 10:37:50, but blink
-#     output METs use the same naive basis, so relative times are self-consistent.
-#   Fermi/GBM: TIMESYS=TT, MET in TT seconds since MJD 51910.0 UTC (2001-01-01).
-#     MJDREFF = 64.184/86400 = TT-UTC at epoch. No leap second within the
-#     ~10-minute observation window, so relative TT times equal relative UTC times.
-#
-# Absolute trigger times (astropy, accounting for leap seconds + TT-UTC):
-#   GBM trigger UTC:  2026-02-26 10:37:55.958
-#   HXMT trigger UTC: 2026-02-26 10:37:50.000
-#   Offset: GBM T=0 is 5.958s after HXMT T=0
-#
-# Light travel time correction:
-#   Fermi ECI at trigger: [4761, 4718, 1491] km, projection = +22.8 ms
-#   HXMT in LEO (~550 km): max projection = +23.1 ms
-#   Maximum differential LTT between the two LEO satellites: <47 ms
-#   Negligible at 0.5s bin resolution.
-#
-# The correct HXMT trigger UTC for labeling is 10:37:50, not 10:37:53.
 HXMT_TRIGGER_UTC_LABEL = "2026-02-26T10:37:50"
-GBM_TO_HXMT_OFFSET = 5.958  # GBM T=0 is 5.958s after HXMT T=0
+GBM_TO_HXMT_OFFSET = 5.958
+
+# Engineering-channel C25 model
+MET_CORRECTION = 4.0
+L_CYC_TO_SEC = 16e-6
+BOX_OFFSET = {"A": 0, "B": 6, "C": 12}
+BOX_CODE = {"A": "0766", "B": "1009", "C": "1781"}
+T_REF = np.datetime64("2017-06-22")
+
+_C25 = json.loads(Path("/tmp/per_det_25param.json").read_text())
+_A_DET = np.array(_C25["a_det"])
+_ALPHA = _C25["alpha"]; _MU_M = _C25["mu_m"]; _K_M = _C25["k_m"]
+_AMP0 = _C25["amp0"]; _MU_T = _C25["mu_t"]; _K_T = _C25["k_t"]; _C0 = _C25["C0"]
+
+
+def _sigm(x):
+    return 1.0 / (1.0 + np.exp(-np.clip(x, -50, 50)))
+
+
+def _c25_baseline(det_global, mlat_abs, t_years):
+    A = _A_DET[det_global]
+    sm = _sigm((mlat_abs - _MU_M) / _K_M)
+    st = _sigm((t_years - _MU_T) / _K_T)
+    g = 1.0 + _ALPHA * sm
+    return A * g * (1.0 - _AMP0 * g * st) + _C0
+
+
+def _unwrap_large(pho, large):
+    """Self-calibrating 10-bit Large unwrap (matches per_burst_eng_ratio.py).
+
+    Calibrates r = Large/PHO from low-rate (non-wrapping) frames, then
+    predicts L_true via r*PHO and rounds (predicted - obs) to nearest 1024.
+    """
+    pho = pho.astype(float); large = large.astype(float)
+    low = (pho > 200) & (pho < 2500) & (large < 900)
+    r = (large[low] / pho[low]).mean() if low.sum() >= 20 else 0.3
+    predicted = r * pho
+    n_wraps = np.maximum(np.round((predicted - large) / 1024.).astype(int), 0)
+    return large + n_wraps * 1024.0
+
+
+def load_engineering_prediction(trigger_met, before, after, orbit_path=None):
+    """Compute S_rec_eng at 1-Hz cadence summed across 18 detectors.
+
+    Returns: (t_rel, sci_eng_rate) where t_rel is seconds from HXMT trigger and
+    sci_eng_rate is in evt/s (rate during each engineering cycle, summed over dets).
+    """
+    t_lo = trigger_met - before
+    t_hi = trigger_met + after
+    date_str = "20260226"
+    hour_str = "100000"
+    t_years_const = (np.datetime64("2026-02-26") - T_REF).astype("timedelta64[D]").astype(float) / 365.25
+
+    # Optional orbit lookup for MLAT — fall back to 0 if missing
+    mlat_lookup = None
+    if orbit_path and Path(orbit_path).exists():
+        _grid = np.load("n_below_study/aacgm_grid_2020.npz")
+        MLAT_INTERP = RegularGridInterpolator(
+            (_grid["lat_grid"], _grid["lon_grid"]), _grid["mlat"],
+            bounds_error=False, fill_value=0.0,
+        )
+        with fits.open(orbit_path) as orb:
+            orb_t = orb[1].data["Time"].astype(float)
+            orb_lat = orb[1].data["Lat"].astype(float)
+            orb_lon = orb[1].data["Lon"].astype(float)
+        mlat_lookup = (orb_t, orb_lat, orb_lon, MLAT_INTERP)
+
+    sec_to_total = {}  # met_sec -> summed Sci_eng (cnt/s) across 18 dets
+    for box, code in BOX_CODE.items():
+        folder = Path(f"data/1B/{date_str[:4]}/{date_str}/{code}")
+        prefix = f"HXMT_1B_{code}_{date_str}T{hour_str}"
+        matches = sorted(folder.glob(f"{prefix}*.fits"))
+        if not matches:
+            print(f"  WARN: no 1B FITS at {folder}/{prefix}*", file=sys.stderr)
+            continue
+        fe = fits.open(matches[0], memmap=True)
+        d = fe["HE_Eng"].data
+        offset = d["UTC_Last_Bdc"][0] - d["sTime_Last_Bdc"][0]
+        met = d["Time"].astype(float) + offset + MET_CORRECTION
+        lc_all = d["Length_Time_Cycle"].astype(float)
+        mask = (met >= t_lo) & (met <= t_hi)
+        met = met[mask]; lc = lc_all[mask]; L = lc * L_CYC_TO_SEC
+
+        if mlat_lookup is not None:
+            orb_t, orb_lat, orb_lon, MLAT_INTERP = mlat_lookup
+            lat_at = np.interp(met, orb_t, orb_lat)
+            lon_at = np.interp(met, orb_t, orb_lon)
+            pts = np.column_stack([lat_at, lon_at])
+            mlat_abs = np.abs(MLAT_INTERP(pts))
+            mlat_abs = np.where(np.isnan(mlat_abs), 0.0, mlat_abs)
+        else:
+            mlat_abs = np.zeros_like(met)
+
+        for det_local in range(6):
+            det_global = BOX_OFFSET[box] + det_local
+            pho = d[f"Cnt_PHODet_{det_global}"].astype(float)[mask]
+            wide = d[f"Cnt_CsI_PHODet_{det_global}"].astype(float)[mask]
+            large_raw = d[f"Cnt_LargeEvt_{det_global}"].astype(float)[mask]
+            dt = d[f"DeadTime_PHODet_{det_global}"].astype(float)[mask]
+            large = _unwrap_large(pho, large_raw)
+            lf_det = 1.0 - dt / lc
+            C_per = _c25_baseline(det_global, mlat_abs, t_years_const)
+            sci_eng = (pho - large) * lf_det / L - wide / L - C_per
+            for i in range(len(met)):
+                key = int(round(met[i]))
+                sec_to_total.setdefault(key, 0.0)
+                sec_to_total[key] += sci_eng[i]
+        fe.close()
+
+    if not sec_to_total:
+        return None, None
+    secs = np.array(sorted(sec_to_total.keys()))
+    rates = np.array([sec_to_total[s] for s in secs])
+    t_rel = secs - trigger_met
+    return t_rel, rates
 
 
 def load_hxmt_reconstruct(before, after):
-    """Load HXMT 1B reconstructed events (observed + filled)."""
     cmd = ["./target/release/blink", "sat", "reconstruct", HXMT_TRIGGER_UTC,
            "--before", str(before), "--after", str(after)]
     env = os.environ.copy()
@@ -68,7 +159,6 @@ def load_hxmt_reconstruct(before, after):
     if proc.stderr:
         for line in proc.stderr.strip().split("\n"):
             print(f"    {line}", file=sys.stderr)
-
     obs, fill = [], []
     for line in proc.stdout.strip().split("\n"):
         p = line.split(",")
@@ -84,13 +174,11 @@ def load_hxmt_reconstruct(before, after):
 
 
 def load_gbm_tte(det, before, after):
-    """Load Fermi/GBM TTE events for one detector, all channels (no energy filter)."""
     path = os.path.join(GBM_DIR, f"glg_tte_{det}_bn260226443_v00.fit")
     if not os.path.exists(path):
         return np.array([])
     with fits.open(path, memmap=True) as f:
         times = f["EVENTS"].data["TIME"]
-    # Convert to time relative to HXMT trigger (apply offset)
     t = (times - GBM_TRIGGER_MET) + GBM_TO_HXMT_OFFSET
     mask = (t >= -before) & (t <= after)
     return t[mask]
@@ -98,115 +186,164 @@ def load_gbm_tte(det, before, after):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bin", type=float, default=0.5, help="Bin width (seconds)")
+    parser.add_argument("--bin", type=float, default=0.5)
     parser.add_argument("--before", type=float, default=10.0)
     parser.add_argument("--after", type=float, default=80.0)
-    parser.add_argument("--det", type=str, nargs="+", default=["n0", "n3"],
-                        help="GBM detectors to use")
-    # Energy filtering removed: use all channels, let scale factor absorb
-    # effective area / energy band differences
+    parser.add_argument("--det", type=str, nargs="+", default=["n0", "n3", "b0"])
     parser.add_argument("--bkg", type=float, nargs=4, default=[-10, -2, 60, 80],
-                        metavar=("T1", "T2", "T3", "T4"),
-                        help="Background intervals: [T1,T2] and [T3,T4]")
+                        metavar=("T1", "T2", "T3", "T4"))
     parser.add_argument("-o", "--output", default="hxmt_vs_gbm.png")
     args = parser.parse_args()
 
-    # Load HXMT data
     print("Loading HXMT/HE reconstruct...", file=sys.stderr)
     hxmt_obs, hxmt_fill = load_hxmt_reconstruct(args.before, args.after)
     hxmt_all = np.concatenate([hxmt_obs, hxmt_fill]) if len(hxmt_fill) > 0 else hxmt_obs
-    print(f"  HXMT: {len(hxmt_obs):,} obs + {len(hxmt_fill):,} fill = {len(hxmt_all):,}",
-          file=sys.stderr)
+    print(f"  HXMT: {len(hxmt_obs):,} obs + {len(hxmt_fill):,} fill = {len(hxmt_all):,}", file=sys.stderr)
 
-    # Load GBM data
+    print("Loading engineering-channel prediction...", file=sys.stderr)
+    eng_t, eng_rate = load_engineering_prediction(HXMT_TRIGGER_MET, args.before, args.after)
+    if eng_t is None:
+        print("  ERROR: engineering data missing — skipping that trace", file=sys.stderr)
+    else:
+        print(f"  Engineering 1-Hz frames: {len(eng_t)}", file=sys.stderr)
+
     gbm_events = {}
     for det in args.det:
-        print(f"Loading GBM {det}...", file=sys.stderr)
         evts = load_gbm_tte(det, args.before, args.after)
         gbm_events[det] = evts
-        print(f"  {det}: {len(evts):,} events", file=sys.stderr)
-
-    # Combine NaI detectors
     gbm_combined = np.concatenate([gbm_events[d] for d in args.det])
     print(f"  GBM combined ({'+'.join(args.det)}): {len(gbm_combined):,}", file=sys.stderr)
 
-    # ── Background subtraction ──
     bin_w = args.bin
     edges = np.arange(-args.before, args.after + bin_w, bin_w)
     x = edges[:-1]
     t1, t2, t3, t4 = args.bkg
 
-    # HXMT rates
     r_hxmt_obs = np.histogram(hxmt_obs, bins=edges)[0] / bin_w
     r_hxmt_all = np.histogram(hxmt_all, bins=edges)[0] / bin_w
-
-    # GBM rates
     r_gbm = np.histogram(gbm_combined, bins=edges)[0] / bin_w
 
-    # Background: average rate in [t1,t2] + [t3,t4]
     bkg_mask = ((x >= t1) & (x < t2)) | ((x >= t3) & (x < t4))
     n_bkg = bkg_mask.sum()
-    if n_bkg > 0:
-        bkg_hxmt = np.mean(r_hxmt_all[bkg_mask])
-        bkg_gbm = np.mean(r_gbm[bkg_mask])
-    else:
-        bkg_hxmt = 0
-        bkg_gbm = 0
-    print(f"  Background: HXMT={bkg_hxmt:.0f} evt/s, GBM={bkg_gbm:.0f} evt/s "
-          f"(from [{t1},{t2}]+[{t3},{t4}], {n_bkg} bins)", file=sys.stderr)
+    bkg_hxmt = np.mean(r_hxmt_all[bkg_mask]) if n_bkg else 0
+    bkg_gbm = np.mean(r_gbm[bkg_mask]) if n_bkg else 0
+    print(f"  Background: HXMT={bkg_hxmt:.0f}, GBM={bkg_gbm:.0f} (from {n_bkg} bins)", file=sys.stderr)
 
-    # Net rates
     net_hxmt_obs = r_hxmt_obs - bkg_hxmt
     net_hxmt_all = r_hxmt_all - bkg_hxmt
     net_gbm = r_gbm - bkg_gbm
 
-    # Scale GBM net to HXMT net: match total net counts in burst region
     burst_mask = (x >= t2) & (x < t3)
     sum_hxmt = np.sum(net_hxmt_all[burst_mask])
     sum_gbm = np.sum(net_gbm[burst_mask])
     scale = sum_hxmt / sum_gbm if sum_gbm > 0 else 1.0
     net_gbm_scaled = net_gbm * scale
-    print(f"  Scale factor: {scale:.2f} (matched in [{t2},{t3}])", file=sys.stderr)
+    print(f"  GBM scale: {scale:.2f}", file=sys.stderr)
+
+    # Engineering background subtraction (using 1-Hz bins)
+    if eng_t is not None:
+        eng_bkg_mask = ((eng_t >= t1) & (eng_t < t2)) | ((eng_t >= t3) & (eng_t < t4))
+        bkg_eng = np.mean(eng_rate[eng_bkg_mask]) if eng_bkg_mask.any() else 0.0
+        net_eng = eng_rate - bkg_eng
+        print(f"  Engineering background: {bkg_eng:.0f} evt/s ({eng_bkg_mask.sum()} bins)", file=sys.stderr)
 
     # ── Plot ──
     fig, (ax_lc, ax_ratio) = plt.subplots(
         2, 1, figsize=(12, 7), sharex=True,
         gridspec_kw={"height_ratios": [3, 1], "hspace": 0.05})
 
-    # 1) HXMT observed (blue)
-    ax_lc.step(x, net_hxmt_obs, where="post", color="C0", lw=0.8,
+    # Blue family for HXMT/HE event-level: derive dark + light variants from
+    # matplotlib C0 so they share hue and saturation, differing only in
+    # lightness (HLS L). Reads as "the same blue, two intensities" rather
+    # than "two different blues". Frees C1/C2 for the two equal-weight
+    # cross-check references (GBM, engineering), both plotted with identical
+    # line width.
+    import colorsys
+    import matplotlib.colors as _mc
+    _h, _l, _s = colorsys.rgb_to_hls(*_mc.to_rgb("C0"))
+    # Keep NAVY/SKY close to C0's natural L=0.41 so all four blue elements
+    # (two fills + two lines) read as the same family. Earlier L=0.18/0.72
+    # spread too wide, making the lines look like different colors from the
+    # C0-based fills.
+    NAVY     = colorsys.hls_to_rgb(_h, 0.25, _s)   # C0 hue, L=0.25 → darker C0
+    SKY_BLUE = colorsys.hls_to_rgb(_h, 0.58, _s)   # C0 hue, L=0.58 → lighter C0
+    CROSS_LW = 1.2                                  # identical width for cross-checks
+    # Fills both use C0 itself (the canonical hue + saturation, mid lightness)
+    # so they read unambiguously as "blue" regardless of alpha; bottom fill is
+    # denser (observed) and the recovery layer above is lighter (alpha-modulated).
+    ax_lc.fill_between(x, 0, net_hxmt_obs, step="post", alpha=0.55,
+                       color="C0", zorder=1)
+    ax_lc.fill_between(x, net_hxmt_obs, net_hxmt_all, step="post", alpha=0.30,
+                       color="C0", zorder=2)
+    ax_lc.step(x, net_hxmt_obs, where="post", color=NAVY, lw=1.0,
                label="HXMT/HE observed", zorder=3)
-    ax_lc.fill_between(x, 0, net_hxmt_obs, step="post", alpha=0.15, color="C0")
-    # 2) HXMT observed + filled (orange)
-    ax_lc.step(x, net_hxmt_all, where="post", color="C1", lw=0.8,
-               label=f"HXMT/HE + reconstructed (+{len(hxmt_fill):,})", zorder=2)
-    ax_lc.fill_between(x, net_hxmt_obs, net_hxmt_all, step="post", alpha=0.3, color="C1")
-    # 3) Reference instrument (green)
-    ax_lc.step(x, net_gbm_scaled, where="post", color="C2", lw=1.0,
-               label=f"Fermi/GBM {'+'.join(args.det)} (\u00d7{scale:.1f})", zorder=4)
+    ax_lc.step(x, net_hxmt_all, where="post", color=SKY_BLUE, lw=1.0,
+               label=f"HXMT/HE + reconstructed (+{len(hxmt_fill):,})", zorder=4)
+    ax_lc.step(x, net_gbm_scaled, where="post", color="C1", lw=CROSS_LW,
+               label=f"Fermi/GBM {'+'.join(args.det)} (×{scale:.1f})", zorder=5)
+    if eng_t is not None:
+        # 1-Hz step trace, left-edge aligned: d["Time"]=N represents the
+        # engineering cycle [N, N+0.94] starting at GPS PPS tick N. Plot step
+        # from N to N+1 so the visual centre (N+0.5) matches the data's mean
+        # event time (~N+0.47).
+        eng_edges = np.concatenate([eng_t, [eng_t[-1] + 1.0]])
+        eng_step_x = np.repeat(eng_edges, 2)[1:-1]
+        eng_step_y = np.repeat(net_eng, 2)
+        ax_lc.plot(eng_step_x, eng_step_y, color="C2", lw=CROSS_LW,
+                   label=r"engineering $\widehat{S}_{\rm rec}^{\rm eng}$ (1 Hz, summed over 18 det)",
+                   zorder=6)
 
     ax_lc.set_ylabel("Net count rate (evt/s)")
-    ax_lc.legend(loc="upper right")
+    ax_lc.legend(loc="upper right", fontsize=9.5)
     ax_lc.axhline(0, color="gray", lw=0.5, ls="--")
-    ax_lc.set_title(f"GRB 260226A: HXMT/HE vs Fermi/GBM  [{bin_w}s bins, geocentric]",
+    ax_lc.set_title(f"GRB 260226A: HXMT/HE event-level + engineering vs Fermi/GBM  [{bin_w}s bins, geocentric]",
                     fontweight="bold")
 
-    # Ratio panel
+    # Ratio panel: two parallel cross-check ratios, colour-matched to the
+    # upper-panel lines (C1 orange = GBM, C2 green = engineering).
     with np.errstate(divide='ignore', invalid='ignore'):
-        # Only show ratio where GBM signal is significant (>5% of peak)
         peak_gbm = np.nanmax(net_gbm_scaled)
-        threshold = max(peak_gbm * 0.05, 100)
-        ratio = np.where(net_gbm_scaled > threshold, net_hxmt_all / net_gbm_scaled, np.nan)
-    ax_ratio.step(x, ratio, where="post", color="k", lw=0.8)
+        threshold_gbm = max(peak_gbm * 0.05, 100)
+        ratio_gbm = np.where(net_gbm_scaled > threshold_gbm,
+                              net_hxmt_all / net_gbm_scaled, np.nan)
+    ax_ratio.step(x, ratio_gbm, where="post", color="C1", lw=CROSS_LW,
+                  label="HXMT / GBM")
+
+    if eng_t is not None:
+        # Upsample 1-Hz engineering rate to the 0.5-s plot grid by holding
+        # eng_rate[i] across the [eng_t[i], eng_t[i]+1) interval.
+        eng_t_min = int(np.floor(eng_t[0]))
+        eng_t_max = int(np.floor(eng_t[-1])) + 1
+        idx = np.floor(x).astype(int) - eng_t_min
+        valid = (idx >= 0) & (idx < len(net_eng))
+        eng_up = np.where(valid, net_eng[np.clip(idx, 0, len(net_eng) - 1)], np.nan)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            peak_eng = np.nanmax(eng_up)
+            threshold_eng = max(peak_eng * 0.05, 100)
+            ratio_eng = np.where(eng_up > threshold_eng,
+                                  net_hxmt_all / eng_up, np.nan)
+        ax_ratio.step(x, ratio_eng, where="post", color="C2", lw=CROSS_LW,
+                      label="HXMT / engineering")
+
     ax_ratio.axhline(1.0, color="gray", lw=0.5, ls="--")
-    ax_ratio.set_ylabel("HXMT / GBM")
+    ax_ratio.set_ylabel("HXMT / ref.")
     ax_ratio.set_ylim(0.5, 1.5)
-    # Add ratio stats
-    rv = ratio[~np.isnan(ratio)]
-    if len(rv) > 0:
-        ax_ratio.text(0.98, 0.85, f"ratio = {np.mean(rv):.2f} ± {np.std(rv):.2f} ({len(rv)} bins)",
-                      transform=ax_ratio.transAxes, ha="right", va="top", fontsize=9,
-                      bbox=dict(facecolor="white", alpha=0.8))
+
+    # Annotation block with both ratio statistics
+    annot_lines = []
+    rg = ratio_gbm[~np.isnan(ratio_gbm)]
+    if len(rg) > 0:
+        annot_lines.append(f"HXMT/GBM         = {np.mean(rg):.2f} ± {np.std(rg):.2f} ({len(rg)} bins)")
+    if eng_t is not None:
+        re = ratio_eng[~np.isnan(ratio_eng)]
+        if len(re) > 0:
+            annot_lines.append(f"HXMT/engineering = {np.mean(re):.2f} ± {np.std(re):.2f} ({len(re)} bins)")
+    if annot_lines:
+        ax_ratio.text(0.98, 0.92, "\n".join(annot_lines),
+                      transform=ax_ratio.transAxes, ha="right", va="top",
+                      fontsize=8.5, family="monospace",
+                      bbox=dict(facecolor="white", alpha=0.85, edgecolor="lightgray"))
+    ax_ratio.legend(loc="lower right", fontsize=9, framealpha=0.85)
     ax_ratio.set_xlabel(f"Time since HXMT trigger (s)  [$T_0$ = {HXMT_TRIGGER_UTC_LABEL} UTC]")
     ax_ratio.set_xlim(-args.before, args.after)
 
