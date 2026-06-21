@@ -9,15 +9,17 @@ Adds a 4th trace (purple step) showing $\widehat{S}_{rec}^{eng}$ from the C25 mo
 applied to per-second engineering counters, summed over 18 detectors.
 """
 
-import argparse, subprocess, os, sys, json
+import argparse, subprocess, os, sys
 from pathlib import Path
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from astropy.io import fits
-from datetime import datetime, timezone, timedelta
-from scipy.interpolate import RegularGridInterpolator
+from datetime import datetime, timezone
+
+sys.path.insert(0, str(Path(__file__).parent))
+from engineering_prediction import load_engineering_prediction, T_REF
 
 # ── Config ──
 HXMT_MET_EPOCH = datetime(2012, 1, 1, tzinfo=timezone.utc)
@@ -32,120 +34,6 @@ HXMT_TRIGGER_MET = (datetime.strptime(HXMT_TRIGGER_UTC, "%Y-%m-%dT%H:%M:%S")
                      .replace(tzinfo=timezone.utc) - HXMT_MET_EPOCH).total_seconds()
 HXMT_TRIGGER_UTC_LABEL = "2026-02-26T10:37:50"
 GBM_TO_HXMT_OFFSET = 5.958
-
-# Engineering-channel C25 model
-MET_CORRECTION = 4.0
-L_CYC_TO_SEC = 16e-6
-BOX_OFFSET = {"A": 0, "B": 6, "C": 12}
-BOX_CODE = {"A": "0766", "B": "1009", "C": "1781"}
-T_REF = np.datetime64("2017-06-22")
-
-_C25 = json.loads(Path("/tmp/per_det_25param.json").read_text())
-_A_DET = np.array(_C25["a_det"])
-_ALPHA = _C25["alpha"]; _MU_M = _C25["mu_m"]; _K_M = _C25["k_m"]
-_AMP0 = _C25["amp0"]; _MU_T = _C25["mu_t"]; _K_T = _C25["k_t"]; _C0 = _C25["C0"]
-
-
-def _sigm(x):
-    return 1.0 / (1.0 + np.exp(-np.clip(x, -50, 50)))
-
-
-def _c25_baseline(det_global, mlat_abs, t_years):
-    A = _A_DET[det_global]
-    sm = _sigm((mlat_abs - _MU_M) / _K_M)
-    st = _sigm((t_years - _MU_T) / _K_T)
-    g = 1.0 + _ALPHA * sm
-    return A * g * (1.0 - _AMP0 * g * st) + _C0
-
-
-def _unwrap_large(pho, large):
-    """Self-calibrating 10-bit Large unwrap (matches per_burst_eng_ratio.py).
-
-    Calibrates r = Large/PHO from low-rate (non-wrapping) frames, then
-    predicts L_true via r*PHO and rounds (predicted - obs) to nearest 1024.
-    """
-    pho = pho.astype(float); large = large.astype(float)
-    low = (pho > 200) & (pho < 2500) & (large < 900)
-    r = (large[low] / pho[low]).mean() if low.sum() >= 20 else 0.3
-    predicted = r * pho
-    n_wraps = np.maximum(np.round((predicted - large) / 1024.).astype(int), 0)
-    return large + n_wraps * 1024.0
-
-
-def load_engineering_prediction(trigger_met, before, after, orbit_path=None):
-    """Compute S_rec_eng at 1-Hz cadence summed across 18 detectors.
-
-    Returns: (t_rel, sci_eng_rate) where t_rel is seconds from HXMT trigger and
-    sci_eng_rate is in evt/s (rate during each engineering cycle, summed over dets).
-    """
-    t_lo = trigger_met - before
-    t_hi = trigger_met + after
-    date_str = "20260226"
-    hour_str = "100000"
-    t_years_const = (np.datetime64("2026-02-26") - T_REF).astype("timedelta64[D]").astype(float) / 365.25
-
-    # Optional orbit lookup for MLAT — fall back to 0 if missing
-    mlat_lookup = None
-    if orbit_path and Path(orbit_path).exists():
-        _grid = np.load("n_below_study/aacgm_grid_2020.npz")
-        MLAT_INTERP = RegularGridInterpolator(
-            (_grid["lat_grid"], _grid["lon_grid"]), _grid["mlat"],
-            bounds_error=False, fill_value=0.0,
-        )
-        with fits.open(orbit_path) as orb:
-            orb_t = orb[1].data["Time"].astype(float)
-            orb_lat = orb[1].data["Lat"].astype(float)
-            orb_lon = orb[1].data["Lon"].astype(float)
-        mlat_lookup = (orb_t, orb_lat, orb_lon, MLAT_INTERP)
-
-    sec_to_total = {}  # met_sec -> summed Sci_eng (cnt/s) across 18 dets
-    for box, code in BOX_CODE.items():
-        folder = Path(f"data/1B/{date_str[:4]}/{date_str}/{code}")
-        prefix = f"HXMT_1B_{code}_{date_str}T{hour_str}"
-        matches = sorted(folder.glob(f"{prefix}*.fits"))
-        if not matches:
-            print(f"  WARN: no 1B FITS at {folder}/{prefix}*", file=sys.stderr)
-            continue
-        fe = fits.open(matches[0], memmap=True)
-        d = fe["HE_Eng"].data
-        offset = d["UTC_Last_Bdc"][0] - d["sTime_Last_Bdc"][0]
-        met = d["Time"].astype(float) + offset + MET_CORRECTION
-        lc_all = d["Length_Time_Cycle"].astype(float)
-        mask = (met >= t_lo) & (met <= t_hi)
-        met = met[mask]; lc = lc_all[mask]; L = lc * L_CYC_TO_SEC
-
-        if mlat_lookup is not None:
-            orb_t, orb_lat, orb_lon, MLAT_INTERP = mlat_lookup
-            lat_at = np.interp(met, orb_t, orb_lat)
-            lon_at = np.interp(met, orb_t, orb_lon)
-            pts = np.column_stack([lat_at, lon_at])
-            mlat_abs = np.abs(MLAT_INTERP(pts))
-            mlat_abs = np.where(np.isnan(mlat_abs), 0.0, mlat_abs)
-        else:
-            mlat_abs = np.zeros_like(met)
-
-        for det_local in range(6):
-            det_global = BOX_OFFSET[box] + det_local
-            pho = d[f"Cnt_PHODet_{det_global}"].astype(float)[mask]
-            wide = d[f"Cnt_CsI_PHODet_{det_global}"].astype(float)[mask]
-            large_raw = d[f"Cnt_LargeEvt_{det_global}"].astype(float)[mask]
-            dt = d[f"DeadTime_PHODet_{det_global}"].astype(float)[mask]
-            large = _unwrap_large(pho, large_raw)
-            lf_det = 1.0 - dt / lc
-            C_per = _c25_baseline(det_global, mlat_abs, t_years_const)
-            sci_eng = (pho - large) * lf_det / L - wide / L - C_per
-            for i in range(len(met)):
-                key = int(round(met[i]))
-                sec_to_total.setdefault(key, 0.0)
-                sec_to_total[key] += sci_eng[i]
-        fe.close()
-
-    if not sec_to_total:
-        return None, None
-    secs = np.array(sorted(sec_to_total.keys()))
-    rates = np.array([sec_to_total[s] for s in secs])
-    t_rel = secs - trigger_met
-    return t_rel, rates
 
 
 def load_hxmt_reconstruct(before, after):
@@ -201,7 +89,11 @@ def main():
     print(f"  HXMT: {len(hxmt_obs):,} obs + {len(hxmt_fill):,} fill = {len(hxmt_all):,}", file=sys.stderr)
 
     print("Loading engineering-channel prediction...", file=sys.stderr)
-    eng_t, eng_rate = load_engineering_prediction(HXMT_TRIGGER_MET, args.before, args.after)
+    t_years_const = (np.datetime64("2026-02-26") - T_REF).astype("timedelta64[D]").astype(float) / 365.25
+    eng_t, eng_rate = load_engineering_prediction(
+        date_str="20260226", hour_str="100000",
+        trigger_met=HXMT_TRIGGER_MET, before=args.before, after=args.after,
+        t_years_const=t_years_const)
     if eng_t is None:
         print("  ERROR: engineering data missing — skipping that trace", file=sys.stderr)
     else:

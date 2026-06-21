@@ -1,24 +1,31 @@
 #!/usr/bin/env python3
-"""Plot HXMT/HE reconstructed light curve vs GECAM-C for GRB 221009A.
+"""Plot HXMT/HE reconstructed light curve vs GECAM-C + engineering-channel prediction.
 
 Usage:
-    python3 scripts/plot_hxmt_vs_gecam.py --bin 1.0
-    python3 scripts/plot_hxmt_vs_gecam.py --bin 0.5 --before 50 --after 700
-    python3 scripts/plot_hxmt_vs_gecam.py --btime          # use BTIME + revisited orbit bkg
+    python3 scripts/plot_hxmt_vs_gecam.py --btime --bin 1.0
+    python3 scripts/plot_hxmt_vs_gecam.py --btime --bin 1.0 --before 50 --after 700
+
+Adds a 4th trace (C2 green step) showing $\\widehat{S}_{rec}^{eng}$ from the C25
+model applied to per-second engineering counters, summed over 18 detectors.
+Mirrors the Figure 7 design (plot_hxmt_vs_gbm.py).
 """
 
 import argparse, subprocess, os, sys
+from pathlib import Path
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from astropy.io import fits
 from astropy.time import Time
-import astropy.units as u
+
+sys.path.insert(0, str(Path(__file__).parent))
+from engineering_prediction import load_engineering_prediction, T_REF
 
 # ── HXMT config ──
-HXMT_TRIGGER_UTC = "2022-10-09T13:17:02"
+HXMT_TRIGGER_UTC = "2022-10-09T13:17:00"
 HXMT_EPOCH = "2022-10-09T13"
+HXMT_ORBIT_PATH = "data/hxmt_aux/HXMT_20221009T13_Orbit_FFFFFF_V1_1K.FITS"
 
 # ── GECAM-C config ──
 GECAM_EVT = "data/gecam_c/gcg_evt_221009_13_v09.fits"
@@ -30,13 +37,10 @@ GECAM_MJDREFF = 0.00080074074
 
 def compute_time_offset():
     """Compute offset: GECAM T=0 relative to HXMT T=0, both in UTC."""
-    # HXMT trigger in UTC (using astropy for leap second correctness)
     hxmt_trigger = Time(HXMT_TRIGGER_UTC, scale='utc')
 
     # GECAM epoch: TIMESYS=TT, so MJDREFI+MJDREFF is in TT scale
-    # MJDREFF=0.00080074074 days = 69.184s = TT-UTC offset, so epoch = MJD 59215.0 UTC
     gecam_epoch = Time(GECAM_MJDREFI + GECAM_MJDREFF, format='mjd', scale='tt')
-    # GRB trigger MET in GECAM system (TT seconds since TT epoch)
     gecam_trigger_met = (hxmt_trigger.tt - gecam_epoch).sec
 
     # HXMT MET system: epoch = 2012-01-01 UTC, events in SI seconds
@@ -50,7 +54,6 @@ def compute_time_offset():
         datetime(2012, 1, 1, tzinfo=timezone.utc)
     ).total_seconds()
 
-    # Offset: how many seconds Python MET is wrong by
     hxmt_met_correction = hxmt_trigger_met_python - hxmt_trigger_met
 
     print(f"  HXMT trigger UTC: {hxmt_trigger.iso}", file=sys.stderr)
@@ -60,7 +63,7 @@ def compute_time_offset():
     print(f"  GECAM epoch: {gecam_epoch.iso}", file=sys.stderr)
     print(f"  GECAM trigger MET: {gecam_trigger_met:.3f}", file=sys.stderr)
 
-    return gecam_trigger_met, hxmt_met_correction
+    return gecam_trigger_met, hxmt_met_correction, hxmt_trigger_met_python
 
 
 def load_hxmt_reconstruct(before, after):
@@ -76,8 +79,6 @@ def load_hxmt_reconstruct(before, after):
         for line in proc.stderr.strip().split("\n"):
             print(f"    {line}", file=sys.stderr)
 
-    # HXMT events have MET from Python datetime (wrong by leap seconds)
-    # We'll correct when plotting
     obs, fill = [], []
     for line in proc.stdout.strip().split("\n"):
         p = line.split(",")
@@ -120,14 +121,8 @@ def load_gecam_btime(gecam_trigger_met, before, after, bin_w, channels="lg",
                      subtract_revisited=True):
     """Load GECAM-C BTIME data (GRD01).
 
-    During GRB 221009A, GECAM-C was in a high-latitude particle region and
-    only GRD01 was active (An et al. 2023, arXiv:2303.01203).
-
     channels: "hg" (ch0-5, 6-350 keV), "lg" (ch7-12, 0.4-6 MeV),
               "all" (ch0-12, exclude overflow ch6,13)
-    subtract_revisited: if True, subtract revisited-orbit background.
-                        if False, return raw rates (caller handles bkg).
-    Returns (left_edges, rate, ch_label) — 1-D arrays rebinned to *bin_w* seconds.
     """
     ch_slices = {
         "hg": (slice(0, 6), "6-350 keV"),
@@ -171,7 +166,6 @@ def load_gecam_btime(gecam_trigger_met, before, after, bin_w, channels="lg",
 
     t_rel = t_burst - gecam_trigger_met
 
-    # Rebin to requested bin width
     edges = np.arange(-before, after + bin_w, bin_w)
     left = edges[:-1]
     sum_rate, _ = np.histogram(t_rel, bins=edges, weights=rate)
@@ -196,34 +190,25 @@ def main():
     parser.add_argument("--bkg", type=float, nargs=4, default=[-50, -10, 500, 700],
                         metavar=("T1", "T2", "T3", "T4"))
     parser.add_argument("--xlim", type=float, nargs=2, default=None,
-                        metavar=("XMIN", "XMAX"), help="Plot x-axis range (default=full)")
+                        metavar=("XMIN", "XMAX"))
     parser.add_argument("--scale-range", type=float, nargs="+", default=None,
-                        metavar="T", help="Time ranges for scaling (pairs: S1 S2 [S3 S4 ...])")
+                        metavar="T", help="Time ranges for scaling (pairs)")
     parser.add_argument("--cache", type=str, default=None,
-                        help="Read HXMT reconstruct from cached CSV instead of re-running CLI")
+                        help="Read HXMT reconstruct from cached CSV")
     parser.add_argument("--btime", action="store_true",
                         help="Use BTIME (binned) data instead of events")
     parser.add_argument("--raw", action="store_true",
-                        help="With --btime: skip revisited-orbit subtraction, use flat bkg from --bkg")
-    parser.add_argument("--channels", choices=["hg", "lg", "all"], default="lg",
-                        help="BTIME channel selection: hg (6-350 keV), lg (0.4-6 MeV), all")
-    parser.add_argument("--ylim", type=float, default=None,
-                        help="Upper y-axis limit for light curve panel")
+                        help="With --btime: skip revisited-orbit subtraction")
+    parser.add_argument("--channels", choices=["hg", "lg", "all"], default="lg")
+    parser.add_argument("--ylim", type=float, default=None)
     parser.add_argument("--mask", type=float, nargs="+", default=None,
-                        metavar="T", help="Shutdown intervals to exclude (pairs: T_start T_end ...)")
+                        metavar="T", help="Shutdown intervals to exclude (pairs)")
     parser.add_argument("-o", "--output", default="hxmt_vs_gecam.png")
     args = parser.parse_args()
 
     # Time alignment
     print("Computing time alignment...", file=sys.stderr)
-    gecam_trigger_met, hxmt_met_correction = compute_time_offset()
-
-    # HXMT trigger MET as computed by Python datetime (what the CLI uses)
-    from datetime import datetime, timezone
-    hxmt_trigger_met_python = (
-        datetime(2022, 10, 9, 13, 17, 2, tzinfo=timezone.utc) -
-        datetime(2012, 1, 1, tzinfo=timezone.utc)
-    ).total_seconds()
+    gecam_trigger_met, hxmt_met_correction, hxmt_trigger_met_python = compute_time_offset()
 
     # Load HXMT
     if args.cache:
@@ -245,9 +230,29 @@ def main():
         hxmt_obs, hxmt_fill = load_hxmt_reconstruct(args.before, args.after)
     # Convert HXMT MET to time relative to true trigger (correct for leap seconds)
     hxmt_obs_t = hxmt_obs - hxmt_trigger_met_python + hxmt_met_correction
-    hxmt_fill_t = hxmt_fill - hxmt_trigger_met_python + hxmt_met_correction if len(hxmt_fill) > 0 else np.array([])
-    hxmt_all_t = np.concatenate([hxmt_obs_t, hxmt_fill_t]) if len(hxmt_fill_t) > 0 else hxmt_obs_t
+    hxmt_fill_t = (hxmt_fill - hxmt_trigger_met_python + hxmt_met_correction
+                   if len(hxmt_fill) > 0 else np.array([]))
+    hxmt_all_t = (np.concatenate([hxmt_obs_t, hxmt_fill_t])
+                  if len(hxmt_fill_t) > 0 else hxmt_obs_t)
     print(f"  HXMT: {len(hxmt_obs):,} obs + {len(hxmt_fill):,} fill", file=sys.stderr)
+
+    # Load engineering-channel prediction
+    print("Loading engineering-channel prediction...", file=sys.stderr)
+    t_years_const = (np.datetime64("2022-10-09") - T_REF).astype("timedelta64[D]").astype(float) / 365.25
+    eng_t_raw, eng_rate = load_engineering_prediction(
+        date_str="20221009", hour_str="130000",
+        trigger_met=hxmt_trigger_met_python, before=args.before, after=args.after,
+        t_years_const=t_years_const,
+        orbit_path=HXMT_ORBIT_PATH if Path(HXMT_ORBIT_PATH).exists() else None,
+    )
+    if eng_t_raw is None:
+        eng_t = None
+        print("  ERROR: engineering data missing — skipping that trace", file=sys.stderr)
+    else:
+        # Apply the same leap-second shift used for HXMT events so engineering
+        # aligns to true T0 (matches GECAM time axis).
+        eng_t = eng_t_raw + hxmt_met_correction
+        print(f"  Engineering 1-Hz frames: {len(eng_t)}", file=sys.stderr)
 
     # ── Binning ──
     bin_w = args.bin
@@ -293,6 +298,14 @@ def main():
     net_hxmt_obs = r_hxmt_obs - bkg_hxmt
     net_hxmt_all = r_hxmt_all - bkg_hxmt
 
+    # Engineering background subtraction (using 1-Hz bins)
+    if eng_t is not None:
+        eng_bkg_mask = ((eng_t >= t1) & (eng_t < t2)) | ((eng_t >= t3) & (eng_t < t4))
+        bkg_eng = np.mean(eng_rate[eng_bkg_mask]) if eng_bkg_mask.any() else 0.0
+        net_eng = eng_rate - bkg_eng
+        print(f"  Engineering background: {bkg_eng:.0f} evt/s ({eng_bkg_mask.sum()} bins)",
+              file=sys.stderr)
+
     # Mask shutdown intervals
     if args.mask:
         pairs = list(zip(args.mask[::2], args.mask[1::2]))
@@ -323,44 +336,117 @@ def main():
         2, 1, figsize=(12, 7), sharex=True,
         gridspec_kw={"height_ratios": [3, 1], "hspace": 0.05})
 
-    # HXMT observed (blue)
-    ax_lc.step(x, net_hxmt_obs, where="post", color="C0", lw=0.8,
+    # Blue family for HXMT/HE event-level: derive dark + light variants from
+    # matplotlib C0 so they share hue and saturation, differing only in
+    # lightness. Frees C1/C2 for the two equal-weight cross-check references
+    # (GECAM, engineering), both plotted with identical line width.
+    import colorsys
+    import matplotlib.colors as _mc
+    _h, _l, _s = colorsys.rgb_to_hls(*_mc.to_rgb("C0"))
+    NAVY     = colorsys.hls_to_rgb(_h, 0.25, _s)
+    SKY_BLUE = colorsys.hls_to_rgb(_h, 0.58, _s)
+    CROSS_LW = 1.2
+
+    # Fills use C0 itself (canonical hue + saturation, mid lightness) so they
+    # read unambiguously as "blue"; bottom denser (observed) and the recovery
+    # layer above lighter (alpha-modulated).
+    ax_lc.fill_between(x, 0, np.nan_to_num(net_hxmt_obs), step="post", alpha=0.55,
+                       color="C0", zorder=1)
+    ax_lc.fill_between(x, np.nan_to_num(net_hxmt_obs), np.nan_to_num(net_hxmt_all),
+                       step="post", alpha=0.30, color="C0", zorder=2)
+    ax_lc.step(x, net_hxmt_obs, where="post", color=NAVY, lw=1.0,
                label="HXMT/HE observed", zorder=3)
-    ax_lc.fill_between(x, 0, net_hxmt_obs, step="post", alpha=0.15, color="C0")
-    # HXMT observed + filled (orange)
-    ax_lc.step(x, net_hxmt_all, where="post", color="C1", lw=0.8,
-               label=f"HXMT/HE + reconstructed (+{len(hxmt_fill):,})", zorder=2)
-    ax_lc.fill_between(x, net_hxmt_obs, net_hxmt_all, step="post", alpha=0.3, color="C1")
-    # GECAM-C (green)
-    ax_lc.step(x, np.nan_to_num(net_gecam_scaled), where="post", color="C2", lw=1.0,
-               label=f"{gecam_label} (\u00d7{scale:.1f})", zorder=4)
+    ax_lc.step(x, net_hxmt_all, where="post", color=SKY_BLUE, lw=1.0,
+               label=f"HXMT/HE + reconstructed (+{len(hxmt_fill):,})", zorder=4)
+    ax_lc.step(x, np.nan_to_num(net_gecam_scaled), where="post", color="C1",
+               lw=CROSS_LW, label=f"{gecam_label} (×{scale:.1f})", zorder=5)
+    if eng_t is not None:
+        # 1-Hz step trace, left-edge aligned: each engineering cycle starts at
+        # GPS PPS tick N and spans ~0.94 s within [N, N+1].
+        eng_edges = np.concatenate([eng_t, [eng_t[-1] + 1.0]])
+        eng_step_x = np.repeat(eng_edges, 2)[1:-1]
+        eng_step_y = np.repeat(net_eng, 2)
+        ax_lc.plot(eng_step_x, eng_step_y, color="C2", lw=CROSS_LW,
+                   label=r"engineering $\widehat{S}_{\rm rec}^{\rm eng}$ (1 Hz, summed over 18 det)",
+                   zorder=6)
 
     ax_lc.set_ylabel("Net count rate (evt/s)")
-    ax_lc.legend(loc="upper right")
+    ax_lc.legend(loc="upper right", fontsize=9.5)
     ax_lc.axhline(0, color="gray", lw=0.5, ls="--")
     if args.ylim:
         ax_lc.set_ylim(-args.ylim * 0.05, args.ylim)
-    ax_lc.set_title(f"GRB 221009A: HXMT/HE vs GECAM-C  [{bin_w}s bins, geocentric]",
+    ax_lc.set_title(f"GRB 221009A tail: HXMT/HE event-level + engineering vs GECAM-C  "
+                    f"[{bin_w}s bins, geocentric]",
                     fontweight="bold")
 
-    # Ratio panel — require both instruments above threshold
+    # Ratio panel — dual cross-check ratios, colour-matched to upper-panel
+    # lines (C1 orange = GECAM, C2 green = engineering). Use 1%-of-peak
+    # threshold so the tail also contributes (not just main/secondary peak);
+    # outlier-prone bins are tamed by the median+IQR annotation below.
     with np.errstate(divide='ignore', invalid='ignore'):
         peak_gecam = np.nanmax(np.nan_to_num(net_gecam_scaled))
         peak_hxmt = np.nanmax(np.nan_to_num(net_hxmt_all))
-        thr_g = max(peak_gecam * 0.05, 100)
-        thr_h = max(peak_hxmt * 0.05, 100)
-        both_sig = (np.isfinite(net_gecam_scaled) & (net_gecam_scaled > thr_g) &
-                    np.isfinite(net_hxmt_all) & (net_hxmt_all > thr_h))
-        ratio = np.where(both_sig, net_hxmt_all / net_gecam_scaled, np.nan)
-    ax_ratio.step(x, ratio, where="post", color="k", lw=0.8)
+        thr_g = max(peak_gecam * 0.01, 100)
+        thr_h = max(peak_hxmt * 0.01, 100)
+        both_sig_g = (np.isfinite(net_gecam_scaled) & (net_gecam_scaled > thr_g) &
+                      np.isfinite(net_hxmt_all) & (net_hxmt_all > thr_h))
+        ratio_gecam = np.where(both_sig_g, net_hxmt_all / net_gecam_scaled, np.nan)
+    ax_ratio.step(x, ratio_gecam, where="post", color="C1", lw=CROSS_LW,
+                  label="HXMT / GECAM")
+
+    if eng_t is not None:
+        # Upsample 1-Hz engineering rate to the plot grid by holding net_eng[i]
+        # across [eng_t[i], eng_t[i]+1).
+        eng_t_min = int(np.floor(eng_t[0]))
+        idx = np.floor(x).astype(int) - eng_t_min
+        valid = (idx >= 0) & (idx < len(net_eng))
+        eng_up = np.where(valid, net_eng[np.clip(idx, 0, len(net_eng) - 1)], np.nan)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            peak_eng = np.nanmax(eng_up)
+            thr_e = max(peak_eng * 0.01, 100)
+            both_sig_e = (np.isfinite(eng_up) & (eng_up > thr_e) &
+                          np.isfinite(net_hxmt_all) & (net_hxmt_all > thr_h))
+            ratio_eng = np.where(both_sig_e, net_hxmt_all / eng_up, np.nan)
+        ax_ratio.step(x, ratio_eng, where="post", color="C2", lw=CROSS_LW,
+                      label="HXMT / engineering")
+
     ax_ratio.axhline(1.0, color="gray", lw=0.5, ls="--")
-    ax_ratio.set_ylabel("HXMT / GECAM")
+    ax_ratio.set_ylabel("HXMT / ref.")
     ax_ratio.set_ylim(0.5, 1.5)
-    rv = ratio[~np.isnan(ratio)]
-    if len(rv) > 0:
-        ax_ratio.text(0.98, 0.85, f"ratio = {np.mean(rv):.2f} \u00b1 {np.std(rv):.2f} ({len(rv)} bins)",
-                      transform=ax_ratio.transAxes, ha="right", va="top", fontsize=9,
-                      bbox=dict(facecolor="white", alpha=0.8))
+
+    # Annotation block with both ratio statistics, computed within xlim if set.
+    # Use median + IQR-derived robust σ to suppress 1-bin outliers from
+    # the secondary peak (1 s HXMT bin vs 1 Hz engineering cycle can show
+    # transient mismatch at sharp-rise edges).
+    xlim_lo = args.xlim[0] if args.xlim else -args.before
+    xlim_hi = args.xlim[1] if args.xlim else args.after
+    xlim_mask = (x >= xlim_lo) & (x < xlim_hi)
+
+    def _robust_stats(r):
+        rv = r[np.isfinite(r)]
+        if not len(rv):
+            return None
+        med = np.median(rv)
+        q75, q25 = np.percentile(rv, [75, 25])
+        sigma = (q75 - q25) / 1.349  # IQR-derived robust σ estimate
+        return med, sigma, len(rv)
+
+    annot_lines = []
+    sg = _robust_stats(ratio_gecam[xlim_mask])
+    if sg:
+        med, sig, n = sg
+        annot_lines.append(f"HXMT/GECAM       = {med:.2f} ± {sig:.2f} ({n} bins)")
+    if eng_t is not None:
+        se = _robust_stats(ratio_eng[xlim_mask])
+        if se:
+            med, sig, n = se
+            annot_lines.append(f"HXMT/engineering = {med:.2f} ± {sig:.2f} ({n} bins)")
+    if annot_lines:
+        ax_ratio.text(0.98, 0.92, "\n".join(annot_lines),
+                      transform=ax_ratio.transAxes, ha="right", va="top",
+                      fontsize=8.5, family="monospace",
+                      bbox=dict(facecolor="white", alpha=0.85, edgecolor="lightgray"))
+    ax_ratio.legend(loc="lower right", fontsize=9, framealpha=0.85)
     ax_ratio.set_xlabel(f"Time since trigger (s)  [$T_0$ = {HXMT_TRIGGER_UTC} UTC]")
     if args.xlim:
         ax_ratio.set_xlim(args.xlim[0], args.xlim[1])
