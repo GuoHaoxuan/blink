@@ -24,6 +24,12 @@ pub enum TopCommands {
         from: String,
         /// End date (YYYY-MM-DD)
         to: String,
+        /// Total number of parallel workers (days are sharded round-robin)
+        #[arg(long, default_value_t = 1)]
+        workers: usize,
+        /// This worker's index in [0, workers)
+        #[arg(long, default_value_t = 0)]
+        worker: usize,
     },
     /// TGF filter (lightning association for detected signals)
     Filter,

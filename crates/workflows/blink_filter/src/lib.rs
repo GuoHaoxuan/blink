@@ -68,5 +68,8 @@ pub fn run() {
         })
         .collect::<Vec<_>>();
     let json = serde_json::to_string_pretty(&tgfs).expect("failed to serialize to json");
-    std::fs::write("tgfs.json", json).expect("failed to write tgfs.json");
+    // 原子写：先写临时文件再 rename，避免下游（pipeline 的 cp / git）读到半截 json。
+    let tmp = format!("tgfs.json.{}.tmp", nanoid::nanoid!(6));
+    std::fs::write(&tmp, json).expect("failed to write tgfs.json tmp");
+    std::fs::rename(&tmp, "tgfs.json").expect("failed to rename tgfs.json");
 }

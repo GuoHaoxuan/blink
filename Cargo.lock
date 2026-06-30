@@ -98,6 +98,7 @@ dependencies = [
  "blink_core",
  "blink_filter",
  "blink_hxmt_he",
+ "blink_search",
  "chrono",
  "clap",
 ]

@@ -116,3 +116,23 @@ pub fn search_day<I: Instrument>(day: NaiveDate, multi_progress: &MultiProgress)
 pub fn search_all<I: Instrument>(total_workers: usize, idx_worker: usize) {
     process::<I, _, _>(None, None, search_day::<I>, total_workers, idx_worker);
 }
+
+/// 在 [start, end] 闭区间日期范围内搜索（按天 round-robin 分片）。
+///
+/// 第 `idx_worker`/`total_workers` 个 worker 只处理 `day_offset % total_workers == idx_worker`
+/// 的天。每天结果原子写入 `data/<I>/YYYY/MM/YYYYMMDD_signals.json`（temp + rename），
+/// 并按源文件 last_modified 跳过已处理的天，因此可安全地并行、断点重跑。
+pub fn search_range<I: Instrument>(
+    start: NaiveDate,
+    end: NaiveDate,
+    total_workers: usize,
+    idx_worker: usize,
+) {
+    process::<I, _, _>(
+        Some(start),
+        Some(end),
+        search_day::<I>,
+        total_workers,
+        idx_worker,
+    );
+}

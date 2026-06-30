@@ -1,5 +1,4 @@
 use super::Chunk;
-use crate::algorithms::continuous;
 use crate::types::{Event, HxmtHe};
 use blink_algorithms::snapshot_stepping::{SearchConfig, search_new};
 use blink_core::traits::Event as _;
@@ -28,14 +27,9 @@ pub fn search(chunk: &Chunk) -> Vec<Signal<Event>> {
         },
     );
 
-    let results = continuous(
-        results,
-        Time::new::<uom::si::time::second>(10.0),
-        Time::new::<uom::si::time::second>(1.0),
-        10,
-    );
-
-    // 先获取合并的饱和区间列表，再批量过滤
+    // 饱和排除：用 1B FIFO reset 检测得到的（已扩 ±1s 并求并的）饱和区间，
+    // 剔除落在其中的候选。旧的 continuous() 成簇判据已移除——成簇本身不再
+    // 作为饱和信号，留作可能的真实发现。
     let saturation_intervals = chunk.get_saturation_intervals();
 
     let results = results

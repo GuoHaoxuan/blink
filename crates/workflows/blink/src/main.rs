@@ -124,13 +124,28 @@ fn main() {
                 }
             },
         },
-        TopCommands::Search { from, to } => {
-            eprintln!("TGF search from {} to {}...", from, to);
-            eprintln!("Not implemented yet. Use blink_search crate directly.");
+        TopCommands::Search {
+            from,
+            to,
+            workers,
+            worker,
+        } => {
+            let start = chrono::NaiveDate::parse_from_str(&from, "%Y-%m-%d")
+                .unwrap_or_else(|e| panic!("invalid --from date '{from}': {e}"));
+            let end = chrono::NaiveDate::parse_from_str(&to, "%Y-%m-%d")
+                .unwrap_or_else(|e| panic!("invalid --to date '{to}': {e}"));
+            assert!(workers >= 1, "--workers must be >= 1");
+            assert!(
+                worker < workers,
+                "--worker {worker} out of range [0, {workers})"
+            );
+            eprintln!(
+                "TGF search {start} .. {end}  (worker {worker}/{workers})",
+            );
+            blink_search::search_range::<blink_hxmt_he::types::HxmtHe>(start, end, workers, worker);
         }
         TopCommands::Filter => {
-            eprintln!("TGF filter...");
-            eprintln!("Not implemented yet. Use blink_filter crate directly.");
+            blink_filter::run();
         }
     }
 }

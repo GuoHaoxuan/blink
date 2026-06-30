@@ -1,4 +1,5 @@
 use super::crc_check;
+use super::detect::detect_fifo_reset_intervals;
 use crate::io::level_1b::SciFile;
 use crate::types::HxmtHe;
 use blink_core::types::MissionElapsedTime;
@@ -866,18 +867,39 @@ pub fn diagnose_packets(sci_data: &SciFile, offset: f64) -> Vec<PacketDiag> {
     result
 }
 
-/// 扫描饱和区间，返回 MissionElapsedTime 类型。
+/// 搜索用饱和排除窗向 FIFO reset 空洞前后各扩展的余量（秒）。
+///
+/// TGF 搜索的本底用候选周围 1s 窗（±0.5s）估计；只要饱和落在该窗内，本底估计
+/// 就被污染，附近所有候选的显著性都不可信。扩 ±1s 保证候选本底窗与饱和空洞
+/// 完全分离（0.5s 严格下限之上留半秒余量，兼顾 FIFO 检测对饱和起止边缘的漏检）。
+const SATURATION_PADDING_SECONDS: f64 = 1.0;
+
+/// 扫描饱和区间，返回 MissionElapsedTime 类型（供 TGF 搜索排除使用）。
+///
+/// 在 `scan_saturation_intervals_raw` 给出的原始 FIFO reset 空洞基础上，每段
+/// 向前后各扩 `SATURATION_PADDING_SECONDS`。相邻空洞扩窗后的合并（求并）由
+/// 上层 `Chunk::get_saturation_intervals` 统一处理。
 pub fn scan_saturation_intervals(
-    _sci_data: &SciFile,
-    _offset: f64,
+    sci_data: &SciFile,
+    offset: f64,
 ) -> Vec<(MissionElapsedTime<HxmtHe>, MissionElapsedTime<HxmtHe>)> {
-    // 依赖时间重建，暂时返回空
-    Vec::new()
+    scan_saturation_intervals_raw(sci_data, offset)
+        .into_iter()
+        .map(|(start, stop)| {
+            (
+                MissionElapsedTime::new(start - SATURATION_PADDING_SECONDS),
+                MissionElapsedTime::new(stop + SATURATION_PADDING_SECONDS),
+            )
+        })
+        .collect()
 }
 
-/// 扫描饱和区间，直接返回原始 MET 秒数。
-pub fn scan_saturation_intervals_raw(_sci_data: &SciFile, _offset: f64) -> Vec<(f64, f64)> {
-    Vec::new()
+/// 扫描饱和区间，直接返回原始 FIFO reset 空洞的 MET 秒数（未扩窗，诊断用）。
+pub fn scan_saturation_intervals_raw(sci_data: &SciFile, offset: f64) -> Vec<(f64, f64)> {
+    detect_fifo_reset_intervals(sci_data, offset)
+        .into_iter()
+        .map(|iv| (iv.start_met, iv.stop_met))
+        .collect()
 }
 
 /// 诊断：打印包信息。
