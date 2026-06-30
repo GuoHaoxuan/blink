@@ -1,8 +1,7 @@
+use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::io::level_1b::{SciFile, get_eng_filenames, get_sci_filenames, read_stime_offset};
+use blink_hxmt_he::types::HxmtHe;
 use chrono::prelude::*;
-
-/// HXMT MET epoch: 2012-01-01T00:00:00 UTC.
-pub const MET_EPOCH: &str = "2012-01-01T00:00:00Z";
 
 pub fn parse_epoch(epoch_str: &str) -> DateTime<Utc> {
     epoch_str.parse::<DateTime<Utc>>().unwrap_or_else(|_| {
@@ -17,22 +16,21 @@ pub fn parse_met_or_utc(s: &str) -> f64 {
     if let Ok(met) = s.parse::<f64>() {
         return met;
     }
-    let ref_time = MET_EPOCH.parse::<DateTime<Utc>>().unwrap();
     let utc = s.parse::<DateTime<Utc>>().unwrap_or_else(|_| {
         format!("{}Z", s).parse::<DateTime<Utc>>()
             .or_else(|_| format!("{}:00Z", s).parse::<DateTime<Utc>>())
             .or_else(|_| format!("{}:00:00Z", s).parse::<DateTime<Utc>>())
             .expect("Invalid time format. Use MET number or UTC datetime (e.g. 2020-04-15T08:34:48)")
     });
-    let met = (utc - ref_time).num_microseconds().unwrap() as f64 / 1e6;
+    // 用核心(含闰秒)转换，与 1B/1K 的 MET 基准一致；不要用朴素日历差。
+    let met = MissionElapsedTime::<HxmtHe>::from(utc).met();
     eprintln!("  UTC {} -> MET {:.6}", utc.format("%Y-%m-%dT%H:%M:%S"), met);
     met
 }
 
 /// Convert MET to its containing 1B-archive hour (floored to YYYY-MM-DDTHH:00:00 UTC).
 pub fn epoch_hour_of_met(met: f64) -> DateTime<Utc> {
-    let met_epoch = MET_EPOCH.parse::<DateTime<Utc>>().unwrap();
-    let utc = met_epoch + chrono::Duration::microseconds((met * 1e6) as i64);
+    let utc = MissionElapsedTime::<HxmtHe>::new(met).to_utc();
     utc.date_naive()
         .and_hms_opt(utc.hour(), 0, 0)
         .unwrap()
@@ -68,10 +66,25 @@ pub fn filter_boxes<'a>(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 数据锚点：1K 轨道文件 (HXMT_20170701T00_Orbit) 的 Time 列起点 = MET 173491203，
+    // 对应 UTC 2017-07-01T00:00:00。MET 是含闰秒的连续秒计数（2012→2017 共 3 个闰秒），
+    // 朴素日历差会给 173491200（低 3s）。锁住含闰秒转换两个方向。
+    #[test]
+    fn met_utc_leap_seconds() {
+        let utc = "2017-07-01T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        assert_eq!(MissionElapsedTime::<HxmtHe>::from(utc).met(), 173491203.0);
+        assert_eq!(MissionElapsedTime::<HxmtHe>::new(173491203.0).to_utc(), utc);
+        assert_eq!(parse_met_or_utc("2017-07-01T00:00:00"), 173491203.0);
+    }
+}
+
 /// Warn if [met-before, met+after] crosses the hour boundary of `epoch`.
 pub fn warn_if_window_crosses_hour(met: f64, before: f64, after: f64, epoch: DateTime<Utc>) {
-    let met_epoch = MET_EPOCH.parse::<DateTime<Utc>>().unwrap();
-    let epoch_start_met = (epoch - met_epoch).num_microseconds().unwrap() as f64 / 1e6;
+    let epoch_start_met = MissionElapsedTime::<HxmtHe>::from(epoch).met();
     let epoch_end_met = epoch_start_met + 3600.0;
     if met - before < epoch_start_met || met + after > epoch_end_met {
         eprintln!(

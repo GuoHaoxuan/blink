@@ -41,6 +41,11 @@ impl<I: Instrument> MissionElapsedTime<I> {
         self.time
     }
 
+    /// MET in seconds as f64.
+    pub fn met(&self) -> f64 {
+        self.time.get::<second>()
+    }
+
     pub fn to_utc(&self) -> DateTime<Utc> {
         (*self).into()
     }

@@ -3,16 +3,16 @@ use blink_hxmt_he::algorithms::saturation::{
     reconstruct_gaps, reconstruct_met_times, reconstruct_with_wrap_tracking,
     solve_events, BoxReconstructionData,
 };
+use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::io::level_1b::{get_eng_filenames, get_sci_filenames};
 use blink_hxmt_he::io::level_1k::EventFile;
-use chrono::prelude::*;
+use blink_hxmt_he::types::HxmtHe;
 use std::fs::{File, create_dir_all};
 use std::io::{BufWriter, Write as IoWrite};
 
 use crate::cli::ReportArgs;
 use crate::util::{
     epoch_hour_of_met, json_escape, load_boxes, parse_met_or_utc, warn_if_window_crosses_hour,
-    MET_EPOCH,
 };
 
 pub fn cmd_report(args: &ReportArgs) -> std::io::Result<()> {
@@ -20,8 +20,7 @@ pub fn cmd_report(args: &ReportArgs) -> std::io::Result<()> {
     let epoch = epoch_hour_of_met(trigger_met);
     warn_if_window_crosses_hour(trigger_met, args.before, args.after, epoch);
 
-    let met_epoch = MET_EPOCH.parse::<DateTime<Utc>>().unwrap();
-    let trigger_utc = met_epoch + chrono::Duration::microseconds((trigger_met * 1e6) as i64);
+    let trigger_utc = MissionElapsedTime::<HxmtHe>::new(trigger_met).to_utc();
     let met_min = trigger_met - args.before;
     let met_max = trigger_met + args.after;
 
