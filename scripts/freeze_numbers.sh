@@ -118,10 +118,10 @@ log "=== GRB 260226A ==="
 # (1B + 1K), which doesn't cover the trigger. Numbers below are from
 # main.tex / DESIGN.md, RE-VERIFY on server with T13 archive.
 
-emit "260226a_box_a_1b_event_count" "549658" "260226A" "A" "main.tex value, RE-VERIFY"
-emit "260226a_box_a_1k_event_count" "549661" "260226A" "A" "main.tex value, RE-VERIFY"
+emit "260226a_box_a_1b_event_count" "965891" "260226A" "A" "1B events, Box A, [T0-50,T0+100]s window (main_en.tex §5.1)"
+emit "260226a_box_a_1k_event_count" "965894" "260226A" "A" "1K events, Box A, [T0-50,T0+100]s window (main_en.tex §5.1)"
 emit "260226a_box_a_residual" "3" "260226A" "A" "1B vs 1K event count residual"
-emit "260226a_residual_fraction_pct" "0.000546" "260226A" "A" "3 / 549661 in percent"
+emit "260226a_residual_fraction_pct" "0.00031" "260226A" "A" "3 / 965894 in percent"
 
 if [[ "${FRESH_RUN:-}" == "1" ]]; then
     log "Attempting fresh compare on 260226A — requires T13 hour archive locally"
