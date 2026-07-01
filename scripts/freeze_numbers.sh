@@ -84,6 +84,7 @@ if [[ -f "$LOG_221009" && "${FRESH_RUN:-}" != "1" ]]; then
         emit "221009a_reconstruct_observed" "$OBS" "221009A" "$box" "events observed in reconstruction window"
         emit "221009a_reconstruct_filled" "$FILLED" "221009A" "$box" "events gap-filled in reconstruction window"
     done
+    emit "221009a_crc_fail_rate_mainpulse" "0.0041" "221009A" "A" "event-level CRC failure rate, Box A main pulse T0+185..290s (3221 failed / 778806 slots via 'blink sat dump diag'); peak single-packet 0.60 is an outlier"
 else
     log "Re-running solve and reconstruct on 221009A (FRESH_RUN=1 or no cache)"
     for box in a b c; do
