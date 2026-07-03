@@ -179,6 +179,9 @@ def main():
                   fontsize=12, fontweight="bold", y=1.02)
     out_pdf = "/Users/skyair/Developer/ihep/paper-hxmt-saturation/figures/f9_scale_flux_dt.pdf"
     out_png = "/tmp/f9_scale_flux_dt.png"
+    if "-o" in sys.argv:
+        out_pdf = sys.argv[sys.argv.index("-o") + 1]
+        out_png = str(Path(out_pdf).with_suffix(".png")) if out_pdf.endswith(".pdf") else out_png
     plt.savefig(out_pdf, bbox_inches="tight")
     plt.savefig(out_png, dpi=240, bbox_inches="tight")
     print(f"saved {out_pdf}\n       {out_png}")
