@@ -174,9 +174,10 @@ def main():
     axes[0].legend(fontsize=8.5, loc="upper left")
 
     axes[0].set_ylabel(r"per-bin scale  =  GECAM / HXMT", fontsize=11)
-    fig.suptitle("Dead-time correction on the per-bin scale "
-                  "(GRB 221009A, GECAM-C/GRD01 LG as reference)",
-                  fontsize=12, fontweight="bold", y=1.02)
+    if "--no-title" not in sys.argv:
+        fig.suptitle("Dead-time correction on the per-bin scale "
+                      "(GRB 221009A, GECAM-C/GRD01 LG as reference)",
+                      fontsize=12, fontweight="bold", y=1.02)
     out_pdf = "/Users/skyair/Developer/ihep/paper-hxmt-saturation/figures/f9_scale_flux_dt.pdf"
     out_png = "/tmp/f9_scale_flux_dt.png"
     if "-o" in sys.argv:
