@@ -163,7 +163,7 @@ def draw_traces(ax, x, obs, allr, all_dt, dtau, dtau_dt, gecam_s, n_fill,
 
 
 def make_figure(mode, x, obs, allr, all_dt, dtau, dtau_dt, gecam_s, n_fill,
-                out_dir, bin_w, show_eng=True):
+                out_dir, bin_w, show_eng=True, show_title=True):
     is_full = (mode == "full")
     eng_str = " + engineering" if show_eng else ""
     xlo, xhi = (-50, 700) if is_full else (170, 310)
@@ -198,7 +198,8 @@ def make_figure(mode, x, obs, allr, all_dt, dtau, dtau_dt, gecam_s, n_fill,
 
     axc.set_xlim(xlo, xhi)
     axc.axhline(0, color="gray", lw=0.5, ls="--")
-    axc.set_title(title, fontweight="bold", fontsize=12)
+    if show_title:
+        axc.set_title(title, fontweight="bold", fontsize=12)
     axc.legend(loc="upper right", fontsize=9.5, framealpha=0.92)
 
     # ── ratio panel ──
@@ -268,6 +269,8 @@ def main():
     ap.add_argument("-o", "--out-dir", default="/tmp")
     ap.add_argument("--no-eng", action="store_true",
                     help="drop the two engineering D/tau recovery traces (declutter)")
+    ap.add_argument("--no-title", action="store_true",
+                    help="suppress the in-figure title (paper output)")
     args = ap.parse_args()
 
     print("Loading HXMT event-level cache...", file=sys.stderr)
@@ -304,7 +307,7 @@ def main():
         print(f"\n=== mode={m} ===", file=sys.stderr)
         stats = make_figure(m, x, obs, allr, all_dt, dtau_g, dtau_dt, gecam_s,
                             n_fill, args.out_dir, args.bin,
-                            show_eng=not args.no_eng)
+                            show_eng=not args.no_eng, show_title=not args.no_title)
         for lbl, st in stats:
             if st:
                 print(f"  {lbl:32s} median={st[0]:.2f} IQRsig={st[1]:.2f} "
