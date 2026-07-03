@@ -193,6 +193,8 @@ def main():
                         metavar=("XMIN", "XMAX"))
     parser.add_argument("--scale-range", type=float, nargs="+", default=None,
                         metavar="T", help="Time ranges for scaling (pairs)")
+    parser.add_argument("--scale-override", type=float, default=None,
+                        help="Skip fit and apply this exact scale value")
     parser.add_argument("--cache", type=str, default=None,
                         help="Read HXMT reconstruct from cached CSV")
     parser.add_argument("--btime", action="store_true",
@@ -204,6 +206,10 @@ def main():
     parser.add_argument("--mask", type=float, nargs="+", default=None,
                         metavar="T", help="Shutdown intervals to exclude (pairs)")
     parser.add_argument("-o", "--output", default="hxmt_vs_gecam.png")
+    parser.add_argument("--title", type=str, default=None,
+                        help="Override the main-panel title")
+    parser.add_argument("--no-engineering", action="store_true",
+                        help="Skip the engineering-channel trace")
     args = parser.parse_args()
 
     # Time alignment
@@ -237,22 +243,27 @@ def main():
     print(f"  HXMT: {len(hxmt_obs):,} obs + {len(hxmt_fill):,} fill", file=sys.stderr)
 
     # Load engineering-channel prediction
-    print("Loading engineering-channel prediction...", file=sys.stderr)
-    t_years_const = (np.datetime64("2022-10-09") - T_REF).astype("timedelta64[D]").astype(float) / 365.25
-    eng_t_raw, eng_rate = load_engineering_prediction(
-        date_str="20221009", hour_str="130000",
-        trigger_met=hxmt_trigger_met_python, before=args.before, after=args.after,
-        t_years_const=t_years_const,
-        orbit_path=HXMT_ORBIT_PATH if Path(HXMT_ORBIT_PATH).exists() else None,
-    )
-    if eng_t_raw is None:
+    if args.no_engineering:
         eng_t = None
-        print("  ERROR: engineering data missing — skipping that trace", file=sys.stderr)
+        eng_rate = None
+        print("Skipping engineering channel (--no-engineering)", file=sys.stderr)
     else:
-        # Apply the same leap-second shift used for HXMT events so engineering
-        # aligns to true T0 (matches GECAM time axis).
-        eng_t = eng_t_raw + hxmt_met_correction
-        print(f"  Engineering 1-Hz frames: {len(eng_t)}", file=sys.stderr)
+        print("Loading engineering-channel prediction...", file=sys.stderr)
+        t_years_const = (np.datetime64("2022-10-09") - T_REF).astype("timedelta64[D]").astype(float) / 365.25
+        eng_t_raw, eng_rate = load_engineering_prediction(
+            date_str="20221009", hour_str="130000",
+            trigger_met=hxmt_trigger_met_python, before=args.before, after=args.after,
+            t_years_const=t_years_const,
+            orbit_path=HXMT_ORBIT_PATH if Path(HXMT_ORBIT_PATH).exists() else None,
+        )
+        if eng_t_raw is None:
+            eng_t = None
+            print("  ERROR: engineering data missing — skipping that trace", file=sys.stderr)
+        else:
+            # Apply the same leap-second shift used for HXMT events so engineering
+            # aligns to true T0 (matches GECAM time axis).
+            eng_t = eng_t_raw + hxmt_met_correction
+            print(f"  Engineering 1-Hz frames: {len(eng_t)}", file=sys.stderr)
 
     # ── Binning ──
     bin_w = args.bin
@@ -317,19 +328,24 @@ def main():
                   f"({shutdown.sum()} bins)", file=sys.stderr)
 
     # Scale GECAM to HXMT
-    if args.scale_range:
-        pairs = list(zip(args.scale_range[::2], args.scale_range[1::2]))
-        scale_mask = np.zeros(len(x), dtype=bool)
-        for s1, s2 in pairs:
-            scale_mask |= (x >= s1) & (x < s2)
-        scale_mask &= np.isfinite(net_gecam) & np.isfinite(net_hxmt_all)
+    if args.scale_override is not None:
+        scale = args.scale_override
+        print(f"  Scale factor: {scale:.2f}  (--scale-override, no fit)",
+              file=sys.stderr)
     else:
-        scale_mask = (x >= t2) & (x < t3) & np.isfinite(net_gecam) & np.isfinite(net_hxmt_all)
-    sum_hxmt = np.nansum(net_hxmt_all[scale_mask])
-    sum_gecam = np.nansum(net_gecam[scale_mask])
-    scale = sum_hxmt / sum_gecam if sum_gecam > 0 else 1.0
+        if args.scale_range:
+            pairs = list(zip(args.scale_range[::2], args.scale_range[1::2]))
+            scale_mask = np.zeros(len(x), dtype=bool)
+            for s1, s2 in pairs:
+                scale_mask |= (x >= s1) & (x < s2)
+            scale_mask &= np.isfinite(net_gecam) & np.isfinite(net_hxmt_all)
+        else:
+            scale_mask = (x >= t2) & (x < t3) & np.isfinite(net_gecam) & np.isfinite(net_hxmt_all)
+        sum_hxmt = np.nansum(net_hxmt_all[scale_mask])
+        sum_gecam = np.nansum(net_gecam[scale_mask])
+        scale = sum_hxmt / sum_gecam if sum_gecam > 0 else 1.0
+        print(f"  Scale factor: {scale:.2f}", file=sys.stderr)
     net_gecam_scaled = net_gecam * scale
-    print(f"  Scale factor: {scale:.2f}", file=sys.stderr)
 
     # ── Plot ──
     fig, (ax_lc, ax_ratio) = plt.subplots(
@@ -375,9 +391,10 @@ def main():
     ax_lc.axhline(0, color="gray", lw=0.5, ls="--")
     if args.ylim:
         ax_lc.set_ylim(-args.ylim * 0.05, args.ylim)
-    ax_lc.set_title(f"GRB 221009A tail: HXMT/HE event-level + engineering vs GECAM-C  "
-                    f"[{bin_w}s bins, geocentric]",
-                    fontweight="bold")
+    default_title = (
+        f"GRB 221009A tail: HXMT/HE event-level + engineering vs GECAM-C  "
+        f"[{bin_w}s bins, geocentric]")
+    ax_lc.set_title(args.title or default_title, fontweight="bold")
 
     # Ratio panel — dual cross-check ratios, colour-matched to upper-panel
     # lines (C1 orange = GECAM, C2 green = engineering). Use 1%-of-peak

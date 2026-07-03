@@ -6,7 +6,7 @@ Shared by plot_hxmt_vs_gbm.py and plot_hxmt_vs_gecam.py to build the
 P/L/W/D counters, summed across 18 detectors).
 """
 from __future__ import annotations
-import json, sys
+import json, os, sys
 from pathlib import Path
 import numpy as np
 from astropy.io import fits
@@ -18,10 +18,27 @@ BOX_OFFSET = {"A": 0, "B": 6, "C": 12}
 BOX_CODE = {"A": "0766", "B": "1009", "C": "1781"}
 T_REF = np.datetime64("2017-06-22")
 
-_C25 = json.loads(Path("/tmp/per_det_25param.json").read_text())
-_A_DET = np.array(_C25["a_det"])
-_ALPHA = _C25["alpha"]; _MU_M = _C25["mu_m"]; _K_M = _C25["k_m"]
-_AMP0 = _C25["amp0"]; _MU_T = _C25["mu_t"]; _K_T = _C25["k_t"]; _C0 = _C25["C0"]
+# C25 baseline parameters. Loaded lazily (and cached) on first use so that
+# merely *importing* this module — e.g. to reuse BOX_CODE or the loaders for a
+# figure that never touches the C25 baseline — does not require the JSON to be
+# present. Path is overridable via the C25_JSON env var; regenerate the default
+# with scripts/fit_per_det_25param.py.
+_C25_PATH = os.environ.get("C25_JSON", "/tmp/per_det_25param.json")
+_C25_CACHE: dict = {}
+
+
+def _c25():
+    if not _C25_CACHE:
+        try:
+            d = json.loads(Path(_C25_PATH).read_text())
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"C25 baseline params not found at {_C25_PATH}; regenerate with "
+                "`python3 scripts/fit_per_det_25param.py` or set C25_JSON.") from e
+        _C25_CACHE.update(
+            a_det=np.array(d["a_det"]), alpha=d["alpha"], mu_m=d["mu_m"],
+            k_m=d["k_m"], amp0=d["amp0"], mu_t=d["mu_t"], k_t=d["k_t"], c0=d["C0"])
+    return _C25_CACHE
 
 
 def _sigm(x):
@@ -29,11 +46,12 @@ def _sigm(x):
 
 
 def _c25_baseline(det_global, mlat_abs, t_years):
-    A = _A_DET[det_global]
-    sm = _sigm((mlat_abs - _MU_M) / _K_M)
-    st = _sigm((t_years - _MU_T) / _K_T)
-    g = 1.0 + _ALPHA * sm
-    return A * g * (1.0 - _AMP0 * g * st) + _C0
+    p = _c25()
+    A = p["a_det"][det_global]
+    sm = _sigm((mlat_abs - p["mu_m"]) / p["k_m"])
+    st = _sigm((t_years - p["mu_t"]) / p["k_t"])
+    g = 1.0 + p["alpha"] * sm
+    return A * g * (1.0 - p["amp0"] * g * st) + p["c0"]
 
 
 def _unwrap_large(pho, large):
