@@ -43,7 +43,7 @@ impl<E: Event> Signal<E> {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct UnifiedSignal {
     pub start: DateTime<Utc>,
     pub stop: DateTime<Utc>,
