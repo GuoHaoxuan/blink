@@ -1,7 +1,7 @@
 use crate::algorithms::geo::distance;
 use crate::algorithms::geo::time_of_arrival;
 use crate::constants::LIGHTNING_ALTITUDE;
-use crate::database::get_lightnings;
+use crate::database::get_lightnings_within;
 use crate::types::Lightning;
 use blink_core::types::Position;
 use blink_core::types::TemporalState;
@@ -18,7 +18,14 @@ pub fn coincidence_prob(
 ) -> f64 {
     let time_start = position.timestamp - time_tolerance - Duration::seconds(1) - time_window / 2;
     let time_end = position.timestamp + time_tolerance + Duration::seconds(1) + time_window / 2;
-    let mut rows = get_lightnings(time_start, time_end);
+    // SQL 端先用包围盒挡掉半径外的闪电（大幅减少返回行数），再做精确 haversine 过滤。
+    let mut rows = get_lightnings_within(
+        time_start,
+        time_end,
+        position.state.latitude,
+        position.state.longitude,
+        distance_tolerance.get::<uom::si::length::kilometer>(),
+    );
     rows.retain(|lightning| {
         let dist = distance(
             position.state.latitude,
