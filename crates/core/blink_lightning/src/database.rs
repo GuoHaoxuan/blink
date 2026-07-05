@@ -17,6 +17,12 @@ fn open_connection() -> Connection {
     // Set a longer busy timeout (e.g., 30 seconds = 30000 ms)
     conn.busy_timeout(std::time::Duration::from_secs(30))
         .unwrap();
+    // 用 mmap 直接映射数据库读取，绕过 SQLite 全局页缓存（pcache1）那把互斥锁——
+    // filter 用几十个线程各开一个连接跑百万级查询时，该锁的争用是主要瓶颈
+    // （perf 显示 ~40% 时间在 pthread_mutex_lock/pcache1）。映射整库（>422GB），
+    // 实际驻留由 OS 页缓存按热度管理。
+    conn.pragma_update(None, "mmap_size", 549_755_813_888i64)
+        .unwrap();
     conn
 }
 
