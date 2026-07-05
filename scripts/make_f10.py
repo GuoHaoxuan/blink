@@ -165,8 +165,14 @@ def draw_traces(ax, x, obs, allr, all_dt, dtau, dtau_dt, gecam_s, n_fill,
 def make_figure(mode, x, obs, allr, all_dt, dtau, dtau_dt, gecam_s, n_fill,
                 out_dir, bin_w, show_eng=True, show_title=True):
     is_full = (mode == "full")
+    is_flare = (mode == "flare")
     eng_str = " + engineering" if show_eng else ""
-    xlo, xhi = (-50, 700) if is_full else (170, 310)
+    if is_full:
+        xlo, xhi = -50, 700
+    elif is_flare:
+        xlo, xhi = 440, 610
+    else:
+        xlo, xhi = 170, 310
     fig, (axc, axr) = plt.subplots(
         2, 1, figsize=(14.5, 8), sharex=True,
         gridspec_kw={"height_ratios": [3, 1], "hspace": 0.05})
@@ -181,6 +187,15 @@ def make_figure(mode, x, obs, allr, all_dt, dtau, dtau_dt, gecam_s, n_fill,
         title = (f"GRB 221009A full burst: event-level{eng_str} vs "
                  f"GECAM-C  [{bin_w} s bins, GECAM ×{GECAM_SCALE:.0f}]  "
                  f"(EXPLORATORY, not for paper)")
+    elif is_flare:
+        w = (x >= xlo) & (x < xhi)
+        top = np.nanmax([np.nanmax(np.nan_to_num(allr[w])),
+                         np.nanmax(np.nan_to_num(all_dt[w])),
+                         np.nanmax(np.nan_to_num(gecam_s[w]))])
+        axc.set_ylim(-0.05 * top, 1.15 * top)
+        axc.set_ylabel("Net count rate (evt/s)")
+        title = (f"GRB 221009A post-main-pulse flare: event-level{eng_str} vs "
+                 f"GECAM-C  [{bin_w} s bins, GECAM ×{GECAM_SCALE:.0f}]")
     else:
         axc.set_ylim(-0.2e6, 7.7e6)
         axc.set_ylabel("Net count rate (evt/s)")
@@ -251,7 +266,9 @@ def make_figure(mode, x, obs, allr, all_dt, dtau, dtau_dt, gecam_s, n_fill,
 
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    stem = "f10_221009_full_burst" if is_full else "f10_with_eng"
+    stem = {"full": "f10_221009_full_burst",
+            "flare": "f10_221009_flare",
+            "main": "f10_with_eng"}[mode]
     for ext in ("pdf", "png"):
         out = out_dir / f"{stem}.{ext}"
         fig.savefig(out, dpi=160 if ext == "png" else None, bbox_inches="tight")
@@ -262,7 +279,7 @@ def make_figure(mode, x, obs, allr, all_dt, dtau, dtau_dt, gecam_s, n_fill,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["main", "full", "both"], default="both")
+    ap.add_argument("--mode", choices=["main", "full", "flare", "both"], default="both")
     ap.add_argument("--bin", type=float, default=1.0)
     ap.add_argument("--before", type=float, default=50.0)
     ap.add_argument("--after", type=float, default=700.0)
