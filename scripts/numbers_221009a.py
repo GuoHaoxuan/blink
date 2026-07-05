@@ -9,7 +9,6 @@ Run from the blink repo root:
 import sys
 sys.path.insert(0, "scripts")
 import numpy as np
-from astropy.stats import bayesian_blocks
 
 from make_f10 import (load_hxmt, load_eng_dtau, to_grid, GECAM_SCALE)
 from plot_hxmt_vs_gecam import compute_time_offset, load_gecam_btime
@@ -62,29 +61,40 @@ emit("mainpulse_counts_dt", f"{np.nansum(vals)*BIN:.3e}", "counts",
 emit("mainpulse_nan_bins", f"{int(np.sum(~np.isfinite(vals)))}", "bins",
      "bins excluded (SAA-mode shutoff / f_live<=0.05 / no eng frame)")
 
-# ---- flare: Bayesian blocks + T90 on the reconstructed net rate ----
-fwin = (x >= 400) & (x < 700)
-xf, rf = x[fwin], allr[fwin]
-ok = np.isfinite(rf)
-bkg_sig = np.nanstd(allr[(x >= -50) & (x < -10)])
-edges_bb = bayesian_blocks(xf[ok], rf[ok], sigma=bkg_sig, fitness="measures", p0=0.001)
-rate_bb = [np.nanmean(rf[ok][(xf[ok] >= lo) & (xf[ok] < hi)])
-           for lo, hi in zip(edges_bb[:-1], edges_bb[1:])]
-above = [i for i, r in enumerate(rate_bb) if r > 3 * bkg_sig]
-bb_start, bb_end = edges_bb[above[0]], edges_bb[above[-1] + 1]
-emit("flare_bb_start", f"{bb_start:.0f}", "s", "Bayesian-blocks flare start (3sigma)")
-emit("flare_bb_end", f"{bb_end:.0f}", "s", "Bayesian-blocks flare end (3sigma)")
-sel = (xf >= bb_start) & (xf < bb_end) & ok
-cum = np.cumsum(rf[sel]) / np.sum(rf[sel])
-t_sel = xf[sel]
+# ---- flare: excess above the local decaying-tail continuum ----
+# The post-main-pulse flare sits on the slowly decaying main-pulse tail, so its
+# duration is defined relative to a LOCAL continuum anchored on the tail just
+# outside the flare bump, NOT the pre-trigger background.
+pre_a = (x >= 415) & (x < 440)
+post_a = (x >= 615) & (x < 640)
+r_pre, t_pre = np.nanmean(allr[pre_a]), np.nanmean(x[pre_a])
+r_post, t_post = np.nanmean(allr[post_a]), np.nanmean(x[post_a])
+cont = r_pre + (r_post - r_pre) * (x - t_pre) / (t_post - t_pre)
+sig_cont = np.nanstd(np.concatenate([allr[pre_a] - r_pre, allr[post_a] - r_post]))
+search = (x >= 440) & (x < 615)
+excess = np.where(search, allr - cont, np.nan)
+flare_bins = search & np.isfinite(excess) & (excess > 3 * sig_cont)
+idx_f = np.where(flare_bins)[0]
+f_start, f_end = x[idx_f[0]], x[idx_f[-1]] + BIN
+emit("flare_start", f"{f_start:.0f}", "s",
+     "first 1-s bin >3sigma above local tail continuum (415-440 & 615-640 anchors)")
+emit("flare_end", f"{f_end:.0f}", "s",
+     "last 1-s bin >3sigma above local tail continuum")
+sel = (x >= f_start) & (x < f_end) & np.isfinite(excess)
+exc, t_sel = excess[sel], x[sel]
+cexc = np.clip(exc, 0, None)
+cum = np.cumsum(cexc) / np.sum(cexc)
 t05, t95 = t_sel[np.searchsorted(cum, 0.05)], t_sel[np.searchsorted(cum, 0.95)]
-emit("flare_t90", f"{t95 - t05:.0f}", "s", "5%..95% cumulative net counts inside BB bounds")
+emit("flare_t90", f"{t95 - t05:.0f}", "s", "5%..95% cumulative continuum-subtracted counts")
 emit("flare_t90_start", f"{t05:.1f}", "s", "")
 emit("flare_t90_end", f"{t95:.1f}", "s", "")
-emit("flare_peak_time", f"{t_sel[np.nanargmax(rf[sel])]:.0f}", "s", "brightest 1-s bin")
-fill_mask = (x >= bb_start) & (x < bb_end)
+emit("flare_peak_time", f"{t_sel[np.nanargmax(exc)]:.0f}", "s",
+     "brightest continuum-subtracted 1-s bin")
+emit("flare_excess_counts", f"{np.nansum(exc)*BIN:.2e}", "counts",
+     "continuum-subtracted net counts in the flare interval")
+fill_mask = (x >= f_start) & (x < f_end)
 emit("flare_recovered_events", f"{np.nansum((allr - obs)[fill_mask])*BIN:.2e}", "counts",
-     "reconstructed-minus-observed net events across flare")
+     "reconstructed-minus-observed events across the flare interval")
 
 # ---- ratio stats (same significance cut as make_f10 main mode) ----
 def robust(rr):
