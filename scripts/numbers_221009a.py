@@ -65,36 +65,42 @@ emit("mainpulse_nan_bins", f"{int(np.sum(~np.isfinite(vals)))}", "bins",
 # The post-main-pulse flare sits on the slowly decaying main-pulse tail, so its
 # duration is defined relative to a LOCAL continuum anchored on the tail just
 # outside the flare bump, NOT the pre-trigger background.
-pre_a = (x >= 415) & (x < 440)
+pre_a = (x >= 400) & (x < 425)
 post_a = (x >= 615) & (x < 640)
 r_pre, t_pre = np.nanmean(allr[pre_a]), np.nanmean(x[pre_a])
 r_post, t_post = np.nanmean(allr[post_a]), np.nanmean(x[post_a])
 cont = r_pre + (r_post - r_pre) * (x - t_pre) / (t_post - t_pre)
 sig_cont = np.nanstd(np.concatenate([allr[pre_a] - r_pre, allr[post_a] - r_post]))
-search = (x >= 440) & (x < 615)
+search = (x >= 425) & (x < 610)
 excess = np.where(search, allr - cont, np.nan)
 flare_bins = search & np.isfinite(excess) & (excess > 3 * sig_cont)
 idx_f = np.where(flare_bins)[0]
-f_start, f_end = x[idx_f[0]], x[idx_f[-1]] + BIN
-emit("flare_start", f"{f_start:.0f}", "s",
-     "first 1-s bin >3sigma above local tail continuum (415-440 & 615-640 anchors)")
-emit("flare_end", f"{f_end:.0f}", "s",
-     "last 1-s bin >3sigma above local tail continuum")
-sel = (x >= f_start) & (x < f_end) & np.isfinite(excess)
-exc, t_sel = excess[sel], x[sel]
-cexc = np.clip(exc, 0, None)
-cum = np.cumsum(cexc) / np.sum(cexc)
-t05, t95 = t_sel[np.searchsorted(cum, 0.05)], t_sel[np.searchsorted(cum, 0.95)]
-emit("flare_t90", f"{t95 - t05:.0f}", "s", "5%..95% cumulative continuum-subtracted counts")
-emit("flare_t90_start", f"{t05:.1f}", "s", "")
-emit("flare_t90_end", f"{t95:.1f}", "s", "")
-emit("flare_peak_time", f"{t_sel[np.nanargmax(exc)]:.0f}", "s",
-     "brightest continuum-subtracted 1-s bin")
-emit("flare_excess_counts", f"{np.nansum(exc)*BIN:.2e}", "counts",
-     "continuum-subtracted net counts in the flare interval")
-fill_mask = (x >= f_start) & (x < f_end)
-emit("flare_recovered_events", f"{np.nansum((allr - obs)[fill_mask])*BIN:.2e}", "counts",
-     "reconstructed-minus-observed events across the flare interval")
+if len(idx_f) == 0:
+    for _k in ("flare_start", "flare_end", "flare_t90", "flare_t90_start",
+               "flare_t90_end", "flare_peak_time", "flare_excess_counts",
+               "flare_recovered_events"):
+        emit(_k, "nan", "", "no 1-s bin exceeded 3sigma above local tail continuum")
+else:
+    f_start, f_end = x[idx_f[0]], x[idx_f[-1]] + BIN
+    emit("flare_start", f"{f_start:.0f}", "s",
+         "first 1-s bin >3sigma above local tail continuum (400-425 & 615-640 anchors)")
+    emit("flare_end", f"{f_end:.0f}", "s",
+         "last 1-s bin >3sigma above local tail continuum")
+    sel = (x >= f_start) & (x < f_end) & np.isfinite(excess)
+    exc, t_sel = excess[sel], x[sel]
+    cexc = np.clip(exc, 0, None)
+    cum = np.cumsum(cexc) / np.sum(cexc)
+    t05, t95 = t_sel[np.searchsorted(cum, 0.05)], t_sel[np.searchsorted(cum, 0.95)]
+    emit("flare_t90", f"{t95 - t05:.0f}", "s", "5%..95% cumulative continuum-subtracted counts")
+    emit("flare_t90_start", f"{t05:.1f}", "s", "")
+    emit("flare_t90_end", f"{t95:.1f}", "s", "")
+    emit("flare_peak_time", f"{t_sel[np.nanargmax(exc)]:.0f}", "s",
+         "brightest continuum-subtracted 1-s bin")
+    emit("flare_excess_counts", f"{np.nansum(exc)*BIN:.2e}", "counts",
+         "continuum-subtracted net counts in the flare interval")
+    fill_mask = (x >= f_start) & (x < f_end)
+    emit("flare_recovered_events", f"{np.nansum((allr - obs)[fill_mask])*BIN:.2e}", "counts",
+         "reconstructed-minus-observed events across the flare interval")
 
 # ---- ratio stats (same significance cut as make_f10 main mode) ----
 def robust(rr):
@@ -121,6 +127,8 @@ for win_tag, (wlo, whi) in (("main", (170, 310)), ("flare", (440, 610))):
         emit(f"{tag}_sig", f"{s:.2f}" if st else "nan", "", "IQR-derived robust sigma")
         emit(f"{tag}_n", f"{n}", "bins", "significant 1-s bins (GECAM net > 50 cts/s)")
 
-print("metric,value,unit,note")
+import csv
+w = csv.writer(sys.stdout)
+w.writerow(["metric", "value", "unit", "note"])
 for r in rows:
-    print(",".join(str(c) for c in r))
+    w.writerow([str(c) for c in r])
