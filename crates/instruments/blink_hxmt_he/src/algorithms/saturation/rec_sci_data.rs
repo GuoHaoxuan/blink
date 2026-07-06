@@ -10,17 +10,6 @@ use blink_core::types::MissionElapsedTime;
 
 const PTIME_MOD: u64 = 1 << 19; // 524288
 
-/// 相邻有效 SEC 锚点间隔（秒）的重建上限。
-///
-/// 正常数据每秒一个有效 SEC，相邻间隔 ds≈1；偶尔丢一个 SEC 时 ds=2。ds 达到
-/// 数十~数千秒只出现在数据质量异常的小时（ghost SEC 泛滥或 SEC 大段缺失）。
-/// Δstime>1 分支为每个候选事件生成 ds 个 wrap 候选，`entries` 规模 O(事件数×ds)，
-/// 一旦 ds 上千即膨胀到上百 GB。跨数秒 SEC 大间隔实为数据中断（非 FIFO reset，
-/// 后者按定义 ≤1s），其间事件对饱和检测无用、精确重建也不可靠，直接留 NaN。
-/// 取 10s：远高于正常 ds，不改变任何真实重建结果，同时把最坏内存钳在
-/// O(事件数×10)。可用环境变量 MAX_SEC_GAP 覆盖（诊断用）。
-const DEFAULT_MAX_SEC_GAP: i64 = 10;
-
 /// 1B→1K 时间校正 (秒)。在 2026-02-26T10 一小时 Box A 重叠窗口
 /// （MET 446724004..446727603，3599 s, 9.52M 匹配事件）逐事例匹配：
 /// 中位差 +0.0596μs（恰好 1 ulp of double MET at this magnitude），
@@ -379,12 +368,6 @@ pub fn reconstruct_with_wrap_tracking_labeled(
         result[sec.pkt_idx][sec.evt_idx] = sec.met + MET_CORRECTION;
     }
 
-    // 相邻 SEC 对的最大重建间隔：默认 DEFAULT_MAX_SEC_GAP，可用环境变量覆盖（诊断用）。
-    let max_gap: i64 = std::env::var("MAX_SEC_GAP")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_MAX_SEC_GAP);
-
     // 对每对相邻有效 SEC
     for w in valid_indices.windows(2) {
         let sec1 = &all_secs[w[0]];
@@ -395,8 +378,11 @@ pub fn reconstruct_with_wrap_tracking_labeled(
             continue;
         }
 
-        // 跨 max_gap 秒以上的 SEC 大间隔（数据中断，非 FIFO reset）跳过精确重建，
-        // 其间事件留 NaN，避免 Δstime>1 分支 O(事件数×ds) 的内存膨胀。
+        // 环境变量控制最大 gap：MAX_SEC_GAP=1 只处理 1s 对
+        let max_gap: i64 = std::env::var("MAX_SEC_GAP")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(i64::MAX);
         if ds > max_gap {
             continue;
         }
