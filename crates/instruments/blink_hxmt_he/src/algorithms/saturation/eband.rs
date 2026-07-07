@@ -73,6 +73,119 @@ pub fn lowdisc_ranks(n: usize) -> Vec<usize> {
     ranks
 }
 
+use super::detect::{BoxReconstructionData, ReconstructedGap, UnreliableInterval};
+
+/// gap-fill filler 的能量恢复结果：channels 与对应 gap 的
+/// `ReconstructedGap.filled_events` 一一对应、同序。channel 为占位分位值
+/// （取自参考箱 in-gap 分布），只支持光变，不支持逐事例谱拟合。
+#[derive(Debug, Clone)]
+pub struct GapFillChannels {
+    pub gap_idx: usize,
+    pub channels: Vec<u16>,
+}
+
+/// fallback 标定窗半宽：无任何参考 in-gap 数据时退化用 target 邻窗谱（次优，M3）。
+const CALIB_MARGIN: f64 = 0.5;
+/// 谱子窗目标宽度：真实 ~30ms reset gap → 1 窗；长 gap 细分以承载窗间谱演化。
+const WIN_TARGET: f64 = 0.05;
+
+fn in_unreliable(t: f64, intervals: &[UnreliableInterval]) -> bool {
+    intervals.iter().any(|iv| t >= iv.start && t <= iv.stop)
+}
+
+/// 按 met 排序的 (met, channel) 对，剔除 NaN 时间、SEC 槽、该 box 的
+/// unreliable 区间。
+fn sorted_pairs(b: &BoxReconstructionData) -> Vec<(f64, u16)> {
+    let mut v: Vec<(f64, u16)> = b
+        .events
+        .iter()
+        .zip(b.channels.iter())
+        .filter(|&(&t, &c)| !t.is_nan() && c != CHANNEL_SEC && !in_unreliable(t, &b.unreliable))
+        .map(|(&t, &c)| (t, c))
+        .collect();
+    v.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    v
+}
+
+/// [lo, hi) 内的 channel（pairs 已按 met 排序）。
+fn channels_in(pairs: &[(f64, u16)], lo: f64, hi: f64) -> Vec<u16> {
+    let a = pairs.partition_point(|&(t, _)| t < lo);
+    let b = pairs.partition_point(|&(t, _)| t < hi);
+    pairs[a..b].iter().map(|&(_, c)| c).collect()
+}
+
+/// 给 `reconstruct_gaps` 的 filler 事例补占位 channel（band-free 后处理）。
+/// 不改变 filler 的数量与时刻——只补 channel。
+///
+/// 每 gap：谱形状取自参考箱 in-gap 分布（尺度无关，无需 k_tot）；按时间子窗
+/// （`WIN_TARGET`）取该窗参考 channel 的等间隔分位，用位反转排列撒到时间有序的
+/// filler 槽上（channel 与窗内时间去相关）。窗内无参考 → 退化到整 gap 参考池
+/// → 再退化到 target 邻标定窗（次优）。全程确定性，无 RNG。
+pub fn assign_gap_fill_channels(
+    target: &BoxReconstructionData,
+    references: &[&BoxReconstructionData],
+    gap_results: &[ReconstructedGap],
+) -> Vec<GapFillChannels> {
+    let ref_pairs: Vec<Vec<(f64, u16)>> = references.iter().map(|r| sorted_pairs(r)).collect();
+    let tgt_pairs = sorted_pairs(target);
+
+    let mut out = Vec::with_capacity(gap_results.len());
+    for gr in gap_results {
+        let gap = &target.gaps[gr.gap_idx];
+        let (g_lo, g_hi) = (gap.start_met, gap.stop_met);
+        let filled = &gr.filled_events;
+        let n = filled.len();
+        if n == 0 {
+            out.push(GapFillChannels { gap_idx: gr.gap_idx, channels: Vec::new() });
+            continue;
+        }
+
+        // 一级 fallback：整 gap 参考池
+        let mut whole_gap: Vec<u16> =
+            ref_pairs.iter().flat_map(|p| channels_in(p, g_lo, g_hi)).collect();
+        whole_gap.sort_unstable();
+        // 二级 fallback：target 邻标定窗（无任何参考 in-gap 时）
+        let mut calib: Vec<u16> = channels_in(&tgt_pairs, g_lo - CALIB_MARGIN, g_lo);
+        calib.extend(channels_in(&tgt_pairs, g_hi, g_hi + CALIB_MARGIN));
+        calib.sort_unstable();
+
+        let d = g_hi - g_lo;
+        let n_win = ((d / WIN_TARGET).round() as usize).max(1);
+        let mut channels = vec![0u16; n];
+
+        for wi in 0..n_win {
+            let w_lo = g_lo + d * wi as f64 / n_win as f64;
+            let w_hi = if wi + 1 == n_win {
+                g_hi
+            } else {
+                g_lo + d * (wi + 1) as f64 / n_win as f64
+            };
+            let s = filled.partition_point(|&t| t < w_lo);
+            let e = if wi + 1 == n_win { n } else { filled.partition_point(|&t| t < w_hi) };
+            let n_w = e - s;
+            if n_w == 0 {
+                continue;
+            }
+            let mut src: Vec<u16> =
+                ref_pairs.iter().flat_map(|p| channels_in(p, w_lo, w_hi)).collect();
+            src.sort_unstable();
+            let spectrum: &[u16] = if !src.is_empty() {
+                &src
+            } else if !whole_gap.is_empty() {
+                &whole_gap
+            } else {
+                &calib
+            };
+            let ranks = lowdisc_ranks(n_w);
+            for k in 0..n_w {
+                channels[s + k] = quantile_value(spectrum, ranks[k], n_w);
+            }
+        }
+        out.push(GapFillChannels { gap_idx: gr.gap_idx, channels });
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,5 +251,117 @@ mod tests {
         let first_half = &r[..4];
         assert!(first_half.iter().any(|&x| x < 4), "前半无低秩");
         assert!(first_half.iter().any(|&x| x >= 4), "前半无高秩");
+    }
+
+    // ---- assign_gap_fill_channels (band-free 后处理) ----
+    use crate::algorithms::saturation::detect::{SaturationInterval, SaturationType};
+
+    fn si(lo: f64, hi: f64) -> SaturationInterval {
+        SaturationInterval {
+            start_met: lo,
+            stop_met: hi,
+            gap_seconds: hi - lo,
+            prev_pkt_idx: 0,
+            next_pkt_idx: 0,
+            saturation_type: SaturationType::FifoReset,
+        }
+    }
+
+    fn make_box(
+        events: Vec<f64>,
+        channels: Vec<u16>,
+        gaps: Vec<SaturationInterval>,
+    ) -> BoxReconstructionData {
+        BoxReconstructionData {
+            events,
+            channels,
+            gaps,
+            packets: Vec::new(),
+            packet_events: Vec::new(),
+            unreliable: Vec::new(),
+        }
+    }
+
+    fn gap0(filled: Vec<f64>) -> ReconstructedGap {
+        let n = filled.len();
+        ReconstructedGap { gap_idx: 0, filled_events: filled, n_lost: n, has_cross_ref: true }
+    }
+
+    /// [lo, hi) 内均匀铺 n 个等间隔时间戳（升序）。
+    fn spread(lo: f64, hi: f64, n: usize) -> Vec<f64> {
+        (0..n).map(|i| lo + (i as f64 + 0.5) * (hi - lo) / n as f64).collect()
+    }
+
+    #[test]
+    fn constant_reference_spectrum_gives_constant_channel() {
+        let target = make_box(vec![], vec![], vec![si(1.9, 2.1)]);
+        let reference = make_box(spread(1.9, 2.1, 40), vec![100u16; 40], vec![]);
+        let out = assign_gap_fill_channels(&target, &[&reference], &[gap0(spread(1.9, 2.1, 5))]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].channels.len(), 5);
+        assert!(out[0].channels.iter().all(|&c| c == 100), "{:?}", out[0].channels);
+    }
+
+    #[test]
+    fn shape_from_reference_ingap_not_target_calib() {
+        // target 邻标定窗全软(50)；参考箱 in-gap 全硬(200) → 应取 200
+        let mut te = spread(1.4, 1.9, 40);
+        te.extend(spread(2.1, 2.6, 40));
+        let target = make_box(te, vec![50u16; 80], vec![si(1.9, 2.1)]);
+        let reference = make_box(spread(1.9, 2.1, 40), vec![200u16; 40], vec![]);
+        let out = assign_gap_fill_channels(&target, &[&reference], &[gap0(spread(1.9, 2.1, 8))]);
+        assert!(
+            out[0].channels.iter().all(|&c| c == 200),
+            "应随参考 in-gap(200): {:?}",
+            out[0].channels
+        );
+    }
+
+    #[test]
+    fn no_reference_falls_back_to_target_calib() {
+        let mut te = spread(1.4, 1.9, 40);
+        te.extend(spread(2.1, 2.6, 40));
+        let target = make_box(te, vec![77u16; 80], vec![si(1.9, 2.1)]);
+        let out = assign_gap_fill_channels(&target, &[], &[gap0(spread(1.9, 2.1, 5))]);
+        assert!(
+            out[0].channels.iter().all(|&c| c == 77),
+            "应退化到标定窗(77): {:?}",
+            out[0].channels
+        );
+    }
+
+    #[test]
+    fn single_window_uses_bit_reversal_order() {
+        // D=0.04 → 1 窗；参考 8 个不同 channel
+        let reference = make_box(
+            spread(1.98, 2.02, 8),
+            vec![20u16, 40, 60, 80, 100, 120, 140, 160],
+            vec![],
+        );
+        let target = make_box(vec![], vec![], vec![si(1.98, 2.02)]);
+        let out = assign_gap_fill_channels(&target, &[&reference], &[gap0(spread(1.98, 2.02, 8))]);
+        // quantile_value(src, ell, 8) == src[ell]；槽 k 取秩 lowdisc_ranks(8)=[0,4,2,6,1,5,3,7]
+        assert_eq!(out[0].channels, vec![20, 100, 60, 140, 40, 120, 80, 160]);
+        assert!(
+            out[0].channels.windows(2).any(|w| w[0] > w[1]),
+            "不应按时间单调递增（位反转去相关）"
+        );
+    }
+
+    #[test]
+    fn assignment_is_deterministic() {
+        let rc: Vec<u16> = (0..40).map(|i| 20 + i as u16 * 6).collect();
+        let reference = make_box(spread(1.9, 2.1, 40), rc, vec![]);
+        let target = make_box(vec![], vec![], vec![si(1.9, 2.1)]);
+        let a = assign_gap_fill_channels(&target, &[&reference], &[gap0(spread(1.9, 2.1, 17))]);
+        let b = assign_gap_fill_channels(&target, &[&reference], &[gap0(spread(1.9, 2.1, 17))]);
+        assert_eq!(a[0].channels, b[0].channels);
+    }
+
+    #[test]
+    fn empty_gap_yields_empty_channels() {
+        let target = make_box(vec![], vec![], vec![si(1.9, 2.1)]);
+        let out = assign_gap_fill_channels(&target, &[], &[gap0(vec![])]);
+        assert!(out[0].channels.is_empty());
     }
 }

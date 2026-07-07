@@ -4,7 +4,10 @@ pub mod eband;
 pub mod rec_sci_data;
 
 pub use crc_check::crc_check;
-pub use eband::{lowdisc_ranks, quantile_value, unwrap_channel, wrap_channel, CHANNEL_SEC};
+pub use eband::{
+    assign_gap_fill_channels, lowdisc_ranks, quantile_value, unwrap_channel, wrap_channel,
+    GapFillChannels, CHANNEL_SEC,
+};
 pub use detect::{
     detect_fifo_reset_intervals, detect_unreliable_intervals,
     extract_packet_infos, reconstruct_gaps,
