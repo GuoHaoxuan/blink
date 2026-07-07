@@ -1,6 +1,6 @@
 use blink_core::types::{TemporalState, UnifiedSignal};
 use blink_hxmt_he::types::HxmtHe;
-use blink_lightning::{algorithms::coincidence_prob, database::get_lightnings_within};
+use blink_lightning::{algorithms::coincidence_prob, database::get_lightnings};
 use blink_load::load_all;
 // use blink_svom_grm::types::SvomGrm;
 use chrono::TimeDelta;
@@ -28,12 +28,9 @@ fn associate(signal: &UnifiedSignal) -> Tgf {
         timestamp: peak_time,
         state: signal.position.clone(),
     };
-    let lightnings = get_lightnings_within(
+    let lightnings = get_lightnings(
         peak_time - TimeDelta::seconds(1),
         peak_time + TimeDelta::seconds(1),
-        signal.position.latitude,
-        signal.position.longitude,
-        800.0,
     )
     .into_iter()
     .filter(|lightning| {
