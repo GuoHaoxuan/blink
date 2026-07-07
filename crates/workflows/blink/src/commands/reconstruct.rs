@@ -1,8 +1,7 @@
 use blink_hxmt_he::algorithms::saturation::{
-    detect_fifo_reset_intervals, detect_unreliable_intervals, extract_packet_infos,
-    reconstruct_gaps, reconstruct_met_channels, reconstruct_met_times,
-    reconstruct_with_wrap_tracking,
-    BoxReconstructionData,
+    assign_gap_fill_channels, detect_fifo_reset_intervals, detect_unreliable_intervals,
+    extract_packet_infos, reconstruct_gaps, reconstruct_met_channels, reconstruct_met_times,
+    reconstruct_with_wrap_tracking, unwrap_channel, BoxReconstructionData, CHANNEL_SEC,
 };
 use blink_hxmt_he::io::level_1b::SciFile;
 
@@ -47,13 +46,13 @@ pub fn cmd_reconstruct(
         ));
     }
 
-    let original_events: Vec<(String, Vec<f64>)> = box_data
+    let original_events: Vec<(String, Vec<f64>, Vec<u16>)> = box_data
         .iter()
-        .map(|(name, data)| (name.clone(), data.events.clone()))
+        .map(|(name, data)| (name.clone(), data.events.clone(), data.channels.clone()))
         .collect();
 
     eprintln!("Reconstructing (FIFO reset gaps)...");
-    let mut all_filled: Vec<(String, Vec<f64>)> = Vec::new();
+    let mut all_filled: Vec<(String, Vec<(f64, u16)>)> = Vec::new();
 
     for i in 0..box_data.len() {
         let refs: Vec<&BoxReconstructionData> = box_data
@@ -66,11 +65,15 @@ pub fn cmd_reconstruct(
         let gap_results = reconstruct_gaps(&box_data[i].1, &refs);
         let n_gap_filled: usize = gap_results.iter().map(|r| r.n_lost).sum();
         let n_gap_ref = gap_results.iter().filter(|r| r.has_cross_ref).count();
-        let mut gap_events: Vec<f64> = gap_results
-            .into_iter()
-            .flat_map(|r| r.filled_events)
+        let banded = assign_gap_fill_channels(&box_data[i].1, &refs, &gap_results);
+        let mut gap_events: Vec<(f64, u16)> = gap_results
+            .iter()
+            .zip(banded.iter())
+            .flat_map(|(r, b)| {
+                r.filled_events.iter().copied().zip(b.channels.iter().copied())
+            })
             .collect();
-        gap_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        gap_events.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
         eprintln!(
             "  Box {}: gaps={} ({} evt, {} ref)",
@@ -82,11 +85,11 @@ pub fn cmd_reconstruct(
 
     println!("box,type,met,channel,pkt_idx,evt_idx");
     for (box_name, _data) in &box_data {
-        let obs_events = original_events
+        let (obs_events, obs_channels) = original_events
             .iter()
-            .find(|(n, _)| n == box_name)
-            .map(|(_, e)| e.as_slice())
-            .unwrap_or(&[]);
+            .find(|(n, _, _)| n == box_name)
+            .map(|(_, e, c)| (e.as_slice(), c.as_slice()))
+            .unwrap_or((&[], &[]));
         let gap_events = all_filled
             .iter()
             .find(|(n, _)| n == box_name)
@@ -102,15 +105,17 @@ pub fn cmd_reconstruct(
         let mut n_obs = 0u64;
         let mut n_gap = 0u64;
 
-        for &t in obs_events {
+        for (idx, &t) in obs_events.iter().enumerate() {
             if t >= met_min && t <= met_max {
-                println!("{},EVT,{:.6},0,-1,-1", box_name, t);
+                let ch = obs_channels[idx];
+                let raw = if ch == CHANNEL_SEC { 0 } else { unwrap_channel(ch) };
+                println!("{},EVT,{:.6},{},-1,-1", box_name, t, raw);
                 n_obs += 1;
             }
         }
-        for &t in gap_events {
+        for &(t, ch) in gap_events {
             if t >= met_min && t <= met_max {
-                println!("{},FILL_GAP,{:.6},0,-1,-1", box_name, t);
+                println!("{},FILL_GAP,{:.6},{},-1,-1", box_name, t, unwrap_channel(ch));
                 n_gap += 1;
             }
         }

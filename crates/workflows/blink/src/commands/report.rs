@@ -1,7 +1,7 @@
 use blink_hxmt_he::algorithms::saturation::{
-    detect_fifo_reset_intervals, detect_unreliable_intervals, extract_packet_infos,
-    reconstruct_gaps, reconstruct_met_channels, reconstruct_met_times,
-    reconstruct_with_wrap_tracking, solve_events, BoxReconstructionData,
+    assign_gap_fill_channels, detect_fifo_reset_intervals, detect_unreliable_intervals,
+    extract_packet_infos, reconstruct_gaps, reconstruct_met_channels, reconstruct_met_times,
+    reconstruct_with_wrap_tracking, solve_events, unwrap_channel, BoxReconstructionData,
 };
 use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::io::level_1b::{get_eng_filenames, get_sci_filenames};
@@ -72,7 +72,7 @@ pub fn cmd_report(args: &ReportArgs) -> std::io::Result<()> {
 
     // ── Cross-box gap-fill ──
     eprintln!("Reconstructing (FIFO reset gaps)...");
-    let mut filled_per_box: Vec<(String, Vec<f64>, usize, usize)> = Vec::new();
+    let mut filled_per_box: Vec<(String, Vec<(f64, u16)>, usize, usize)> = Vec::new();
     for i in 0..box_data.len() {
         let refs: Vec<&BoxReconstructionData> = box_data
             .iter()
@@ -83,11 +83,15 @@ pub fn cmd_report(args: &ReportArgs) -> std::io::Result<()> {
         let gap_results = reconstruct_gaps(&box_data[i].1, &refs);
         let n_lost_total: usize = gap_results.iter().map(|r| r.n_lost).sum();
         let n_ref = gap_results.iter().filter(|r| r.has_cross_ref).count();
-        let mut gap_events: Vec<f64> = gap_results
-            .into_iter()
-            .flat_map(|r| r.filled_events)
+        let banded = assign_gap_fill_channels(&box_data[i].1, &refs, &gap_results);
+        let mut gap_events: Vec<(f64, u16)> = gap_results
+            .iter()
+            .zip(banded.iter())
+            .flat_map(|(r, b)| {
+                r.filled_events.iter().copied().zip(b.channels.iter().copied())
+            })
             .collect();
-        gap_events.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        gap_events.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
         filled_per_box.push((box_data[i].0.clone(), gap_events, n_lost_total, n_ref));
     }
 
@@ -133,11 +137,11 @@ pub fn cmd_report(args: &ReportArgs) -> std::io::Result<()> {
         // events_rec.csv (gap-filled reconstructed events in window)
         let rec_path = box_dir.join("events_rec.csv");
         let mut w = BufWriter::new(File::create(&rec_path)?);
-        writeln!(w, "met")?;
+        writeln!(w, "met,channel")?;
         let mut n_rec = 0u64;
-        for &t in &filled_per_box[i].1 {
+        for &(t, ch) in &filled_per_box[i].1 {
             if t >= met_min && t <= met_max {
-                writeln!(w, "{:.6}", t)?;
+                writeln!(w, "{:.6},{}", t, unwrap_channel(ch))?;
                 n_rec += 1;
             }
         }
