@@ -1,8 +1,10 @@
 pub mod crc_check;
 pub mod detect;
+pub mod eband;
 pub mod rec_sci_data;
 
 pub use crc_check::crc_check;
+pub use eband::{lowdisc_ranks, quantile_value, unwrap_channel, wrap_channel};
 pub use detect::{
     detect_fifo_reset_intervals, detect_unreliable_intervals,
     extract_packet_infos, reconstruct_gaps,
