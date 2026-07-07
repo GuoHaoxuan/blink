@@ -202,6 +202,8 @@ pub struct BoxReconstructionData {
     pub events: Vec<f64>,
     /// 与 events 一一对应的 wrapped channel（SEC 槽 = CHANNEL_SEC）
     pub channels: Vec<u16>,
+    /// 与 events 一一对应的脉宽 pulinfo（NaI/CsI 甄别；SEC 槽 = 0）
+    pub pulse_widths: Vec<u8>,
     /// FIFO reset 区间
     pub gaps: Vec<SaturationInterval>,
     /// 包信息

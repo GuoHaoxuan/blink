@@ -1,7 +1,8 @@
 use blink_hxmt_he::algorithms::saturation::{
     assign_gap_fill_channels, detect_fifo_reset_intervals, detect_unreliable_intervals,
-    extract_packet_infos, reconstruct_gaps, reconstruct_met_channels, reconstruct_met_times,
-    reconstruct_with_wrap_tracking, unwrap_channel, BoxReconstructionData, CHANNEL_SEC,
+    extract_packet_infos, reconstruct_gaps, reconstruct_met_channels,
+    reconstruct_met_pulse_widths, reconstruct_met_times, reconstruct_with_wrap_tracking,
+    unwrap_channel, BoxReconstructionData, CHANNEL_SEC,
 };
 use blink_hxmt_he::io::level_1b::SciFile;
 
@@ -20,10 +21,16 @@ pub fn cmd_reconstruct(
     for (box_name, sci, offset) in boxes {
         let events = reconstruct_met_times(sci, *offset);
         let channels = reconstruct_met_channels(sci, *offset);
+        let pulse_widths = reconstruct_met_pulse_widths(sci, *offset);
         assert_eq!(
             events.len(),
             channels.len(),
             "events/channels misaligned for box {box_name}"
+        );
+        assert_eq!(
+            events.len(),
+            pulse_widths.len(),
+            "events/pulse_widths misaligned for box {box_name}"
         );
         let gaps = detect_fifo_reset_intervals(sci, *offset);
         let packets = extract_packet_infos(sci, *offset);
@@ -42,7 +49,9 @@ pub fn cmd_reconstruct(
         );
         box_data.push((
             box_name.clone(),
-            BoxReconstructionData { events, channels, gaps, packets, packet_events, unreliable },
+            BoxReconstructionData {
+                events, channels, pulse_widths, gaps, packets, packet_events, unreliable,
+            },
         ));
     }
 

@@ -18,6 +18,7 @@ pub use detect::{
 pub use rec_sci_data::dump_ptime_utc;
 pub use rec_sci_data::extract_second_event_times;
 pub use rec_sci_data::reconstruct_met_channels;
+pub use rec_sci_data::reconstruct_met_pulse_widths;
 pub use rec_sci_data::reconstruct_met_times;
 pub use rec_sci_data::reconstruct_with_wrap_tracking;
 pub use rec_sci_data::reconstruct_with_wrap_tracking_labeled;

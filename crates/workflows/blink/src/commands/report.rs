@@ -1,7 +1,8 @@
 use blink_hxmt_he::algorithms::saturation::{
     assign_gap_fill_channels, detect_fifo_reset_intervals, detect_unreliable_intervals,
-    extract_packet_infos, reconstruct_gaps, reconstruct_met_channels, reconstruct_met_times,
-    reconstruct_with_wrap_tracking, solve_events, unwrap_channel, BoxReconstructionData,
+    extract_packet_infos, reconstruct_gaps, reconstruct_met_channels,
+    reconstruct_met_pulse_widths, reconstruct_met_times, reconstruct_with_wrap_tracking,
+    solve_events, unwrap_channel, BoxReconstructionData,
 };
 use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::io::level_1b::{get_eng_filenames, get_sci_filenames};
@@ -44,10 +45,16 @@ pub fn cmd_report(args: &ReportArgs) -> std::io::Result<()> {
     for (box_name, sci, offset) in &boxes {
         let events = reconstruct_met_times(sci, *offset);
         let channels = reconstruct_met_channels(sci, *offset);
+        let pulse_widths = reconstruct_met_pulse_widths(sci, *offset);
         assert_eq!(
             events.len(),
             channels.len(),
             "events/channels misaligned for box {box_name}"
+        );
+        assert_eq!(
+            events.len(),
+            pulse_widths.len(),
+            "events/pulse_widths misaligned for box {box_name}"
         );
         let gaps = detect_fifo_reset_intervals(sci, *offset);
         let packets = extract_packet_infos(sci, *offset);
@@ -66,7 +73,9 @@ pub fn cmd_report(args: &ReportArgs) -> std::io::Result<()> {
         );
         box_data.push((
             box_name.clone(),
-            BoxReconstructionData { events, channels, gaps, packets, packet_events, unreliable },
+            BoxReconstructionData {
+                events, channels, pulse_widths, gaps, packets, packet_events, unreliable,
+            },
         ));
     }
 
@@ -121,14 +130,14 @@ pub fn cmd_report(args: &ReportArgs) -> std::io::Result<()> {
         // events_obs.csv (observed 1B events in window, full detail incl. det_id)
         let obs_path = box_dir.join("events_obs.csv");
         let mut w = BufWriter::new(File::create(&obs_path)?);
-        writeln!(w, "met,channel,det_id,pkt_idx,evt_idx,is_second")?;
+        writeln!(w, "met,channel,det_id,pkt_idx,evt_idx,is_second,pulse_width")?;
         let detailed = solve_events(sci, *offset, Some(met_min), Some(met_max));
         let mut n_obs = 0u64;
         for e in &detailed {
             writeln!(
-                w, "{:.6},{},{},{},{},{}",
+                w, "{:.6},{},{},{},{},{},{}",
                 e.met, e.channel, e.det_id, e.pkt_index, e.evt_index,
-                if e.is_second { 1 } else { 0 },
+                if e.is_second { 1 } else { 0 }, e.raw_bytes[1],
             )?;
             if !e.is_second { n_obs += 1; }
         }

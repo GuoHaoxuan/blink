@@ -272,9 +272,11 @@ mod tests {
         channels: Vec<u16>,
         gaps: Vec<SaturationInterval>,
     ) -> BoxReconstructionData {
+        let pulse_widths = vec![60u8; channels.len()];
         BoxReconstructionData {
             events,
             channels,
+            pulse_widths,
             gaps,
             packets: Vec::new(),
             packet_events: Vec::new(),

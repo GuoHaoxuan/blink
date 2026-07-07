@@ -730,6 +730,38 @@ pub fn reconstruct_met_channels(sci_data: &SciFile, offset: f64) -> Vec<u16> {
     channels
 }
 
+/// 与 reconstruct_met_times 逐元素对齐的脉宽（pulinfo = byte[1]）序列。
+///
+/// pulinfo 是 NaI/CsI 甄别量（实际脉宽 = pulinfo/48 μs；NaI X 射线窗
+/// [54,70]，来自 HXMT handbook）。走法与 reconstruct_met_channels 完全一致，
+/// 保证与时间/channel 一一对应。SEC 槽记为 0。
+pub fn reconstruct_met_pulse_widths(sci_data: &SciFile, offset: f64) -> Vec<u8> {
+    let packet_times = reconstruct_with_wrap_tracking(sci_data, offset);
+    let mut widths = Vec::new();
+    for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
+        let n = packet_times[pkt_idx].len();
+        let mut slot = 0usize;
+        for event in parse_events(ccsds) {
+            match event {
+                Pack::Event { raw_bytes, .. } => {
+                    if slot < n {
+                        widths.push(raw_bytes[1]);
+                        slot += 1;
+                    }
+                }
+                Pack::Second { .. } => {
+                    if slot < n {
+                        widths.push(0u8);
+                        slot += 1;
+                    }
+                }
+                Pack::Error => {}
+            }
+        }
+    }
+    widths
+}
+
 /// 单个事例的详细信息（用于 dump-events 调试）。
 pub struct EventDetail {
     pub pkt_index: usize,
