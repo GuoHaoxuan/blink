@@ -82,6 +82,8 @@ use super::detect::{BoxReconstructionData, ReconstructedGap, UnreliableInterval}
 pub struct GapFillChannels {
     pub gap_idx: usize,
     pub channels: Vec<u16>,
+    /// 与 channels 一一对应的恢复脉宽（与 channel 取自同一参考事例，保留关联）
+    pub pulse_widths: Vec<u8>,
 }
 
 /// fallback 标定窗半宽：无任何参考 in-gap 数据时退化用 target 邻窗谱（次优，M3）。
@@ -93,25 +95,37 @@ fn in_unreliable(t: f64, intervals: &[UnreliableInterval]) -> bool {
     intervals.iter().any(|iv| t >= iv.start && t <= iv.stop)
 }
 
-/// 按 met 排序的 (met, channel) 对，剔除 NaN 时间、SEC 槽、该 box 的
-/// unreliable 区间。
-fn sorted_pairs(b: &BoxReconstructionData) -> Vec<(f64, u16)> {
-    let mut v: Vec<(f64, u16)> = b
+/// 按 met 排序的 (met, channel, pulse_width) 三元组，剔除 NaN 时间、SEC 槽、
+/// 该 box 的 unreliable 区间。channel 与 pulse_width 来自同一事例（保留关联）。
+fn sorted_triples(b: &BoxReconstructionData) -> Vec<(f64, u16, u8)> {
+    let mut v: Vec<(f64, u16, u8)> = b
         .events
         .iter()
         .zip(b.channels.iter())
-        .filter(|&(&t, &c)| !t.is_nan() && c != CHANNEL_SEC && !in_unreliable(t, &b.unreliable))
-        .map(|(&t, &c)| (t, c))
+        .zip(b.pulse_widths.iter())
+        .filter(|&((&t, &c), _)| !t.is_nan() && c != CHANNEL_SEC && !in_unreliable(t, &b.unreliable))
+        .map(|((&t, &c), &w)| (t, c, w))
         .collect();
     v.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     v
 }
 
-/// [lo, hi) 内的 channel（pairs 已按 met 排序）。
-fn channels_in(pairs: &[(f64, u16)], lo: f64, hi: f64) -> Vec<u16> {
-    let a = pairs.partition_point(|&(t, _)| t < lo);
-    let b = pairs.partition_point(|&(t, _)| t < hi);
-    pairs[a..b].iter().map(|&(_, c)| c).collect()
+/// [lo, hi) 内的 (channel, pulse_width) 对，按 channel 稳定排序（供分位取样）。
+fn pairs_in(triples: &[(f64, u16, u8)], lo: f64, hi: f64) -> Vec<(u16, u8)> {
+    let a = triples.partition_point(|&(t, _, _)| t < lo);
+    let b = triples.partition_point(|&(t, _, _)| t < hi);
+    let mut out: Vec<(u16, u8)> = triples[a..b].iter().map(|&(_, c, w)| (c, w)).collect();
+    out.sort_by(|x, y| x.0.cmp(&y.0).then(x.1.cmp(&y.1)));
+    out
+}
+
+/// 长度为 len 的已排序数组在等间隔分位 (ell+0.5)/n 处的下标。
+fn quantile_index(len: usize, ell: usize, n: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    let q = (ell as f64 + 0.5) / n.max(1) as f64;
+    ((q * len as f64) as usize).min(len - 1)
 }
 
 /// 给 `reconstruct_gaps` 的 filler 事例补占位 channel（band-free 后处理）。
@@ -126,8 +140,10 @@ pub fn assign_gap_fill_channels(
     references: &[&BoxReconstructionData],
     gap_results: &[ReconstructedGap],
 ) -> Vec<GapFillChannels> {
-    let ref_pairs: Vec<Vec<(f64, u16)>> = references.iter().map(|r| sorted_pairs(r)).collect();
-    let tgt_pairs = sorted_pairs(target);
+    let ref_triples: Vec<Vec<(f64, u16, u8)>> =
+        references.iter().map(|r| sorted_triples(r)).collect();
+    let tgt_triples = sorted_triples(target);
+    let by_ch = |x: &(u16, u8), y: &(u16, u8)| x.0.cmp(&y.0).then(x.1.cmp(&y.1));
 
     let mut out = Vec::with_capacity(gap_results.len());
     for gr in gap_results {
@@ -136,22 +152,27 @@ pub fn assign_gap_fill_channels(
         let filled = &gr.filled_events;
         let n = filled.len();
         if n == 0 {
-            out.push(GapFillChannels { gap_idx: gr.gap_idx, channels: Vec::new() });
+            out.push(GapFillChannels {
+                gap_idx: gr.gap_idx,
+                channels: Vec::new(),
+                pulse_widths: Vec::new(),
+            });
             continue;
         }
 
         // 一级 fallback：整 gap 参考池
-        let mut whole_gap: Vec<u16> =
-            ref_pairs.iter().flat_map(|p| channels_in(p, g_lo, g_hi)).collect();
-        whole_gap.sort_unstable();
+        let mut whole_gap: Vec<(u16, u8)> =
+            ref_triples.iter().flat_map(|p| pairs_in(p, g_lo, g_hi)).collect();
+        whole_gap.sort_by(by_ch);
         // 二级 fallback：target 邻标定窗（无任何参考 in-gap 时）
-        let mut calib: Vec<u16> = channels_in(&tgt_pairs, g_lo - CALIB_MARGIN, g_lo);
-        calib.extend(channels_in(&tgt_pairs, g_hi, g_hi + CALIB_MARGIN));
-        calib.sort_unstable();
+        let mut calib: Vec<(u16, u8)> = pairs_in(&tgt_triples, g_lo - CALIB_MARGIN, g_lo);
+        calib.extend(pairs_in(&tgt_triples, g_hi, g_hi + CALIB_MARGIN));
+        calib.sort_by(by_ch);
 
         let d = g_hi - g_lo;
         let n_win = ((d / WIN_TARGET).round() as usize).max(1);
         let mut channels = vec![0u16; n];
+        let mut pulse_widths = vec![0u8; n];
 
         for wi in 0..n_win {
             let w_lo = g_lo + d * wi as f64 / n_win as f64;
@@ -166,22 +187,28 @@ pub fn assign_gap_fill_channels(
             if n_w == 0 {
                 continue;
             }
-            let mut src: Vec<u16> =
-                ref_pairs.iter().flat_map(|p| channels_in(p, w_lo, w_hi)).collect();
-            src.sort_unstable();
-            let spectrum: &[u16] = if !src.is_empty() {
+            let mut src: Vec<(u16, u8)> =
+                ref_triples.iter().flat_map(|p| pairs_in(p, w_lo, w_hi)).collect();
+            src.sort_by(by_ch);
+            let spectrum: &[(u16, u8)] = if !src.is_empty() {
                 &src
             } else if !whole_gap.is_empty() {
                 &whole_gap
             } else {
                 &calib
             };
+            if spectrum.is_empty() {
+                continue;
+            }
+            // 分位取样：filler 与 channel 都取自参考事例，pulse_width 随之（保关联）
             let ranks = lowdisc_ranks(n_w);
             for k in 0..n_w {
-                channels[s + k] = quantile_value(spectrum, ranks[k], n_w);
+                let idx = quantile_index(spectrum.len(), ranks[k], n_w);
+                channels[s + k] = spectrum[idx].0;
+                pulse_widths[s + k] = spectrum[idx].1;
             }
         }
-        out.push(GapFillChannels { gap_idx: gr.gap_idx, channels });
+        out.push(GapFillChannels { gap_idx: gr.gap_idx, channels, pulse_widths });
     }
     out
 }
