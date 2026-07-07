@@ -696,6 +696,40 @@ pub fn reconstruct_met_times(sci_data: &SciFile, offset: f64) -> Vec<f64> {
         .collect()
 }
 
+/// 与 reconstruct_met_times 逐元素对齐的 wrapped channel 序列。
+///
+/// 按 reconstruct_with_wrap_tracking 的每包时间数截断地走 parse_events：
+/// 每个 Event/Second 槽产出一个 channel（Error 跳过），与时间 flatten 的
+/// 展平顺序、长度完全一致（含 NaN 时间槽）。SEC 槽记为 CHANNEL_SEC。
+/// 与 solve_events 的 `time_idx < times.len()` 走法同构，保证对齐。
+pub fn reconstruct_met_channels(sci_data: &SciFile, offset: f64) -> Vec<u16> {
+    use super::eband::{wrap_channel, CHANNEL_SEC};
+    let packet_times = reconstruct_with_wrap_tracking(sci_data, offset);
+    let mut channels = Vec::new();
+    for (pkt_idx, ccsds) in sci_data.ccsds.iter().enumerate() {
+        let n = packet_times[pkt_idx].len();
+        let mut slot = 0usize;
+        for event in parse_events(ccsds) {
+            match event {
+                Pack::Event { channel, .. } => {
+                    if slot < n {
+                        channels.push(wrap_channel(channel));
+                        slot += 1;
+                    }
+                }
+                Pack::Second { .. } => {
+                    if slot < n {
+                        channels.push(CHANNEL_SEC);
+                        slot += 1;
+                    }
+                }
+                Pack::Error => {}
+            }
+        }
+    }
+    channels
+}
+
 /// 单个事例的详细信息（用于 dump-events 调试）。
 pub struct EventDetail {
     pub pkt_index: usize,

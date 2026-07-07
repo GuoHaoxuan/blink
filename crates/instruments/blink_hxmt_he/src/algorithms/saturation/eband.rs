@@ -8,6 +8,9 @@
 //! 设计与验证见
 //! `docs/superpowers/specs/2026-07-03-eband-gapfill-prototype-design.md`。
 
+/// SEC（秒脉冲）槽位的哨兵 channel：非真实道址，能量恢复时跳过。
+pub const CHANNEL_SEC: u16 = u16::MAX;
+
 /// 1B 原始 8-bit 道址 → wrapped 道址（raw < 20 表示 256+raw）。
 /// 与 types::Event::channel() 的 pulse-height wrap 语义一致。
 pub fn wrap_channel(raw: u8) -> u16 {

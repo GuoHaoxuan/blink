@@ -4,7 +4,7 @@ pub mod eband;
 pub mod rec_sci_data;
 
 pub use crc_check::crc_check;
-pub use eband::{lowdisc_ranks, quantile_value, unwrap_channel, wrap_channel};
+pub use eband::{lowdisc_ranks, quantile_value, unwrap_channel, wrap_channel, CHANNEL_SEC};
 pub use detect::{
     detect_fifo_reset_intervals, detect_unreliable_intervals,
     extract_packet_infos, reconstruct_gaps,
@@ -14,6 +14,7 @@ pub use detect::{
 };
 pub use rec_sci_data::dump_ptime_utc;
 pub use rec_sci_data::extract_second_event_times;
+pub use rec_sci_data::reconstruct_met_channels;
 pub use rec_sci_data::reconstruct_met_times;
 pub use rec_sci_data::reconstruct_with_wrap_tracking;
 pub use rec_sci_data::reconstruct_with_wrap_tracking_labeled;

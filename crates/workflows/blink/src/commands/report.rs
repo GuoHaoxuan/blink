@@ -1,7 +1,7 @@
 use blink_hxmt_he::algorithms::saturation::{
     detect_fifo_reset_intervals, detect_unreliable_intervals, extract_packet_infos,
-    reconstruct_gaps, reconstruct_met_times, reconstruct_with_wrap_tracking,
-    solve_events, BoxReconstructionData,
+    reconstruct_gaps, reconstruct_met_channels, reconstruct_met_times,
+    reconstruct_with_wrap_tracking, solve_events, BoxReconstructionData,
 };
 use blink_core::types::MissionElapsedTime;
 use blink_hxmt_he::io::level_1b::{get_eng_filenames, get_sci_filenames};
@@ -43,6 +43,12 @@ pub fn cmd_report(args: &ReportArgs) -> std::io::Result<()> {
     let mut box_data: Vec<(String, BoxReconstructionData)> = Vec::new();
     for (box_name, sci, offset) in &boxes {
         let events = reconstruct_met_times(sci, *offset);
+        let channels = reconstruct_met_channels(sci, *offset);
+        assert_eq!(
+            events.len(),
+            channels.len(),
+            "events/channels misaligned for box {box_name}"
+        );
         let gaps = detect_fifo_reset_intervals(sci, *offset);
         let packets = extract_packet_infos(sci, *offset);
         let packet_events: Vec<Vec<f64>> = reconstruct_with_wrap_tracking(sci, *offset)
@@ -60,7 +66,7 @@ pub fn cmd_report(args: &ReportArgs) -> std::io::Result<()> {
         );
         box_data.push((
             box_name.clone(),
-            BoxReconstructionData { events, gaps, packets, packet_events, unreliable },
+            BoxReconstructionData { events, channels, gaps, packets, packet_events, unreliable },
         ));
     }
 
