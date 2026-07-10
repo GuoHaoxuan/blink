@@ -165,6 +165,38 @@ emit "200415a_gbm_scale_factor" "3.67" "200415A" "ALL" "HXMT effective area / GB
 emit "200415a_asim_ratio_1ms" "0.52" "200415A" "ALL" "HXMT/ASIM-MXGS mean ratio at 1ms (saturation window, 22 bins); rebuilt via plot_200415_1ms_failure.py"
 emit "200415a_asim_ratio_1ms_err" "0.40" "200415A" "ALL" "ASIM ratio std (1ms scale, marks too-short boundary)"
 emit "200415a_asim_scale_factor" "3.4" "200415A" "ALL" "HXMT / ASIM-MXGS LED 50-400 keV scale factor (fit on T0+50..150ms tail, bkg -1.5..-0.1s)"
+emit "200415a_gap_count" "5" "200415A" "ALL" "reconstructed FIFO gaps: A=1 (22.4ms), B=2, C=2; fills 369/570/375/597/374"
+emit "200415a_fill_455floor_deficit" "250" "200415A" "ALL" "3 of 5 gaps below 455-event dump floor (369/375/374); linear-ramp total understates loss by >=~250 (~11%)"
+
+#=========================================================================
+# 3b. Engineering-channel per-burst ratios (event-level / Sci_rec, 1s)
+# RE-VERIFIED 2026-07-03: earlier 0.83/0.89 were an ANALYSIS ARTIFACT of
+# evaluating the C25 baseline at |MLAT|=0 (orbit file not passed;
+# ~130 cnt/s/det additive offset). per_burst_eng_ratio.py now requires
+# the orbit product and fails loudly.
+#=========================================================================
+emit "200428_eng_ratio_1s" "0.99" "200428" "ALL" "event-level/Sci_eng median, 9 usable 1s bins T0-5..+4 (0.988 with orbit MLAT)"
+emit "200428_eng_ratio_1s_siqr" "0.01" "200428" "ALL" "per-bin robust scatter sigma_IQR (0.006)"
+emit "260226a_eng_ratio_1s" "1.00" "260226A" "ALL" "event-level/Sci_eng median, 100 1s bins T0-30..+70 (1.003 with orbit MLAT)"
+emit "260226a_eng_ratio_1s_siqr" "0.01" "260226A" "ALL" "per-bin robust scatter sigma_IQR (0.012)"
+emit "260226a_eng_ratio_gapphase" "1.02" "260226A" "ALL" "gap-containing multi-peak phase T0+20..40, 20 bins, sigma_IQR 0.033"
+
+#=========================================================================
+# 3c. Energy-resolved recovery (eband, 2026-07-08; docs/energy-recovery-methods.md)
+#=========================================================================
+emit "eband_hardtail_recovered_pct" "28.0" "ALL" "ALL" "dug-gap truth check: fraction >= ch 146, recovered (truth 29.4)"
+emit "eband_hardtail_truth_pct" "29.4" "ALL" "ALL" "dug-gap truth check: fraction >= ch 146, deleted truth"
+emit "eband_timechan_corr" "0.03" "ALL" "ALL" "within-window time-channel corr with bit-reversal (truth -0.03; sorted assignment fabricates +0.97)"
+emit "eband_ks_median" "0.004" "260226A" "ALL" "KS recovered vs pooled ref in-gap channel dist, median over 224 real gaps (260226A; 200428 split to companion)"
+emit "eband_pw_1k_match" "57680" "ALL" "ALL" "pulse_width vs 1K Pulse_Width per-event matches (of 57680, 100%)"
+emit "eband_am241_line_kev" "58.8" "200428" "ALL" "241Am 59.5 keV line in calibrated quiet NaI spectrum (1.2% offset)"
+emit "eband_band_scales_200428" "25.5/10.8/3.5" "200428" "ALL" "per-band IBIS scale factors 20-50/50-100/100-200 keV (plot_hxmt_vs_ibis_bands)"
+emit "eband_peak_fill_frac_pct" "78-93" "200428" "ALL" "fraction of recovered counts under Mereghetti t1/t2 peaks that are fillers"
+emit "eband_nai_counts_200428" "31218+11870" "200428" "ALL" "NaI-selected obs + fill events in band-figure window"
+emit "eband_260226_nai_frac_burst" "8.3" "260226A" "ALL" "NaI fraction in burst window T0+22..38 (%); quiet 7.9% -> through-CsI incidence"
+emit "eband_260226_band_scales" "0.055/0.128/0.145" "260226A" "ALL" "per-band GBM(n0+n3 NaI) scale factors 20-50/50-100/100-200 keV, fit T0+20..40"
+emit "eband_260226_band_ratio_median" "0.95" "260226A" "ALL" "bin-by-bin HXMT/GBM per-band ratio median, multi-peak phase, signal bins"
+emit "eband_260226_band_ratio_siqr" "0.26/0.14/0.15" "260226A" "ALL" "per-band ratio sigma_IQR soft->hard (plot_hxmt_vs_gbm_bands.py)"
 
 #=========================================================================
 # 4. Method-wide constants (independent of specific GRB)
