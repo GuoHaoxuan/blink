@@ -397,7 +397,13 @@ python3 scripts/plot_fifo_resets.py --grb 2               # 画全部
 GBM TTE 数据来源：`https://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/triggers/2026/bn260226443/current/`
 
 ```bash
-python3 scripts/plot_hxmt_vs_gbm.py --bin 0.5 --det n0 n3 b0 --emin 200 --emax 900
+# Paper Fig. 7 (f7_xsat_260226_gbm.pdf) standard command, 2026-07-11.
+# Reproduces HXMT/GBM = 0.92±0.19 (38 bins), HXMT/eng = 1.05±0.38 (42 bins), GBM scale ×0.85.
+# bkg windows avoid the no-data edge [-10,-6.5] of the --before 10 reconstruction window.
+python3 scripts/plot_hxmt_vs_gbm.py --bin 0.5 --det n0 n3 b0 \
+    --bkg -6.5 -2 60 80 --scale-range 20 40 --xlim -6.5 80 --pub \
+    -o figures/f7_xsat_260226_gbm.pdf
+# (legacy, pre-2026-07: --emin 200 --emax 900; energy filter since restored as optional)
 ```
 
 ### GRB 221009A × GECAM-C

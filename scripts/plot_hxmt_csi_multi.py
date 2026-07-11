@@ -136,8 +136,18 @@ def main():
     ap.add_argument("--after", type=float, default=130)
     ap.add_argument("--xlim", type=float, nargs=2, default=None)
     ap.add_argument("--bkg-deg", type=int, default=1)
+    ap.add_argument("--pub", action="store_true",
+                    help="publication style: larger fonts, thicker lines, no title")
     ap.add_argument("-o", "--output", default="hxmt_csi_multi.png")
     args = ap.parse_args()
+    if args.pub:
+        matplotlib.rcParams.update({
+            "font.size": 12, "axes.labelsize": 13, "axes.linewidth": 0.9,
+            "xtick.labelsize": 11, "ytick.labelsize": 11,
+            "legend.fontsize": 9.5, "pdf.fonttype": 42,
+            "xtick.direction": "in", "ytick.direction": "in",
+            "xtick.top": True, "ytick.right": True,
+        })
     cfg = CONFIGS[args.burst]
     t0 = cfg["t0"]
 
@@ -173,30 +183,33 @@ def main():
         xl = args.xlim or (-args.before, args.after)
         for i in np.where(fillbin & (x >= xl[0]) & (x < xl[1]))[0]:
             ax.axvspan(x[i] - args.bin/2, x[i] + args.bin/2, color="red", alpha=0.12, zorder=0)
+        LW = 1.5 if args.pub else 1.0
         ax.fill_between(x, nHo, nHa, step="mid", color="C1", alpha=0.25, zorder=2)
-        ax.step(x, nHo, where="mid", color="#20347e", lw=0.9, label="HXMT/HE-CsI observed", zorder=4)
-        ax.step(x, nHa, where="mid", color="#e07a12", lw=1.0, label="HXMT/HE-CsI obs+recon", zorder=5)
+        ax.step(x, nHo, where="mid", color="#20347e", lw=LW*0.9, label="HXMT/HE-CsI observed", zorder=4)
+        ax.step(x, nHa, where="mid", color="#e07a12", lw=LW, label="HXMT/HE-CsI obs+recon", zorder=5)
         for e, t, en in exts:
             nE = net(t, en, lo, hi)
             sc = nHa[sm].sum() / nE[sm].sum() if nE[sm].sum() > 0 else 1.0
-            ax.step(x, nE * sc, where="mid", color=e["color"], lw=0.9,
-                    label=f"{e['label']} x{sc:.2f}", zorder=3)
+            ax.step(x, nE * sc, where="mid", color=e["color"], lw=LW*0.9,
+                    label=f"{e['label']} $\\times${sc:.2f}", zorder=3)
             rr = np.array([nHa[i]/(nE[i]*sc) for i in np.where(fillbin & (x >= xl[0]) & (x < xl[1]))[0]
                            if nE[i] > 0])
             summ = (f"median {np.median(rr):.2f}  [{rr.min():.2f},{rr.max():.2f}]  n={len(rr)}"
                     if len(rr) else "no filler bins in view")
             print(f"  {lo}-{hi}keV {e['label']}: scale x{sc:.3f}  sat-bin HXMT/ext {summ}", file=sys.stderr)
         ax.axhline(0, color="grey", lw=0.5); ax.margins(x=0); ax.set_ylabel("net rate (evt/s)")
-        ax.text(0.01, 0.9, f"{lo:.0f}-{hi:.0f} keV (deposited), {args.bin*1e3:.0f} ms bins",
-                transform=ax.transAxes, fontweight="bold")
+        ax.text(0.02, 0.92, f"{lo:.0f}--{hi:.0f} keV (deposited), {args.bin*1e3:.0f} ms bins",
+                transform=ax.transAxes, fontweight="bold", va="top",
+                fontsize=12 if args.pub else 10)
         ax.legend(fontsize=7, loc="upper right")
         if args.xlim:
             ax.set_xlim(*args.xlim)
             vis = (x >= args.xlim[0]) & (x < args.xlim[1])
             ax.set_ylim(min(0, nHo[vis].min()*1.1), nHa[vis].max()*1.12)
     axes[-1].set_xlabel(f"time since HXMT T0 (s)   [T0 = {t0} UTC]")
-    extl = " & ".join(e["label"] for e in cfg["externals"])
-    axes[0].set_title(f"GRB {args.burst} — HXMT/HE-CsI recovery vs {extl}, deposited-energy")
+    if not args.pub:
+        extl = " & ".join(e["label"] for e in cfg["externals"])
+        axes[0].set_title(f"GRB {args.burst} — HXMT/HE-CsI recovery vs {extl}, deposited-energy")
     fig.tight_layout(); fig.savefig(args.output, dpi=130)
     print(f"wrote {args.output}", file=sys.stderr)
 

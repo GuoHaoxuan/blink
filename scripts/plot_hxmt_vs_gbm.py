@@ -61,12 +61,21 @@ def load_hxmt_reconstruct(before, after):
     return np.array(obs), np.array(fill)
 
 
-def load_gbm_tte(det, before, after):
+def load_gbm_tte(det, before, after, emin=None, emax=None):
     path = os.path.join(GBM_DIR, f"glg_tte_{det}_bn260226443_v00.fit")
     if not os.path.exists(path):
         return np.array([])
     with fits.open(path, memmap=True) as f:
-        times = f["EVENTS"].data["TIME"]
+        d = f["EVENTS"].data
+        times = d["TIME"]
+        if emin is not None or emax is not None:
+            eb = f["EBOUNDS"].data
+            ecen = (eb["E_MIN"] + eb["E_MAX"]) / 2
+            en = ecen[d["PHA"]]
+            sel = np.ones(len(times), bool)
+            if emin is not None: sel &= en >= emin
+            if emax is not None: sel &= en <= emax
+            times = times[sel]
     t = (times - GBM_TRIGGER_MET) + GBM_TO_HXMT_OFFSET
     mask = (t >= -before) & (t <= after)
     return t[mask]
@@ -78,10 +87,27 @@ def main():
     parser.add_argument("--before", type=float, default=10.0)
     parser.add_argument("--after", type=float, default=80.0)
     parser.add_argument("--det", type=str, nargs="+", default=["n0", "n3", "b0"])
+    parser.add_argument("--emin", type=float, default=None, help="GBM energy min (keV)")
+    parser.add_argument("--emax", type=float, default=None, help="GBM energy max (keV)")
+    parser.add_argument("--xlim", type=float, nargs=2, default=None,
+                        help="display x-range (data/statistics unaffected)")
+    parser.add_argument("--scale-range", type=float, nargs=2, default=None,
+                        help="window for the GBM scalar normalization "
+                             "(default: the mid-window between the bkg segments)")
+    parser.add_argument("--pub", action="store_true",
+                        help="publication style: larger fonts, no title")
     parser.add_argument("--bkg", type=float, nargs=4, default=[-10, -2, 60, 80],
                         metavar=("T1", "T2", "T3", "T4"))
     parser.add_argument("-o", "--output", default="hxmt_vs_gbm.png")
     args = parser.parse_args()
+    if args.pub:
+        matplotlib.rcParams.update({
+            "font.size": 12, "axes.labelsize": 13, "axes.linewidth": 0.9,
+            "xtick.labelsize": 11, "ytick.labelsize": 11,
+            "legend.fontsize": 10, "pdf.fonttype": 42,
+            "xtick.direction": "in", "ytick.direction": "in",
+            "xtick.top": True, "ytick.right": True,
+        })
 
     print("Loading HXMT/HE reconstruct...", file=sys.stderr)
     hxmt_obs, hxmt_fill = load_hxmt_reconstruct(args.before, args.after)
@@ -93,7 +119,8 @@ def main():
     eng_t, eng_rate = load_engineering_prediction(
         date_str="20260226", hour_str="100000",
         trigger_met=HXMT_TRIGGER_MET, before=args.before, after=args.after,
-        t_years_const=t_years_const)
+        t_years_const=t_years_const,
+        orbit_path="data/hxmt_aux/HXMT_20260226T10_Orbit_FFFFFF_V1_1K.FITS")
     if eng_t is None:
         print("  ERROR: engineering data missing — skipping that trace", file=sys.stderr)
     else:
@@ -101,7 +128,7 @@ def main():
 
     gbm_events = {}
     for det in args.det:
-        evts = load_gbm_tte(det, args.before, args.after)
+        evts = load_gbm_tte(det, args.before, args.after, args.emin, args.emax)
         gbm_events[det] = evts
     gbm_combined = np.concatenate([gbm_events[d] for d in args.det])
     print(f"  GBM combined ({'+'.join(args.det)}): {len(gbm_combined):,}", file=sys.stderr)
@@ -125,7 +152,11 @@ def main():
     net_hxmt_all = r_hxmt_all - bkg_hxmt
     net_gbm = r_gbm - bkg_gbm
 
-    burst_mask = (x >= t2) & (x < t3)
+    if args.scale_range is not None:
+        s1, s2 = args.scale_range
+        burst_mask = (x >= s1) & (x < s2)
+    else:
+        burst_mask = (x >= t2) & (x < t3)
     sum_hxmt = np.sum(net_hxmt_all[burst_mask])
     sum_gbm = np.sum(net_gbm[burst_mask])
     scale = sum_hxmt / sum_gbm if sum_gbm > 0 else 1.0
@@ -188,8 +219,9 @@ def main():
     ax_lc.set_ylabel("Net count rate (evt/s)")
     ax_lc.legend(loc="upper right", fontsize=9.5)
     ax_lc.axhline(0, color="gray", lw=0.5, ls="--")
-    ax_lc.set_title(f"GRB 260226A: HXMT/HE event-level + engineering vs Fermi/GBM  [{bin_w}s bins, geocentric]",
-                    fontweight="bold")
+    if not args.pub:
+        ax_lc.set_title(f"GRB 260226A: HXMT/HE event-level + engineering vs Fermi/GBM  [{bin_w}s bins, geocentric]",
+                        fontweight="bold")
 
     # Ratio panel: two parallel cross-check ratios, colour-matched to the
     # upper-panel lines (C1 orange = GBM, C2 green = engineering).
@@ -236,8 +268,12 @@ def main():
                       fontsize=8.5, family="monospace",
                       bbox=dict(facecolor="white", alpha=0.85, edgecolor="lightgray"))
     ax_ratio.legend(loc="lower right", fontsize=9, framealpha=0.85)
+    if args.xlim:
+        ax_lc.set_xlim(*args.xlim)
+        ax_ratio.set_xlim(*args.xlim)
     ax_ratio.set_xlabel(f"Time since HXMT trigger (s)  [$T_0$ = {HXMT_TRIGGER_UTC_LABEL} UTC]")
-    ax_ratio.set_xlim(-args.before, args.after)
+    if not args.xlim:
+        ax_ratio.set_xlim(-args.before, args.after)
 
     plt.tight_layout()
     plt.savefig(args.output, dpi=150, bbox_inches="tight")
