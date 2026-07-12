@@ -397,13 +397,34 @@ python3 scripts/plot_fifo_resets.py --grb 2               # 画全部
 GBM TTE 数据来源：`https://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/triggers/2026/bn260226443/current/`
 
 ```bash
-# Paper Fig. 7 (f7_xsat_260226_gbm.pdf) standard command, 2026-07-11.
-# Reproduces HXMT/GBM = 0.92±0.19 (38 bins), HXMT/eng = 1.05±0.38 (42 bins), GBM scale ×0.85.
+# Paper Fig. 7 (f7_xsat_260226_gbm.pdf) standard command, 2026-07-12.
+# Reproduces HXMT/GBM = 1.07±0.22 (38 bins), HXMT/eng = 1.05±0.38 (42 bins), GBM scale ×0.73.
+# Scale fit excludes filler-containing bins (26 of 40 used) to avoid circularity:
+# the normalization must not depend on the reconstruction under test.
 # bkg windows avoid the no-data edge [-10,-6.5] of the --before 10 reconstruction window.
 python3 scripts/plot_hxmt_vs_gbm.py --bin 0.5 --det n0 n3 b0 \
     --bkg -6.5 -2 60 80 --scale-range 20 40 --xlim -6.5 80 --pub \
     -o figures/f7_xsat_260226_gbm.pdf
 # (legacy, pre-2026-07: --emin 200 --emax 900; energy filter since restored as optional)
+
+# Paper Fig. 14 (f14_xsat_260226_bands.pdf) standard command, 2026-07-12.
+# NaI band-resolved; per-band scale also excludes filler bins (26/40).
+# Scales ×0.063/0.143/0.150; filler-bin ratio medians 0.78/0.82/0.98,
+# sigma_IQR 0.11-0.16 (paper Sec. 6.5 & Table 4).
+python3 scripts/plot_hxmt_vs_gbm_bands.py -o figures/f14_xsat_260226_bands.pdf
+
+# Paper Figs. 15/16 (250919A CsI bands / 100 ms) standard commands, 2026-07-12.
+# Scale fit excludes filler bins in-script; f16 sat-bin medians 1.08 (SVOM) / 1.12 (GBM).
+python3 scripts/plot_hxmt_csi_multi.py --burst 250919A --bin 0.5 --bands \
+    --xlim -12 28 --pub -o figures/f15_xsat_250919_bands.pdf
+python3 scripts/plot_hxmt_csi_multi.py --burst 250919A --bin 0.1 --band 300 700 \
+    --xlim 2 13 --pub -o figures/f16_xsat_250919_100ms.pdf
+
+# Paper Fig. 11 (f11_200415_failure.pdf): scripts/plot_200415_1ms_failure.py
+# (no args; writes 200415A_hxmt_vs_asim_1ms.pdf, copy to figures/f11_200415_failure.pdf).
+# Paper Fig. 4: scripts/plot_fig4_solve_vs_1k_221009a.py; Fig. 5:
+# scripts/plot_fig3_wrap_uniqueness.py (both call the current blink CLI;
+# leap-second-aware since c8a49c2, T0 = 13:17:00).
 ```
 
 ### GRB 221009A × GECAM-C

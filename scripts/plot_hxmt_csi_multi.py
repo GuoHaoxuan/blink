@@ -39,7 +39,7 @@ CONFIGS = {
         "csi_lut": "data/hxmt_aux/csi_ch2e_250919.npy",
         "bkg": [-30, -24, 112, 130], "scale_range": [-2, 15],
         "externals": [
-            {"type": "gbm", "color": "#2a9d3a", "label": "Fermi/GBM",
+            {"type": "gbm", "color": "#e07a12", "label": "Fermi/GBM",
              "dir": "data/fermi_gbm/bn250919020", "trig": "bn250919020",
              "dets": ["n7", "n8"], "tmet": 779934537.28,
              "tutc": "2025-09-19T00:28:52.28"},
@@ -53,7 +53,7 @@ CONFIGS = {
         "csi_lut": "data/hxmt_aux/csi_ch2e_211211.npy",
         "bkg": [-40, -5, 70, 95], "scale_range": [12, 45],
         "externals": [
-            {"type": "gbm", "color": "#2a9d3a", "label": "Fermi/GBM",
+            {"type": "gbm", "color": "#e07a12", "label": "Fermi/GBM",
              "dir": "data/fermi_gbm/bn211211549", "trig": "bn211211549",
              "dets": ["n2", "na"], "tmet": 660921004.651,
              "tutc": "2021-12-11T13:09:59.651"},
@@ -65,7 +65,7 @@ CONFIGS = {
         "csi_lut": "data/hxmt_aux/csi_ch2e_260226.npy",
         "bkg": [-8, -3, 65, 80], "scale_range": [24, 44],
         "externals": [
-            {"type": "gbm", "color": "#2a9d3a", "label": "Fermi/GBM",
+            {"type": "gbm", "color": "#e07a12", "label": "Fermi/GBM",
              "dir": "data/fermi_gbm/bn260226443", "trig": "bn260226443",
              "dets": ["n0", "n3"], "tmet": 793795080.95811,
              "tutc": "2026-02-26T10:37:55.958"},   # +2.958s vs T0 (cross-corr aligned)
@@ -184,9 +184,9 @@ def main():
         for i in np.where(fillbin & (x >= xl[0]) & (x < xl[1]))[0]:
             ax.axvspan(x[i] - args.bin/2, x[i] + args.bin/2, color="red", alpha=0.12, zorder=0)
         LW = 1.5 if args.pub else 1.0
-        ax.fill_between(x, nHo, nHa, step="mid", color="C1", alpha=0.25, zorder=2)
+        ax.fill_between(x, nHo, nHa, step="mid", color="#5b9bd5", alpha=0.30, zorder=2)
         ax.step(x, nHo, where="mid", color="#20347e", lw=LW*0.9, label="HXMT/HE-CsI observed", zorder=4)
-        ax.step(x, nHa, where="mid", color="#e07a12", lw=LW, label="HXMT/HE-CsI obs+recon", zorder=5)
+        ax.step(x, nHa, where="mid", color="#5b9bd5", lw=LW, label="HXMT/HE-CsI obs+recon", zorder=5)
         for e, t, en in exts:
             nE = net(t, en, lo, hi)
             sc = nHa[sm].sum() / nE[sm].sum() if nE[sm].sum() > 0 else 1.0
@@ -198,7 +198,7 @@ def main():
                     if len(rr) else "no filler bins in view")
             print(f"  {lo}-{hi}keV {e['label']}: scale x{sc:.3f}  sat-bin HXMT/ext {summ}", file=sys.stderr)
         ax.axhline(0, color="grey", lw=0.5); ax.margins(x=0); ax.set_ylabel("net rate (evt/s)")
-        ax.text(0.02, 0.92, f"{lo:.0f}--{hi:.0f} keV (deposited), {args.bin*1e3:.0f} ms bins",
+        ax.text(0.02, 0.92, f"{lo:.0f}\u2013{hi:.0f} keV (deposited), {args.bin*1e3:.0f} ms bins",
                 transform=ax.transAxes, fontweight="bold", va="top",
                 fontsize=12 if args.pub else 10)
         ax.legend(fontsize=7, loc="upper right")

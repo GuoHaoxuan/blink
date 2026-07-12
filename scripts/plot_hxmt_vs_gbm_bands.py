@@ -116,6 +116,13 @@ def main():
     s1, s2 = args.scale_range
     sm = (x >= s1) & (x < s2)
 
+    matplotlib.rcParams.update({
+        "font.size": 12, "axes.labelsize": 13, "axes.linewidth": 0.9,
+        "xtick.labelsize": 11, "ytick.labelsize": 11,
+        "legend.fontsize": 9.5, "pdf.fonttype": 42,
+        "xtick.direction": "in", "ytick.direction": "in",
+        "xtick.top": True, "ytick.right": True,
+    })
     fig, axes = plt.subplots(len(BANDS), 1, figsize=(10, 10), sharex=True)
     for ax, (elo, ehi) in zip(axes, BANDS):
         def rate(t, e):
@@ -130,8 +137,28 @@ def main():
         n_obs = r_obs - fit_background(x, r_obs, bkgm, args.bkg_deg)
         n_all = r_all - fit_background(x, r_all, bkgm, args.bkg_deg)
         n_gbm = r_gbm - fit_background(x, r_gbm, bkgm, args.bkg_deg)
-        scale = n_all[sm].sum() / n_gbm[sm].sum() if n_gbm[sm].sum() > 0 else 1.0
-        print(f"  band {elo}-{ehi} keV: scale x{scale:.3f}", file=sys.stderr)
+        # Exclude filler-containing bins from the scale fit so the
+        # normalization does not depend on the reconstruction under test.
+        fill_bins = (r_all - r_obs) > 1e-9
+        smc = sm & ~fill_bins
+        scale = n_all[smc].sum() / n_gbm[smc].sum() if n_gbm[smc].sum() > 0 else 1.0
+        print(f"  band {elo}-{ehi} keV: scale x{scale:.3f} "
+              f"({int(smc.sum())} bins used, {int((sm & fill_bins).sum())} "
+              f"filler bins excluded)", file=sys.stderr)
+        # Diagnostic: per-band ratio in filler vs clean bins
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ref = n_gbm * scale
+            ok = ref > 0.05 * np.nanmax(ref)
+            ratio = np.where(ok, n_all / ref, np.nan)
+        for tag, m in [("all   ", ok), ("filler", ok & fill_bins),
+                       ("clean ", ok & ~fill_bins)]:
+            if m.sum():
+                r = ratio[m]
+                q1, q2, q3 = np.nanpercentile(r, [25, 50, 75])
+                print(f"    ratio [{tag}] = {np.nanmean(r):.3f} "
+                      f"± {np.nanstd(r):.3f}; median {q2:.2f}, "
+                      f"sigma_IQR {(q3 - q1) / 1.349:.2f} ({int(m.sum())} bins)",
+                      file=sys.stderr)
 
         ax.axvspan(*args.sat_phase, color="tab:red", alpha=0.05, zorder=0)
         ax.fill_between(x, 0, n_obs, step="mid", alpha=0.5, color="C0", zorder=1)
@@ -139,23 +166,20 @@ def main():
         ax.step(x, n_obs, where="mid", color="navy", lw=0.9,
                 label="HXMT/HE NaI observed", zorder=3)
         ax.step(x, n_all, where="mid", color="C0", lw=0.9,
-                label="HXMT/HE NaI reconstructed", zorder=4)
+                label="HXMT/HE NaI obs+recon", zorder=4)
         ax.fill_between(x, (n_gbm - gbm_err) * scale, (n_gbm + gbm_err) * scale,
                         step="mid", color="tab:orange", alpha=0.25, lw=0, zorder=3)
         ax.step(x, n_gbm * scale, where="mid", color="tab:orange", lw=1.1,
-                label=f"Fermi/GBM NaI ×{scale:.2f} (±√N band)", zorder=5)
+                label=f"Fermi/GBM NaI " + rf"$\times${scale:.2f} " + "(±√N band)", zorder=5)
         ax.axhline(0, color="grey", lw=0.5)
         ax.set_ylabel("net rate (counts/s)")
-        ax.set_xlim(-args.before, args.after)
+        ax.set_xlim(max(-args.before, -5.0), args.after)
         ax.text(0.015, 0.90, f"{elo}–{ehi} keV (deposited)",
                 transform=ax.transAxes, fontweight="bold")
-        ax.legend(fontsize=7, loc="upper right")
+        ax.legend(loc="upper right")
 
     axes[-1].set_xlabel(
         f"time since trigger (s)   [T0 = {HXMT_TRIGGER_UTC_LABEL} UTC]")
-    axes[0].set_title(
-        "GRB 260226A  —  HXMT/HE (NaI) vs Fermi/GBM (NaI n0+n3) "
-        f"[{args.bin*1e3:.0f} ms bins]")
     fig.tight_layout()
     fig.savefig(args.output, dpi=130)
     print(f"wrote {args.output}", file=sys.stderr)

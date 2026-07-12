@@ -157,6 +157,13 @@ def main():
         burst_mask = (x >= s1) & (x < s2)
     else:
         burst_mask = (x >= t2) & (x < t3)
+    # Exclude filler-containing bins from the normalization window so the
+    # external scale does not depend on the recovery under test.
+    fill_bins = np.histogram(hxmt_fill, bins=edges)[0] > 0
+    n_excl = int((burst_mask & fill_bins).sum())
+    burst_mask = burst_mask & ~fill_bins
+    print(f"  Scale window: {int(burst_mask.sum())} bins used, "
+          f"{n_excl} filler-containing bins excluded", file=sys.stderr)
     sum_hxmt = np.sum(net_hxmt_all[burst_mask])
     sum_gbm = np.sum(net_gbm[burst_mask])
     scale = sum_hxmt / sum_gbm if sum_gbm > 0 else 1.0
@@ -203,7 +210,7 @@ def main():
     ax_lc.step(x, net_hxmt_all, where="post", color=SKY_BLUE, lw=1.0,
                label=f"HXMT/HE + reconstructed (+{len(hxmt_fill):,})", zorder=4)
     ax_lc.step(x, net_gbm_scaled, where="post", color="C1", lw=CROSS_LW,
-               label=f"Fermi/GBM {'+'.join(args.det)} (×{scale:.1f})", zorder=5)
+               label=f"Fermi/GBM {'+'.join(args.det)} " + rf"($\times${scale:.2f})", zorder=5)
     if eng_t is not None:
         # 1-Hz step trace, left-edge aligned: d["Time"]=N represents the
         # engineering cycle [N, N+0.94] starting at GPS PPS tick N. Plot step
@@ -251,13 +258,21 @@ def main():
 
     ax_ratio.axhline(1.0, color="gray", lw=0.5, ls="--")
     ax_ratio.set_ylabel("HXMT / ref.")
-    ax_ratio.set_ylim(0.5, 1.5)
+    ax_ratio.set_ylim(0.3, 1.8)
 
     # Annotation block with both ratio statistics
     annot_lines = []
     rg = ratio_gbm[~np.isnan(ratio_gbm)]
     if len(rg) > 0:
         annot_lines.append(f"HXMT/GBM         = {np.mean(rg):.2f} ± {np.std(rg):.2f} ({len(rg)} bins)")
+        # Diagnostic: does the ratio differ between reconstructed
+        # (filler-containing) and clean bins?
+        ok = ~np.isnan(ratio_gbm)
+        for tag, m in [("filler", ok & fill_bins), ("clean ", ok & ~fill_bins)]:
+            if m.sum():
+                print(f"  ratio [{tag}] = {np.mean(ratio_gbm[m]):.3f} "
+                      f"± {np.std(ratio_gbm[m]):.3f} ({int(m.sum())} bins)",
+                      file=sys.stderr)
     if eng_t is not None:
         re = ratio_eng[~np.isnan(ratio_eng)]
         if len(re) > 0:
@@ -271,6 +286,8 @@ def main():
     if args.xlim:
         ax_lc.set_xlim(*args.xlim)
         ax_ratio.set_xlim(*args.xlim)
+        vis = (x >= args.xlim[0]) & (x < args.xlim[1])
+        ax_lc.set_ylim(-2500, np.nanmax(net_hxmt_all[vis]) * 1.10)
     ax_ratio.set_xlabel(f"Time since HXMT trigger (s)  [$T_0$ = {HXMT_TRIGGER_UTC_LABEL} UTC]")
     if not args.xlim:
         ax_ratio.set_xlim(-args.before, args.after)

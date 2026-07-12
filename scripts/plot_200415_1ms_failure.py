@@ -90,11 +90,11 @@ def main():
 
     xs = x * ms
     ax.axvspan(sat_lo * ms, sat_hi * ms, color="#D62728", alpha=0.08, zorder=0)
-    ax.step(xs, n_obs, where="mid", color="C0", lw=0.9, label="HXMT/HE observed")
-    ax.step(xs, n_all, where="mid", color="C1", lw=1.0,
+    ax.step(xs, n_obs, where="mid", color="navy", lw=0.9, label="HXMT/HE observed")
+    ax.step(xs, n_all, where="mid", color="#5b9bd5", lw=1.0,
             label=f"HXMT/HE observed + reconstructed (+{len(fill):,})")
-    ax.fill_between(xs, n_obs, n_all, step="mid", color="C1", alpha=0.25)
-    ax.step(xs, n_asim_s, where="mid", color="C4", lw=1.0,
+    ax.fill_between(xs, n_obs, n_all, step="mid", color="#5b9bd5", alpha=0.30)
+    ax.step(xs, n_asim_s, where="mid", color="#7d4fd0", lw=1.0,
             label=f"ASIM/MXGS LED 50–400 keV ($\\times${scale:.1f})")
     ax.axhline(0, color="gray", lw=0.5, ls="--")
     ax.set_ylabel("Net count rate (evt s$^{-1}$)")
