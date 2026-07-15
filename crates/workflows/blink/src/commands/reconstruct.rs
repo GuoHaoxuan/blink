@@ -77,6 +77,16 @@ pub fn cmd_reconstruct(
         let n_gap_filled: usize = gap_results.iter().map(|r| r.n_lost).sum();
         let n_gap_ref = gap_results.iter().filter(|r| r.has_cross_ref).count();
         let banded = assign_gap_fill_channels(&box_data[i].1, &refs, &gap_results);
+        let n_calib: usize = banded.iter().map(|b| b.n_from_calib).sum();
+        let n_unfill: usize = banded.iter().map(|b| b.n_unfilled).sum();
+        if n_calib > 0 || n_unfill > 0 {
+            eprintln!(
+                "  WARN Box {}: energy/pulse-width fallback — {} fillers from target \
+                 calib window (three-box co-saturation; energy & NaI/CsI degraded), \
+                 {} left unfilled",
+                box_data[i].0, n_calib, n_unfill,
+            );
+        }
         let mut gap_events: Vec<(f64, u16, u8)> = gap_results
             .iter()
             .zip(banded.iter())

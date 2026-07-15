@@ -84,6 +84,14 @@ pub struct GapFillChannels {
     pub channels: Vec<u16>,
     /// 与 channels 一一对应的恢复脉宽（与 channel 取自同一参考事例，保留关联）
     pub pulse_widths: Vec<u8>,
+    /// 谱来自子窗参考箱 in-gap（正常路径）的 filler 数
+    pub n_from_window: usize,
+    /// 谱退化到整 gap 参考池的 filler 数（子窗空、gap 内仍有参考）
+    pub n_from_whole_gap: usize,
+    /// 谱退化到 target 邻标定窗的 filler 数（三箱共饱和；能量/NaI 会偏，次优）
+    pub n_from_calib: usize,
+    /// 无任何谱来源、channel/pw 记 0 的 filler 数（极端：连邻窗都空）
+    pub n_unfilled: usize,
 }
 
 /// fallback 标定窗半宽：无任何参考 in-gap 数据时退化用 target 邻窗谱（次优，M3）。
@@ -156,6 +164,10 @@ pub fn assign_gap_fill_channels(
                 gap_idx: gr.gap_idx,
                 channels: Vec::new(),
                 pulse_widths: Vec::new(),
+                n_from_window: 0,
+                n_from_whole_gap: 0,
+                n_from_calib: 0,
+                n_unfilled: 0,
             });
             continue;
         }
@@ -173,6 +185,8 @@ pub fn assign_gap_fill_channels(
         let n_win = ((d / WIN_TARGET).round() as usize).max(1);
         let mut channels = vec![0u16; n];
         let mut pulse_widths = vec![0u8; n];
+        let (mut n_from_window, mut n_from_whole_gap, mut n_from_calib, mut n_unfilled) =
+            (0usize, 0usize, 0usize, 0usize);
 
         for wi in 0..n_win {
             let w_lo = g_lo + d * wi as f64 / n_win as f64;
@@ -190,15 +204,22 @@ pub fn assign_gap_fill_channels(
             let mut src: Vec<(u16, u8)> =
                 ref_triples.iter().flat_map(|p| pairs_in(p, w_lo, w_hi)).collect();
             src.sort_by(by_ch);
-            let spectrum: &[(u16, u8)] = if !src.is_empty() {
-                &src
+            // fallback 分级：子窗参考 → 整 gap 参考池 → target 邻窗(三箱共饱和)
+            let (spectrum, kind): (&[(u16, u8)], usize) = if !src.is_empty() {
+                (&src, 0)
             } else if !whole_gap.is_empty() {
-                &whole_gap
+                (&whole_gap, 1)
             } else {
-                &calib
+                (&calib, 2)
             };
             if spectrum.is_empty() {
+                n_unfilled += n_w;
                 continue;
+            }
+            match kind {
+                0 => n_from_window += n_w,
+                1 => n_from_whole_gap += n_w,
+                _ => n_from_calib += n_w,
             }
             // 分位取样：filler 与 channel 都取自参考事例，pulse_width 随之（保关联）
             let ranks = lowdisc_ranks(n_w);
@@ -208,7 +229,15 @@ pub fn assign_gap_fill_channels(
                 pulse_widths[s + k] = spectrum[idx].1;
             }
         }
-        out.push(GapFillChannels { gap_idx: gr.gap_idx, channels, pulse_widths });
+        out.push(GapFillChannels {
+            gap_idx: gr.gap_idx,
+            channels,
+            pulse_widths,
+            n_from_window,
+            n_from_whole_gap,
+            n_from_calib,
+            n_unfilled,
+        });
     }
     out
 }
@@ -329,6 +358,10 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].channels.len(), 5);
         assert!(out[0].channels.iter().all(|&c| c == 100), "{:?}", out[0].channels);
+        // 正常路径:全部来自子窗参考,无 fallback
+        assert_eq!(out[0].n_from_window, 5);
+        assert_eq!(out[0].n_from_calib, 0);
+        assert_eq!(out[0].n_unfilled, 0);
     }
 
     #[test]
@@ -357,6 +390,9 @@ mod tests {
             "应退化到标定窗(77): {:?}",
             out[0].channels
         );
+        // 三箱共饱和 fallback 计数可见
+        assert_eq!(out[0].n_from_calib, 5, "5 个 filler 应记为 calib fallback");
+        assert_eq!(out[0].n_from_window, 0);
     }
 
     #[test]
