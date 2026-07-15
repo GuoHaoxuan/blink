@@ -31,8 +31,8 @@ pub enum TopCommands {
         #[arg(long, default_value_t = 0)]
         worker: usize,
     },
-    /// TGF filter (lightning association for detected signals)
-    Filter,
+    /// WWLLN lightning association enrichment for detected signals
+    Wwlln,
 }
 
 #[derive(Subcommand)]

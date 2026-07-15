@@ -144,8 +144,8 @@ fn main() {
             );
             blink_search::search_range::<blink_hxmt_he::types::HxmtHe>(start, end, workers, worker);
         }
-        TopCommands::Filter => {
-            blink_filter::run();
+        TopCommands::Wwlln => {
+            blink_wwlln::run();
         }
     }
 }

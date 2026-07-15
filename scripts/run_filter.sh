@@ -12,4 +12,4 @@ export WWLLN_DB_PATH=/scratchfs/gecam/guohx/WWLLN/WWLLN.db   # 改成实际 WWLL
 # ─────────────────────────────────────────────────────────────────
 
 cd "$WORKDIR" || exit 1
-./blink filter
+./blink wwlln
