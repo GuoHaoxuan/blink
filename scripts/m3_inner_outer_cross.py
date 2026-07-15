@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+"""M3 model: M2 + cross-detector coupling per (Box × Ring).
+
+PHO = b + (1+α)·Sci + β·Wide + γ·Large + δ·Sci_others
+
+Fit per (Box × Ring) — 6 groups × 5 coefficients.
+
+Hypothesis: outer-ring detectors couple to Sci_others more strongly
+than inner-ring (because they sit adjacent to lateral HVT shields and
+ME/LE structures, so scattering / secondary backgrounds scale with
+neighbor source rate). If δ_outer ≪ δ_inner (more negative), and the
+residual gap inner−outer at high Sci collapses, the geometric
+cross-detector hypothesis is confirmed.
+"""
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+CSV_DIR = Path("n_below_study/per_sec_csvs")
+HV_TABLE = Path("n_below_study/hv_table_partial.csv.gz")
+OUT_DIR = Path("plots"); OUT_DIR.mkdir(exist_ok=True)
+L_THRESH = 50_000
+SCI_SEC_TOTAL_MIN = 100
+BOX_OFFSET = {"A": 0, "B": 6, "C": 12}
+MAIN_BAND_LO = 300.0
+HIGH_SCI = 1500.0
+
+
+def load():
+    dtype = {"date": "string", "box": "category", "met_sec": "int64",
+             "det": "int8", "L_cycles": "int32",
+             "PHO": "int32", "Wide": "int32", "Large": "int32", "Sci": "int32"}
+    files = sorted(CSV_DIR.glob("*.csv"))
+    print(f"Loading {len(files)} CSVs...")
+    parts = []
+    for f in files:
+        try:
+            parts.append(pd.read_csv(f, usecols=list(dtype), dtype=dtype))
+        except Exception:
+            pass
+    df = pd.concat(parts, ignore_index=True)
+    df["length"] = df["L_cycles"].astype("float32") * 16e-6
+    df = df[df["L_cycles"] > L_THRESH]
+    g = df.groupby(["date","box","met_sec"], observed=True)["Sci"].sum()
+    g.name = "sci_sec_total"
+    df = df.merge(g, on=["date","box","met_sec"])
+    df = df[df["sci_sec_total"] > SCI_SEC_TOTAL_MIN].copy()
+    df["sci_rate"]   = df["Sci"]   / df["length"]
+    df["wide_rate"]  = df["Wide"]  / df["length"]
+    df["large_rate"] = df["Large"] / df["length"]
+    df["pho_rate"]   = df["PHO"]   / df["length"]
+    df["det_global"] = (df["box"].map(BOX_OFFSET) + df["det"]).astype("int8")
+    df["ring"] = np.where(df["det"] < 2, "in", "out")
+
+    print("Computing Sci_others...")
+    tot = df.groupby(["date","box","met_sec"], observed=True)["sci_rate"].sum()
+    tot.name = "sci_tot_rate"
+    df = df.merge(tot, on=["date","box","met_sec"])
+    df["sci_others_rate"] = df["sci_tot_rate"] - df["sci_rate"]
+    df = df.drop(columns="sci_tot_rate")
+
+    hv = pd.read_csv(HV_TABLE,
+                     dtype={"date":"string","met_sec":"int64",
+                            **{f"hv{i}":"float32" for i in range(18)}})
+    hv = hv.set_index(["date","met_sec"]).sort_index()
+    keys = pd.MultiIndex.from_arrays(
+        [df["date"].astype(str).str.replace("-","",regex=False).values,
+         df["met_sec"].values], names=["date","met_sec"])
+    hv_arr = hv.reindex(keys).values
+    rows = np.arange(len(df))
+    df["hv"] = hv_arr[rows, df["det_global"].values.astype(int)]
+    df = df[(df["hv"] < -900) & (df["hv"] > -1100)].copy()
+    print(f"normal-mode rows: {len(df):,}")
+    return df
+
+
+def fit_m1(sub):
+    """PHO = b + (1+α)Sci + β Wide + γ Large.  4 coefs."""
+    X = np.column_stack([np.ones(len(sub)), sub["sci_rate"].values,
+                         sub["wide_rate"].values, sub["large_rate"].values])
+    coef, *_ = np.linalg.lstsq(X, sub["pho_rate"].values, rcond=None)
+    b, one_plus_a, beta, gamma = coef
+    return b, one_plus_a - 1, beta, gamma
+
+
+def apply_m1(sub, b, alpha, beta, gamma):
+    pho_corr = sub["pho_rate"].values - beta*sub["wide_rate"].values - gamma*sub["large_rate"].values
+    return (pho_corr - b) / (1 + alpha) - sub["sci_rate"].values
+
+
+def fit_m3(sub):
+    """PHO = b + (1+α)Sci + β Wide + γ Large + δ Sci_others.  5 coefs."""
+    X = np.column_stack([np.ones(len(sub)),
+                         sub["sci_rate"].values,
+                         sub["wide_rate"].values,
+                         sub["large_rate"].values,
+                         sub["sci_others_rate"].values])
+    coef, *_ = np.linalg.lstsq(X, sub["pho_rate"].values, rcond=None)
+    b, one_plus_a, beta, gamma, delta = coef
+    return b, one_plus_a - 1, beta, gamma, delta
+
+
+def apply_m3(sub, b, alpha, beta, gamma, delta):
+    pho_corr = (sub["pho_rate"].values
+                - beta * sub["wide_rate"].values
+                - gamma * sub["large_rate"].values
+                - delta * sub["sci_others_rate"].values)
+    return (pho_corr - b) / (1 + alpha) - sub["sci_rate"].values
+
+
+def main():
+    df = load()
+
+    # ============ M1: fit per Box (baseline) ============
+    print(f"\n=== M1: per-Box fit on Sci>{MAIN_BAND_LO} ===")
+    print(f"{'Box':>4s}  {'b':>8s} {'α':>8s} {'β':>8s} {'γ':>8s}")
+    resid_m1 = np.full(len(df), np.nan)
+    for box in "ABC":
+        mask_fit = (df["box"] == box) & (df["sci_rate"] > MAIN_BAND_LO)
+        b, a, beta, gamma = fit_m1(df[mask_fit])
+        print(f"  {box}    {b:>8.1f} {a:>+8.4f} {beta:>+8.4f} {gamma:>+8.4f}")
+        mask_apply = (df["box"] == box)
+        resid_m1[mask_apply.values] = apply_m1(df[mask_apply], b, a, beta, gamma)
+    df["resid_m1"] = resid_m1
+
+    # ============ M3: per (Box × Ring), with δ·Sci_others term ============
+    print(f"\n=== M3: per-(Box × Ring) + δ·Sci_others on Sci>{MAIN_BAND_LO} ===")
+    print(f"{'Box':>4s} {'Ring':>5s}  {'N_fit':>10s}  "
+          f"{'b':>8s} {'α':>8s} {'β':>8s} {'γ':>8s} {'δ':>10s}")
+    resid_m3 = np.full(len(df), np.nan)
+    for box in "ABC":
+        for ring in ("in", "out"):
+            mask_fit = (df["box"] == box) & (df["ring"] == ring) & (df["sci_rate"] > MAIN_BAND_LO)
+            n_fit = mask_fit.sum()
+            b, a, beta, gamma, delta = fit_m3(df[mask_fit])
+            print(f"  {box}    {ring:>5s}  {n_fit:>10,d}  "
+                  f"{b:>8.1f} {a:>+8.4f} {beta:>+8.4f} {gamma:>+8.4f} {delta:>+10.5f}")
+            mask_apply = (df["box"] == box) & (df["ring"] == ring)
+            resid_m3[mask_apply.values] = apply_m3(df[mask_apply], b, a, beta, gamma, delta)
+    df["resid_m3"] = resid_m3
+
+    # ============ Per-det residual M1 vs M3 ============
+    print(f"\n=== Per-det median residual at Sci > {HIGH_SCI} ===")
+    print(f"{'det':>4s} {'ring':>5s}  {'N':>8s}  {'M1_med':>8s}  {'M3_med':>8s}  Δ")
+    hi = df[df["sci_rate"] > HIGH_SCI]
+    for d in range(18):
+        sub = hi[hi["det_global"] == d]
+        if len(sub) == 0:
+            continue
+        ring = "in" if (d % 6) < 2 else "out"
+        m1 = sub["resid_m1"].median()
+        m3 = sub["resid_m3"].median()
+        print(f"  {d:>2d}  {ring:>5s}  {len(sub):>8,d}  {m1:>+8.1f}  {m3:>+8.1f}  {m1-m3:>+8.1f}")
+
+    # ============ RMS comparison ============
+    print(f"\n=== RMS comparison ===")
+    print(f"{'Box':>4s}  {'Sci range':>15s}  {'M1 RMS':>10s}  {'M3 RMS':>10s}  Δ%")
+    for box in "ABC":
+        for label, mask_extra in (("all Sci>300", df["sci_rate"] > 300),
+                                  ("Sci>1500",    df["sci_rate"] > HIGH_SCI)):
+            sub = df[(df["box"] == box) & mask_extra]
+            r1 = np.sqrt(np.mean(sub["resid_m1"]**2))
+            r3 = np.sqrt(np.mean(sub["resid_m3"]**2))
+            print(f"  {box}    {label:>15s}  {r1:>10.1f}  {r3:>10.1f}  {(r3-r1)/r1*100:>+6.1f}%")
+
+    # Also: gap between inner/outer at high Sci
+    print(f"\n=== Inner-Outer residual gap at Sci > {HIGH_SCI} ===")
+    print(f"{'Box':>4s}  {'M1 inner':>10s}  {'M1 outer':>10s}  {'M1 gap':>8s} | "
+          f"{'M3 inner':>10s}  {'M3 outer':>10s}  {'M3 gap':>8s}")
+    for box in "ABC":
+        sub_hi = df[(df["box"] == box) & (df["sci_rate"] > HIGH_SCI)]
+        m1_in = sub_hi.loc[sub_hi["ring"]=="in", "resid_m1"].median()
+        m1_out = sub_hi.loc[sub_hi["ring"]=="out", "resid_m1"].median()
+        m3_in = sub_hi.loc[sub_hi["ring"]=="in", "resid_m3"].median()
+        m3_out = sub_hi.loc[sub_hi["ring"]=="out", "resid_m3"].median()
+        print(f"  {box}    {m1_in:>+10.1f}  {m1_out:>+10.1f}  {m1_in-m1_out:>+8.1f} | "
+              f"{m3_in:>+10.1f}  {m3_out:>+10.1f}  {m3_in-m3_out:>+8.1f}")
+
+    # ============ Plot: residual vs Sci, M1 vs M3, by ring ============
+    fig, axes = plt.subplots(3, 2, figsize=(13, 12), sharex=True, sharey=True)
+    SCI_MIN, SCI_MAX = MAIN_BAND_LO, 4000.0
+    bins = np.logspace(np.log10(SCI_MIN), np.log10(SCI_MAX), 40)
+    bc = 0.5 * (bins[:-1] + bins[1:])
+    for row_i, box in enumerate("ABC"):
+        for col_i, model_name in enumerate(("M1", "M3")):
+            ax = axes[row_i, col_i]
+            col_resid = "resid_m1" if model_name == "M1" else "resid_m3"
+            sub_box = df[df["box"] == box]
+            for ring, color in (("in", "C2"), ("out", "C3")):
+                sub = sub_box[sub_box["ring"] == ring]
+                sci = sub["sci_rate"].values
+                resid = sub[col_resid].values
+                med = []
+                for i in range(len(bins) - 1):
+                    m = (sci >= bins[i]) & (sci < bins[i+1])
+                    med.append(np.median(resid[m]) if m.sum() > 200 else np.nan)
+                ax.plot(bc, np.array(med), "o-", color=color, lw=2, ms=4,
+                        label=f"{ring}er (n={len(sub):,})")
+            ax.axhline(0, color="k", ls="--", lw=1)
+            ax.set_xscale("log")
+            ax.set_xlim(SCI_MIN, SCI_MAX)
+            ax.set_ylim(-400, 200)
+            if row_i == 0:
+                ax.set_title(f"{model_name}", fontsize=12)
+            if col_i == 0:
+                ax.set_ylabel(f"Box {box}\nresid [cnt/s/det]")
+            if row_i == 2:
+                ax.set_xlabel("Sci [cnt/s/det]")
+            ax.legend(fontsize=9)
+            ax.grid(alpha=0.3, which="both")
+    fig.suptitle("Residual vs Sci: M1 (per-Box) vs M3 (per-Box×Ring + δ·Sci_others)",
+                 fontsize=13, y=0.995)
+    fig.tight_layout()
+    out = OUT_DIR / "m3_resid_vs_sci.png"
+    fig.savefig(out, dpi=130, bbox_inches="tight")
+    print(f"\nSaved: {out}")
+
+    # Per-det histogram M1 vs M3
+    fig, axes = plt.subplots(3, 6, figsize=(18, 9), sharex=True, sharey=True)
+    boxes = ["A"]*6 + ["B"]*6 + ["C"]*6
+    for d in range(18):
+        ax = axes[d // 6, d % 6]
+        sub = hi[hi["det_global"] == d]
+        if len(sub) == 0:
+            ax.text(0.5, 0.5, "(empty)", transform=ax.transAxes, ha="center")
+            continue
+        ring = "in" if (d % 6) < 2 else "out"
+        ax.hist(sub["resid_m1"], bins=80, alpha=0.45, color="C0",
+                range=(-1500, 500), label=f"M1 med={sub['resid_m1'].median():+.0f}")
+        ax.hist(sub["resid_m3"], bins=80, alpha=0.45, color="C3",
+                range=(-1500, 500), label=f"M3 med={sub['resid_m3'].median():+.0f}")
+        ax.axvline(0, color="k", ls="--", lw=1)
+        ring_label = "INNER" if ring == "in" else "outer"
+        ax.set_title(f"Box {boxes[d]} det {d%6} [{ring_label}]\nN={len(sub):,}",
+                     fontsize=9, fontweight="bold" if ring == "in" else "normal")
+        ax.legend(fontsize=7, loc="upper left")
+        ax.set_xlim(-1500, 500)
+        ax.grid(alpha=0.3)
+    fig.suptitle(f"Per-det M1 (blue) vs M3 (red) residual at Sci > {HIGH_SCI}", fontsize=12)
+    fig.tight_layout()
+    out2 = OUT_DIR / "m3_per_det_residual_hi.png"
+    fig.savefig(out2, dpi=130, bbox_inches="tight")
+    print(f"Saved: {out2}")
+
+
+if __name__ == "__main__":
+    main()
