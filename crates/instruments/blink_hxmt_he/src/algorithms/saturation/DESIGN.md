@@ -424,7 +424,7 @@ python3 scripts/plot_hxmt_csi_multi.py --burst 250919A --bin 0.1 --band 300 700 
 # (no args; writes 200415A_hxmt_vs_asim_1ms.pdf, copy to figures/f11_200415_failure.pdf).
 # Paper Fig. 4: scripts/plot_fig4_solve_vs_1k_221009a.py; Fig. 5:
 # scripts/plot_fig3_wrap_uniqueness.py (both call the current blink CLI;
-# leap-second-aware since c8a49c2, T0 = 13:17:00).
+# leap-second-aware since d1a62f6, T0 = 13:17:00).
 ```
 
 ### GRB 221009A × GECAM-C
