@@ -87,6 +87,29 @@ class TDigest:
         return float(self.edges[idx] + frac * (self.edges[idx + 1] - self.edges[idx]))
 
 
+def plot_scatter(sci_s, rec_s, output, plot_lo=100.0, plot_hi=5000.0):
+    """Publication figure: recovered-vs-observed scatter of sampled frames.
+
+    sci_s/rec_s are a uniform random sample of the full population;
+    plot_lo crops the sparsely populated lower-left corner.
+    """
+    fig, ax1 = plt.subplots(figsize=(7.0, 5.8))
+    ax1.scatter(sci_s, rec_s, s=1.2, c="#1f4e79", alpha=0.12,
+                linewidths=0, rasterized=True)
+    xx = np.logspace(np.log10(plot_lo), np.log10(plot_hi), 100)
+    ax1.plot(xx, xx, "r-", lw=1.6, label=r"$y=x$ (perfect recovery)")
+    ax1.set_xscale("log"); ax1.set_yscale("log")
+    ax1.set_xlim(plot_lo, plot_hi); ax1.set_ylim(plot_lo, plot_hi)
+    ax1.set_xlabel(r"$\mathrm{Sci}_\mathrm{obs}$ observed (cnt/s)", fontsize=13)
+    ax1.set_ylabel(r"$\mathrm{Sci}_\mathrm{rec}$ recovered (cnt/s)", fontsize=13)
+    ax1.tick_params(labelsize=11)
+    ax1.legend(loc="lower right", fontsize=12)
+    ax1.grid(True, alpha=0.3, which="both")
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+    plt.tight_layout()
+    plt.savefig(output, dpi=200, bbox_inches="tight")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache-dir", default="/Volumes/Graphite/blink_clean_relaxed")
@@ -96,7 +119,20 @@ def main() -> int:
     ap.add_argument("--stats-out", default="plots/c25_fullpop_stats.json")
     ap.add_argument("--window-end", default="2026-05-31",
                     help="Hard cap on date (inclusive). Default 2026-05-31.")
+    ap.add_argument("--from-sample", default=None,
+                    help="Path to a saved sample npz; replot without streaming.")
+    ap.add_argument("--sample-size", type=int, default=200_000,
+                    help="Reservoir-sample size for the scatter figure.")
+    ap.add_argument("--plot-lo", type=float, default=100.0,
+                    help="Lower axis bound of the scatter plot (crop empty corner).")
+    ap.add_argument("--plot-hi", type=float, default=5000.0,
+                    help="Upper axis bound of the scatter plot.")
     args = ap.parse_args()
+
+    if args.from_sample:
+        z = np.load(args.from_sample)
+        plot_scatter(z["sci"], z["rec"], args.output, args.plot_lo, args.plot_hi)
+        return 0
 
     P = json.loads(Path(args.c25_json).read_text())
     print(f"C25 params: alpha_m={P['alpha']:.3f}, mu_m={P['mu_m']:.2f}, "
@@ -120,6 +156,11 @@ def main() -> int:
     n = 0
     sum_r = 0.0
     sum_r2 = 0.0
+    # Reservoir sample of (sci, rec) pairs for the scatter figure
+    rng = np.random.default_rng(42)
+    K = args.sample_size
+    S_sci = np.empty(K); S_rec = np.empty(K)
+    n_seen = 0
     resid_digest = TDigest(-500.0, 500.0, 5001)
     H1 = np.zeros((len(XBIN) - 1, len(XBIN) - 1), dtype=np.int64)
     H2 = np.zeros((len(XBIN) - 1, len(YBIN_RES) - 1), dtype=np.int64)
@@ -145,6 +186,22 @@ def main() -> int:
             if sci.size == 0:
                 continue
             resid = rec - sci
+
+            # Vectorized Algorithm-R reservoir update
+            m = sci.size
+            g = n_seen + np.arange(m)
+            if n_seen < K:
+                take = min(K - n_seen, m)
+                S_sci[n_seen:n_seen + take] = sci[:take]
+                S_rec[n_seen:n_seen + take] = rec[:take]
+                sel = rng.random(m - take) < K / (g[take:] + 1.0)
+                pos = rng.integers(0, K, size=int(sel.sum()))
+                S_sci[pos] = sci[take:][sel]; S_rec[pos] = rec[take:][sel]
+            else:
+                sel = rng.random(m) < K / (g + 1.0)
+                pos = rng.integers(0, K, size=int(sel.sum()))
+                S_sci[pos] = sci[sel]; S_rec[pos] = rec[sel]
+            n_seen += m
 
             n += sci.size
             sum_r += float(resid.sum())
@@ -207,85 +264,20 @@ def main() -> int:
 
     # Persist the residual digest so future post-processing can query any quantile
     digest_npz = Path(args.stats_out).with_suffix(".digest.npz")
+    hist_npz = Path(args.stats_out).with_suffix(".hists.npz")
+    np.savez(hist_npz, H1=H1, H2=H2, H3=H3, XBIN=XBIN)
+    print(f"2D histograms: {hist_npz}")
+    K_eff = min(K, n_seen)
+    sample_npz = Path(args.stats_out).with_suffix(".sample.npz")
+    np.savez(sample_npz, sci=S_sci[:K_eff], rec=S_rec[:K_eff], n_total=n_seen)
+    print(f"Scatter sample ({K_eff:,} of {n_seen:,}): {sample_npz}")
     np.savez(digest_npz,
              edges=resid_digest.edges, counts=resid_digest.counts,
              under=resid_digest.under, over=resid_digest.over,
              N=n, mean=mean_r, std=std_r)
     print(f"Residual digest: {digest_npz}")
 
-    # 4-panel figure, 2x2 wide layout for 16:9 slides.
-    fig, _axes = plt.subplots(2, 2, figsize=(14, 8.4))
-    ax1, ax2, ax3, ax4 = _axes.flat
-
-    def _imshow_hist(ax, H, xbins, ybins):
-        Hp = np.clip(H.T.astype(float), 1, None)
-        ax.imshow(
-            Hp,
-            origin="lower",
-            extent=[xbins[0], xbins[-1], ybins[0], ybins[-1]],
-            aspect="auto",
-            cmap="viridis",
-            norm=LogNorm(vmin=1, vmax=max(2, Hp.max())),
-            interpolation="nearest",
-        )
-
-    # Panel 1
-    _imshow_hist(ax1, H1, XBIN, XBIN)
-    xx = np.logspace(np.log10(LO), np.log10(HI), 100)
-    ax1.plot(xx, xx, "r-", lw=1.8, label=r"$y=x$ (perfect recovery)")
-    ax1.set_xscale("log"); ax1.set_yscale("log")
-    ax1.set_xlim(LO, HI); ax1.set_ylim(LO, HI)
-    ax1.set_xlabel(r"$\mathrm{Sci}_\mathrm{obs}$ observed (cnt/s)")
-    ax1.set_ylabel(r"$\mathrm{Sci}_\mathrm{rec}$ recovered (cnt/s)")
-    ax1.set_title(r"conservation-recovered Sci vs observed Sci (full mission window)", fontsize=12)
-    ax1.legend(loc="lower right", fontsize=11)
-    ax1.grid(True, alpha=0.3, which="both")
-
-    # Panel 2
-    _imshow_hist(ax2, H2, XBIN, YBIN_RES)
-    ax2.axhline(0, color="r", lw=1.8, label="zero")
-    ax2.axhline(p50, color="orange", ls="--", lw=1.2, label=f"median = ${p50:+.1f}$")
-    ax2.set_xscale("log")
-    ax2.set_xlim(LO, HI); ax2.set_ylim(RES_LO, RES_HI)
-    ax2.set_xlabel(r"$\mathrm{Sci}_\mathrm{obs}$ observed (cnt/s)")
-    ax2.set_ylabel(r"residual $\mathrm{Sci}_\mathrm{rec}-\mathrm{Sci}_\mathrm{obs}$ (cnt/s)")
-    ax2.set_title("recovery residual (full population)", fontsize=12)
-    ax2.legend(loc="upper left", fontsize=11)
-    ax2.grid(True, alpha=0.3, which="both")
-
-    # Panel 3 (fractional residual)
-    _imshow_hist(ax3, H3, XBIN, YBIN_FRAC)
-    ax3.axhline(0, color="r", lw=1.8, label="zero")
-    ax3.set_xscale("log")
-    ax3.set_xlim(LO, HI); ax3.set_ylim(FRAC_LO, FRAC_HI)
-    ax3.set_xlabel(r"$\mathrm{Sci}_\mathrm{obs}$ observed (cnt/s)")
-    ax3.set_ylabel(r"fractional residual (\%)")
-    ax3.set_title("fractional residual (full population)", fontsize=12)
-    ax3.legend(loc="upper left", fontsize=11)
-    ax3.grid(True, alpha=0.3, which="both")
-
-    # Panel 4: conditional percentiles per sci bin
-    sci_centers = np.sqrt(XBIN[:-1] * XBIN[1:])
-    qs = {"P5": 0.05, "P50": 0.50, "P95": 0.95}
-    for label, q in qs.items():
-        vals = []
-        for b in range(nbin4):
-            d = digests4[b]
-            total = d.under + int(d.counts.sum()) + d.over
-            vals.append(d.quantile(q) if total > 0 else np.nan)
-        ax4.plot(sci_centers, vals, label=label)
-    ax4.axhline(0, color="r", lw=1.2)
-    ax4.set_xscale("log")
-    ax4.set_xlim(LO, HI); ax4.set_ylim(-200, 200)
-    ax4.set_xlabel(r"$\mathrm{Sci}_\mathrm{obs}$ observed (cnt/s)")
-    ax4.set_ylabel("conditional residual (cnt/s)")
-    ax4.set_title("conditional percentiles vs Sci_obs", fontsize=12)
-    ax4.legend(loc="upper right", fontsize=11)
-    ax4.grid(True, alpha=0.3, which="both")
-
-    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-    plt.tight_layout()
-    plt.savefig(args.output, dpi=120, bbox_inches="tight")
+    plot_scatter(S_sci[:K_eff], S_rec[:K_eff], args.output, args.plot_lo, args.plot_hi)
     print(f"Figure: {args.output}")
     return 0
 

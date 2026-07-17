@@ -84,15 +84,13 @@ def main():
 
     # ── plot ──
     ms = 1000.0
-    fig, (ax, axr) = plt.subplots(
-        2, 1, figsize=(7.0, 4.3), sharex=True,
-        gridspec_kw={"height_ratios": [3, 1], "hspace": 0.06})
+    fig, ax = plt.subplots(figsize=(7.0, 3.5))
 
     xs = x * ms
     ax.axvspan(sat_lo * ms, sat_hi * ms, color="#D62728", alpha=0.08, zorder=0)
     ax.step(xs, n_obs, where="mid", color="navy", lw=0.9, label="HXMT/HE observed")
     ax.step(xs, n_all, where="mid", color="#5b9bd5", lw=1.0,
-            label=f"HXMT/HE observed + reconstructed (+{len(fill):,})")
+            label=f"HXMT/HE reconstructed (+{len(fill):,})")
     ax.fill_between(xs, n_obs, n_all, step="mid", color="#5b9bd5", alpha=0.30)
     ax.step(xs, n_asim_s, where="mid", color="#7d4fd0", lw=1.0,
             label=f"ASIM/MXGS LED 50–400 keV ($\\times${scale:.1f})")
@@ -102,20 +100,8 @@ def main():
     ax.set_ylim(-1e5, 1.8e6)
     ax.text(0.5 * (sat_lo + sat_hi) * ms, 1.62e6, "HXMT FIFO\nsaturation",
             ha="center", va="top", fontsize=8, color="#A02030", style="italic")
-
-    with np.errstate(divide="ignore", invalid="ignore"):
-        rr = np.where((n_asim_s > 0.05 * n_asim_s.max()) & np.isfinite(n_all),
-                      n_all / n_asim_s, np.nan)
-    axr.axvspan(sat_lo * ms, sat_hi * ms, color="#D62728", alpha=0.08, zorder=0)
-    axr.step(xs, rr, where="mid", color="k", lw=0.8)
-    axr.axhline(1.0, color="gray", lw=0.5, ls="--")
-    axr.set_ylim(0, 3)
-    axr.set_ylabel("HXMT / ASIM")
-    axr.set_xlabel("Time since $T_0$ (ms)")
-    axr.set_xlim(XLIM[0] * ms, XLIM[1] * ms)
-    axr.text(0.98, 0.88, f"HXMT/ASIM $= {mean:.2f} \\pm {std:.2f}$ ({sm.sum()} bins)",
-             transform=axr.transAxes, ha="right", va="top", fontsize=8,
-             bbox=dict(facecolor="white", alpha=0.8, edgecolor="none"))
+    ax.set_xlabel("Time since $T_0$ (ms)")
+    ax.set_xlim(XLIM[0] * ms, XLIM[1] * ms)
 
     fig.savefig(OUT, dpi=200, bbox_inches="tight")
     fig.savefig(OUT.replace(".pdf", ".png"), dpi=150, bbox_inches="tight")

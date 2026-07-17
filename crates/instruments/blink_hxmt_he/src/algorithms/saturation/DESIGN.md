@@ -407,18 +407,40 @@ python3 scripts/plot_hxmt_vs_gbm.py --bin 0.5 --det n0 n3 b0 \
     -o figures/f7_xsat_260226_gbm.pdf
 # (legacy, pre-2026-07: --emin 200 --emax 900; energy filter since restored as optional)
 
-# Paper Fig. 14 (f14_xsat_260226_bands.pdf) standard command, 2026-07-12.
-# NaI band-resolved; per-band scale also excludes filler bins (26/40).
-# Scales ×0.063/0.143/0.150; filler-bin ratio medians 0.78/0.82/0.98,
-# sigma_IQR 0.11-0.16 (paper Sec. 6.5 & Table 4).
-python3 scripts/plot_hxmt_vs_gbm_bands.py -o figures/f14_xsat_260226_bands.pdf
+# MERGED (2026-07-17): the paper now uses a single 4-panel figure in the
+# former f7 slot (top: broadband; lower three: NaI bands), replacing the
+# separate f7 + f14 pair:
+python3 scripts/plot_260226_combo.py -o figures/f7_xsat_260226_gbm.pdf
+# Reproduces broadband ×0.73 / 1.07±0.22 (38 bins) and NaI scales
+# ×0.023/0.070/0.113; NaI filler-bin ratio medians 1.18/1.23/1.18
+# (paper Sec. 6.5 & Table 4).
+# 2026-07-17 FIX: NaI linear-background window moved from (-8,-3) to
+# (-4.5,-0.5); the old left window fell in the dead zone before the
+# first SEC anchor (NaI data starts ~-5s) and corrupted the linear fit
+# (spuriously low soft-band medians 0.78/0.82). Corrected result: all
+# three NaI bands sit ~20% high, same sign as the broadband, a
+# rate-dependent cross-instrument offset (recovery validated by dug-gap
+# + engineering channel).
+# CAUTION: the filler energy assignment slices gaps into sub-windows
+# from the reconstruction window start, so per-filler (channel, pw)
+# depends on --before/--after. The published NaI numbers require the
+# f14 window (--before 8 --after 80); plot_260226_combo.py hardcodes it.
+# Former standalone NaI-bands command (reference only):
+# python3 scripts/plot_hxmt_vs_gbm_bands.py -o f14_xsat_260226_bands.pdf
 
-# Paper Figs. 15/16 (250919A CsI bands / 100 ms) standard commands, 2026-07-12.
-# Scale fit excludes filler bins in-script; f16 sat-bin medians 1.08 (SVOM) / 1.12 (GBM).
-python3 scripts/plot_hxmt_csi_multi.py --burst 250919A --bin 0.5 --bands \
-    --xlim -12 28 --pub -o figures/f15_xsat_250919_bands.pdf
-python3 scripts/plot_hxmt_csi_multi.py --burst 250919A --bin 0.1 --band 300 700 \
-    --xlim 2 13 --pub -o figures/f16_xsat_250919_100ms.pdf
+# MERGED (2026-07-18): the paper now uses one 4-panel figure at 0.1 s for
+# 250919A (top: 70-700 keV broadband; lower three: 70-150/150-300/300-700
+# keV bands), replacing the separate f15 (0.5 s bands) + f16 (0.1 s single
+# band) pair:
+python3 scripts/plot_250919_combo.py -o figures/f15_xsat_250919_bands.pdf
+# Filler-bin HXMT/ext medians: 300-700 keV 1.12 (GBM)/1.08 (SVOM); rising
+# to 1.53/1.40 at 70-150 keV; 1.51/1.37 broadband. Scale fit on the
+# filler-free bins of T0-2..+15; linear background on -30..-24 & 112..130.
+# Former standalone commands (reference only):
+# python3 scripts/plot_hxmt_csi_multi.py --burst 250919A --bin 0.5 --bands \
+#     --xlim -12 28 --pub -o f15_xsat_250919_bands.pdf
+# python3 scripts/plot_hxmt_csi_multi.py --burst 250919A --bin 0.1 --band 300 700 \
+#     --xlim 2 13 --pub -o f16_xsat_250919_100ms.pdf
 
 # Paper Fig. 11 (f11_200415_failure.pdf): scripts/plot_200415_1ms_failure.py
 # (no args; writes 200415A_hxmt_vs_asim_1ms.pdf, copy to figures/f11_200415_failure.pdf).
