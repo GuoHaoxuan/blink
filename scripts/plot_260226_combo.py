@@ -29,17 +29,24 @@ sys.path.insert(0, str(Path(__file__).parent))
 from plot_hxmt_vs_gbm import (  # noqa: E402
     load_hxmt_reconstruct, load_gbm_tte, HXMT_TRIGGER_UTC_LABEL,
 )
-from plot_hxmt_vs_gbm_bands import load_hxmt_nai, load_gbm_nai  # noqa: E402
-from plot_hxmt_vs_ibis_bands import fit_background, BANDS  # noqa: E402
+from plot_hxmt_csi_multi import (  # noqa: E402
+    load_hxmt_csi, load_gbm as load_gbm_csi, CONFIGS as CSI_CONFIGS,
+)
+from plot_hxmt_vs_ibis_bands import fit_background  # noqa: E402
 from engineering_prediction import load_engineering_prediction, T_REF  # noqa: E402
 
 BIN = 0.5
 BEFORE, AFTER = 10.0, 80.0
 XLIM = (-4.5, 80.0)
 BB_BKG = (-6.5, -2.0, 60.0, 80.0)    # broadband: constant background
-NAI_BKG = (-4.5, -0.5, 65.0, 80.0)   # NaI bands: linear bkg (left window in real data; data starts ~-5s)
+NAI_BKG = (-4.5, -0.5, 65.0, 80.0)   # band panels: linear bkg (left window in real data; data starts ~-5s)
 SCALE_RANGE = (20.0, 40.0)
 GBM_BB_DETS = ["n0", "n3", "b0"]
+# CsI band panels: HE's GRB-facing side (GRBs arrive off-axis through
+# CsI; the collimated NaI faces the field of view). Same bands as the
+# 250919A figure.
+CSI_BANDS = [(70, 150), (150, 300), (300, 700)]
+T0_UTC = "2026-02-26T10:37:50"
 
 
 def main() -> int:
@@ -103,26 +110,30 @@ def main() -> int:
         ebm = ((eng_t >= t1) & (eng_t < t2)) | ((eng_t >= t3) & (eng_t < t4))
         net_eng = eng_rate - np.mean(eng_rate[ebm])
 
-    # ---- NaI band data (former f14) ----
-    # Loaded with the f14 standard window (--before 8): the filler
-    # energy assignment slices gaps into sub-windows from the window
-    # start, so the per-filler (channel, pw) draw depends on the
-    # window; keep it identical to the published f14 numbers.
-    NAI_BEFORE = 8.0
-    nedges = np.arange(-NAI_BEFORE, AFTER + BIN, BIN)
-    nx = nedges[:-1] + BIN / 2
-    nobs_t, nobs_e, nfill_t, nfill_e = load_hxmt_nai(NAI_BEFORE, AFTER)
+    # ---- CsI band data (HE's GRB-facing side) ----
+    # From the frozen recon cache (fixed reconstruction window, so the
+    # filler energy draws are reproducible); t0 passed as the paper T0
+    # so the time axis matches the top panel (leap-second-aware).
+    cfg = CSI_CONFIGS["260226A"]
+    lut = np.load(cfg["csi_lut"])
+    nobs_t, nobs_e, nfill_t, nfill_e = load_hxmt_csi(
+        cfg["recon"], T0_UTC, lut)
     nall_t = np.concatenate([nobs_t, nfill_t])
     nall_e = np.concatenate([nobs_e, nfill_e])
-    gbm_t, gbm_e = load_gbm_nai(NAI_BEFORE, AFTER)
-    print(f"  HXMT NaI: {len(nobs_t):,} obs + {len(nfill_t):,} fill;  "
-          f"GBM NaI: {len(gbm_t):,}", file=sys.stderr)
+    ext = cfg["externals"][0]
+    gbm_t, gbm_e = load_gbm_csi(
+        dir=ext["dir"], trig=ext["trig"], dets=ext["dets"],
+        tmet=ext["tmet"], tutc=ext["tutc"], t0=T0_UTC)
+    print(f"  HXMT CsI: {len(nobs_t):,} obs + {len(nfill_t):,} fill;  "
+          f"GBM: {len(gbm_t):,}", file=sys.stderr)
+    nedges = edges
+    nx = x
     n1, n2, n3, n4 = NAI_BKG
     nbkgm = ((nx >= n1) & (nx < n2)) | ((nx >= n3) & (nx < n4))
 
     # ---- figure ----
     fig, axes = plt.subplots(
-        4, 1, figsize=(10, 12), sharex=True,
+        4, 1, figsize=(13, 11), sharex=True,
         gridspec_kw={"hspace": 0.0})
 
     ax = axes[0]
@@ -141,13 +152,14 @@ def main() -> int:
                       " (1 Hz, 18-det sum)", zorder=6)
     ax.axhline(0, color="gray", lw=0.5)
     vis = (x >= XLIM[0]) & (x <= XLIM[1])
-    ax.set_ylim(-2500, np.nanmax(net_all[vis]) * 1.10)
+    ymax = np.nanmax(net_all[vis])
+    ax.set_ylim(-0.05 * ymax, ymax * 1.10)
     ax.set_ylabel("net rate (evt/s)")
     ax.text(0.02, 0.92, "all events", transform=ax.transAxes,
             fontsize=12, fontweight="bold", va="top")
     ax.legend(loc="upper right")
 
-    for ax, (elo, ehi) in zip(axes[1:], BANDS):
+    for ax, (elo, ehi) in zip(axes[1:], CSI_BANDS):
         def rate(t, e):
             m = (e >= elo) & (e < ehi)
             return np.histogram(t[m], bins=nedges)[0] / BIN
@@ -160,18 +172,33 @@ def main() -> int:
         fb = (r_a - r_o) > 1e-9
         smc = (nx >= SCALE_RANGE[0]) & (nx < SCALE_RANGE[1]) & ~fb
         sc = n_a[smc].sum() / n_g[smc].sum()
-        print(f"  band {elo:.0f}-{ehi:.0f} keV: scale x{sc:.3f}",
-              file=sys.stderr)
+        print(f"  band {elo:.0f}-{ehi:.0f} keV: scale x{sc:.3f} "
+              f"({int(smc.sum())} filler-free bins)", file=sys.stderr)
+        # filler-bin ratio diagnostics (for the paper text)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ref = n_g * sc
+            ok = ref > 0.05 * np.nanmax(ref)
+            rrb = np.where(ok, n_a / ref, np.nan)
+        for tag, m in [("filler", ok & fb), ("clean ", ok & ~fb)]:
+            v = rrb[m & np.isfinite(rrb)]
+            if len(v):
+                q1, q2, q3 = np.percentile(v, [25, 50, 75])
+                print(f"    ratio [{tag}] median {q2:.2f}, "
+                      f"sigma_IQR {(q3-q1)/1.349:.2f} ({len(v)} bins)",
+                      file=sys.stderr)
 
         ax.fill_between(nx, n_o, n_a, step="mid", alpha=0.30,
                         color="#5b9bd5", zorder=2)
         ax.step(nx, n_o, where="mid", color="#20347e", lw=0.9,
-                label="HXMT/HE NaI observed", zorder=3)
+                label="HXMT/HE-CsI observed", zorder=3)
         ax.step(nx, n_a, where="mid", color="#5b9bd5", lw=1.0,
-                label="HXMT/HE NaI obs+recon", zorder=4)
+                label="HXMT/HE-CsI obs+recon", zorder=4)
         ax.step(nx, n_g * sc, where="mid", color="tab:orange", lw=1.1,
-                label="Fermi/GBM NaI " + rf"$\times${sc:.2f}", zorder=5)
+                label="Fermi/GBM n0+n3 " + rf"$\times${sc:.2f}", zorder=5)
         ax.axhline(0, color="gray", lw=0.7, zorder=2)
+        vb = (nx >= XLIM[0]) & (nx <= XLIM[1])
+        ymx = np.nanmax(n_a[vb])
+        ax.set_ylim(min(-0.05 * ymx, 1.2 * n_a[vb].min()), ymx * 1.12)
         ax.set_ylabel("net rate (counts/s)")
         ax.text(0.02, 0.90,
                 f"{elo:.0f}–{ehi:.0f} keV (deposited)",
