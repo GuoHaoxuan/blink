@@ -34,6 +34,7 @@ from plot_hxmt_csi_multi import (  # noqa: E402
 )
 from plot_hxmt_vs_ibis_bands import fit_background  # noqa: E402
 from engineering_prediction import load_engineering_prediction, T_REF  # noqa: E402
+import pubstyle  # noqa: E402
 
 BIN = 0.5
 BEFORE, AFTER = 10.0, 80.0
@@ -42,9 +43,8 @@ BB_BKG = (-6.5, -2.0, 60.0, 80.0)    # broadband: constant background
 NAI_BKG = (-4.5, -0.5, 65.0, 80.0)   # band panels: linear bkg (left window in real data; data starts ~-5s)
 SCALE_RANGE = (20.0, 40.0)
 GBM_BB_DETS = ["n0", "n3", "b0"]
-# CsI band panels: HE's GRB-facing side (GRBs arrive off-axis through
-# CsI; the collimated NaI faces the field of view). Same bands as the
-# 250919A figure.
+# CsI band panels: the standard HE product for GRBs. Same bands as
+# the 250919A figure.
 CSI_BANDS = [(70, 150), (150, 300), (300, 700)]
 T0_UTC = "2026-02-26T10:37:50"
 
@@ -54,13 +54,7 @@ def main() -> int:
     ap.add_argument("-o", "--output", default="260226_combo.pdf")
     args = ap.parse_args()
 
-    matplotlib.rcParams.update({
-        "font.size": 12, "axes.labelsize": 13, "axes.linewidth": 0.9,
-        "xtick.labelsize": 11, "ytick.labelsize": 11,
-        "legend.fontsize": 9.5, "pdf.fonttype": 42,
-        "xtick.direction": "in", "ytick.direction": "in",
-        "xtick.top": True, "ytick.right": True,
-    })
+    pubstyle.apply()
 
     edges = np.arange(-BEFORE, AFTER + BIN, BIN)
     x = edges[:-1] + BIN / 2
@@ -110,7 +104,7 @@ def main() -> int:
         ebm = ((eng_t >= t1) & (eng_t < t2)) | ((eng_t >= t3) & (eng_t < t4))
         net_eng = eng_rate - np.mean(eng_rate[ebm])
 
-    # ---- CsI band data (HE's GRB-facing side) ----
+    # ---- CsI band data ----
     # From the frozen recon cache (fixed reconstruction window, so the
     # filler energy draws are reproducible); t0 passed as the paper T0
     # so the time axis matches the top panel (leap-second-aware).
@@ -133,7 +127,7 @@ def main() -> int:
 
     # ---- figure ----
     fig, axes = plt.subplots(
-        4, 1, figsize=(13, 11), sharex=True,
+        4, 1, figsize=(pubstyle.FULL_W, 6.0), sharex=True,
         gridspec_kw={"hspace": 0.0})
 
     ax = axes[0]
@@ -142,9 +136,9 @@ def main() -> int:
     ax.step(x, net_obs, where="mid", color="#20347e", lw=1.0,
             label="HXMT/HE observed", zorder=3)
     ax.step(x, net_all, where="mid", color="#5b9bd5", lw=1.2,
-            label=f"HXMT/HE + reconstructed (+{len(fill_t):,})", zorder=4)
-    ax.step(x, net_gbm_s, where="mid", color="#e07a12", lw=1.1,
-            label="Fermi/GBM n0+n3+b0 " + rf"($\times${scale_bb:.2f})",
+            label=f"HXMT/HE reconstructed (+{len(fill_t):,})", zorder=4)
+    ax.step(x, net_gbm_s, where="mid", color="#ff7f0e", lw=1.1,
+            label="Fermi/GBM n0+n3+b0 " + rf"$\times${scale_bb:.2f}",
             zorder=5)
     if eng_t is not None:
         ax.step(eng_t, net_eng, where="post", color="#2e8b57", lw=1.1,
@@ -154,9 +148,9 @@ def main() -> int:
     vis = (x >= XLIM[0]) & (x <= XLIM[1])
     ymax = np.nanmax(net_all[vis])
     ax.set_ylim(-0.05 * ymax, ymax * 1.10)
-    ax.set_ylabel("net rate (evt/s)")
+    ax.set_ylabel("net rate (counts/s)")
     ax.text(0.02, 0.92, "all events", transform=ax.transAxes,
-            fontsize=12, fontweight="bold", va="top")
+            fontsize=8, fontweight="bold", va="top")
     ax.legend(loc="upper right")
 
     for ax, (elo, ehi) in zip(axes[1:], CSI_BANDS):
@@ -192,8 +186,8 @@ def main() -> int:
         ax.step(nx, n_o, where="mid", color="#20347e", lw=0.9,
                 label="HXMT/HE-CsI observed", zorder=3)
         ax.step(nx, n_a, where="mid", color="#5b9bd5", lw=1.0,
-                label="HXMT/HE-CsI obs+recon", zorder=4)
-        ax.step(nx, n_g * sc, where="mid", color="tab:orange", lw=1.1,
+                label="HXMT/HE-CsI reconstructed", zorder=4)
+        ax.step(nx, n_g * sc, where="mid", color="#ff7f0e", lw=1.1,
                 label="Fermi/GBM n0+n3 " + rf"$\times${sc:.2f}", zorder=5)
         ax.axhline(0, color="gray", lw=0.7, zorder=2)
         vb = (nx >= XLIM[0]) & (nx <= XLIM[1])
@@ -202,7 +196,7 @@ def main() -> int:
         ax.set_ylabel("net rate (counts/s)")
         ax.text(0.02, 0.90,
                 f"{elo:.0f}–{ehi:.0f} keV (deposited)",
-                transform=ax.transAxes, fontsize=12, fontweight="bold",
+                transform=ax.transAxes, fontsize=8, fontweight="bold",
                 va="top")
         ax.legend(loc="upper right")
 
@@ -212,8 +206,9 @@ def main() -> int:
     axes[-1].set_xlabel(
         "time since trigger (s)   "
         rf"[$T_0$ = {HXMT_TRIGGER_UTC_LABEL} UTC]")
+    fig.subplots_adjust(left=0.068, right=0.988, top=0.99, bottom=0.062)
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(args.output, bbox_inches="tight")
+    fig.savefig(args.output)
     print(f"wrote {args.output}", file=sys.stderr)
     return 0
 

@@ -33,6 +33,7 @@ from plot_hxmt_csi_multi import (  # noqa: E402
 )
 from plot_hxmt_vs_ibis_bands import fit_background  # noqa: E402
 from engineering_prediction import load_engineering_prediction, T_REF  # noqa: E402
+import pubstyle  # noqa: E402
 
 BIN = 0.1
 BEFORE, AFTER = 30.0, 140.0
@@ -68,13 +69,7 @@ def main() -> int:
     ap.add_argument("--xlim", type=float, nargs=2, default=list(XLIM))
     args = ap.parse_args()
 
-    matplotlib.rcParams.update({
-        "font.size": 12, "axes.labelsize": 13, "axes.linewidth": 0.9,
-        "xtick.labelsize": 11, "ytick.labelsize": 11,
-        "legend.fontsize": 9.5, "pdf.fonttype": 42,
-        "xtick.direction": "in", "ytick.direction": "in",
-        "xtick.top": True, "ytick.right": True,
-    })
+    pubstyle.apply()
 
     cfg = CONFIGS[args.burst]
     t0 = cfg["t0"]
@@ -121,7 +116,7 @@ def main() -> int:
         return r - np.polyval(np.polyfit(x[bkgm], r[bkgm], 1), x)
 
     fig, axes = plt.subplots(
-        4, 1, figsize=(10, 10.5), sharex=True,
+        4, 1, figsize=(pubstyle.FULL_W, 6.0), sharex=True,
         gridspec_kw={"hspace": 0.0})
 
     # ---- top panel: all events + engineering ----
@@ -148,10 +143,10 @@ def main() -> int:
         ymax = max(ymax, net_eng[evis].max())
     ax.axhline(0, color="grey", lw=0.5)
     ax.margins(x=0)
-    ax.set_ylabel("net rate (evt/s)")
+    ax.set_ylabel("net rate (counts/s)")
     ax.text(0.02, 0.92, f"all events, {BIN * 1e3:.0f} ms bins",
-            transform=ax.transAxes, fontweight="bold", va="top", fontsize=12)
-    ax.legend(fontsize=8.5, loc="upper right", ncol=2)
+            transform=ax.transAxes, fontweight="bold", va="top", fontsize=8)
+    ax.legend(loc="upper right", ncol=2)
     ax.set_ylim(min(0, nHo[vis].min() * 1.1), ymax * 1.28)
     ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(nbins=5, prune="both"))
 
@@ -175,19 +170,20 @@ def main() -> int:
                   f"sat-bin HXMT/ext {summ}", file=sys.stderr)
         ax.axhline(0, color="grey", lw=0.5)
         ax.margins(x=0)
-        ax.set_ylabel("net rate (evt/s)")
+        ax.set_ylabel("net rate (counts/s)")
         ax.text(0.02, 0.92, f"{lo:.0f}–{hi:.0f} keV (deposited), "
                 f"{BIN * 1e3:.0f} ms bins", transform=ax.transAxes,
-                fontweight="bold", va="top", fontsize=12)
-        ax.legend(fontsize=9, loc="upper right")
+                fontweight="bold", va="top", fontsize=8)
+        ax.legend(loc="upper right")
         ax.set_ylim(min(0, nHo[vis].min() * 1.1), nHa[vis].max() * 1.14)
         ax.yaxis.set_major_locator(
             matplotlib.ticker.MaxNLocator(nbins=5, prune="both"))
 
     axes[-1].set_xlim(*xl)
     axes[-1].set_xlabel(f"time since HXMT $T_0$ (s)   [$T_0$ = {t0} UTC]")
+    fig.subplots_adjust(left=0.068, right=0.988, top=0.99, bottom=0.062)
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(args.output, bbox_inches="tight")
+    fig.savefig(args.output)
     print(f"wrote {args.output}", file=sys.stderr)
     return 0
 

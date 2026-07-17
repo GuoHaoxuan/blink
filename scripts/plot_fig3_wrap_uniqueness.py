@@ -23,14 +23,18 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pubstyle  # noqa: E402
+pubstyle.apply()
+
 EPOCH    = "2022-10-09T13"
 TRIGGER  = "2022-10-09T13:17:00"  # unified with the paper T0 (leap-second-aware blink)
 BEFORE   = 10.0
 AFTER    = 280.0
 ZOOM_LO  = 248.0
-ZOOM_HI  = 270.0                 # extend past Box A/B 1B data end (~T+267.9)
+ZOOM_HI  = 271.5                 # extend past the 1B data end (~T+269.9)
                                  # AND past the +1.05 s-shifted j=1 data end
-                                 # (~T+268.96), so the j=1 dashed curve fully
+                                 # (~T+270.95), so the j=1 curve fully
                                  # drops to zero on the right — the wrap
                                  # misalignment is then unambiguous.
 BIN      = 0.25                  # 250 ms (Poisson noise ~2% at 10 k evt/s)
@@ -93,31 +97,26 @@ def main():
     rate_a1 = np.histogram(a_j1, bins=edges)[0] / BIN
     rate_b  = np.histogram(b_win, bins=edges)[0] / BIN
 
-    fig, ax = plt.subplots(figsize=(11, 4.5))
+    fig, ax = plt.subplots(figsize=(pubstyle.COL_W, 2.05))
 
     # Box B reference (orange)
-    ax.step(x, rate_b, where="post", color="#E89028", lw=1.4,
+    ax.step(x, rate_b, where="post", color="#E89028", lw=1.0,
             label="Box B (cross-box reference)", zorder=3)
     # Box A wrap j=0 (blue solid)
-    ax.step(x, rate_a0, where="post", color="#1F4E9E", lw=1.4,
+    ax.step(x, rate_a0, where="post", color="#1F4E9E", lw=1.0,
             label=r"Box A wrap $j=0$ (chosen)", zorder=4)
-    # Box A wrap j=1 (light blue dashed)
-    ax.step(x, rate_a1, where="post", color="#7FB0E0", lw=1.6,
-            ls="--", label=r"Box A wrap $j=1$ (alt., $+1.05$ s shift)",
+    # Box A wrap j=1 (light blue)
+    ax.step(x, rate_a1, where="post", color="#7FB0E0", lw=1.0,
+            label=r"Box A wrap $j=1$ (alt., $+1.05$ s shift)",
             zorder=2)
 
-    ax.set_xlabel(r"Time $-$ $T_0$ (s)    "
-                  f"[$T_0=$ {TRIGGER} UTC; bin $=$ {BIN*1000:.0f} ms]",
-                  fontsize=12)
-    ax.set_ylabel("Count rate (evt/s)", fontsize=12)
+    ax.set_xlabel(r"Time $-$ $T_0$ (s)   "
+                  f"[bin $=$ {BIN*1000:.0f} ms]")
+    ax.set_ylabel("Count rate (counts/s)")
     ax.set_xlim(ZOOM_LO, ZOOM_HI)
     ax.set_ylim(bottom=0)
     ax.grid(alpha=0.18)
-    ax.tick_params(labelsize=11)
-    ax.legend(loc="lower center", fontsize=10, framealpha=0.95, ncol=3)
-    ax.set_title(r"Cross-box validation: wrap $j=0$ tracks Box B; "
-                 r"wrap $j=1$ misaligned by one wrap period",
-                 fontsize=13, fontweight="bold", pad=10)
+    ax.legend(loc="lower center", bbox_to_anchor=(0.60, 0.02))
 
     plt.tight_layout()
     out_pdf = "/Users/skyair/Developer/ihep/paper-hxmt-saturation/figures/f5_crossbox_recovery.pdf"

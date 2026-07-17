@@ -10,11 +10,17 @@ Data source: plots/fig2_real_ghost_window.json
 Output: figures/f3_lis_vs_greedy.pdf in the paper repo.
 """
 import json
+import os
+import sys
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pubstyle  # noqa: E402
+pubstyle.apply()
 
 with open("plots/fig2_real_ghost_window.json") as f:
     DATA = json.load(f)
@@ -27,7 +33,7 @@ CASCADE_FULL  = int(DATA["cascade_full"])
 STIME         = int(DATA["stime"])
 n = len(events)
 ghost_val = int(events[GHOST_IDX])
-ymax = max(int(events.max()) * 1.18, ghost_val * 1.18)
+ymax = max(int(events.max()) * 1.26, ghost_val * 1.26)
 
 
 def draw_panel(ax, accept, title, mode):
@@ -47,7 +53,7 @@ def draw_panel(ax, accept, title, mode):
     ax.annotate(f"ghost\n$e \\approx 484\\!\\times\\!10^3$",
                 xy=(GHOST_IDX + 0.5, ghost_val * 0.85),
                 xytext=(GHOST_IDX + 2.5, ghost_val * 0.78),
-                ha="left", va="center", fontsize=11, fontweight="bold",
+                ha="left", va="center", fontsize=7, fontweight="bold",
                 color="#7A1212",
                 arrowprops=dict(arrowstyle="->", color="#7A1212", lw=1.0))
 
@@ -56,13 +62,13 @@ def draw_panel(ax, accept, title, mode):
                    zorder=2, alpha=0.7)
         ax.text(n - 0.5, ghost_val + ymax * 0.012,
                 "greedy threshold (raised by ghost)",
-                fontsize=11, color="#7A1212", style="italic",
+                fontsize=7, color="#7A1212", style="italic",
                 va="bottom", ha="right", fontweight="bold")
         for i in range(n):
             if not accept[i] and i != GHOST_IDX:
                 ax.text(i, events[i] + ymax * 0.018, "✗",
                         ha="center", va="bottom",
-                        fontsize=18, color="#A93226", fontweight="bold")
+                        fontsize=8, color="#A93226", fontweight="bold")
         rej_idx = np.where(~accept & (np.arange(n) != GHOST_IDX))[0]
         if len(rej_idx):
             lo, hi = rej_idx.min(), rej_idx.max()
@@ -71,15 +77,15 @@ def draw_panel(ax, accept, title, mode):
                         arrowprops=dict(arrowstyle="<->", color="#A93226",
                                         lw=1.6))
             ax.text((lo + hi) / 2, ymax * 0.38,
-                    f"cascade: all {hi - lo + 1} rejected (full pair: 8937)",
+                    f"cascade: all {hi - lo + 1} rejected",
                     ha="center", va="bottom",
-                    fontsize=11, color="#A93226", fontweight="bold")
+                    fontsize=7, color="#A93226", fontweight="bold")
     else:
         ax.annotate("isolated\n(length-1)",
                     xy=(GHOST_IDX - 0.3, ghost_val - ymax * 0.04),
                     xytext=(GHOST_IDX - 3.0, ghost_val * 0.85),
                     ha="right", va="center",
-                    fontsize=11, color="#7A1212", fontweight="bold",
+                    fontsize=7, color="#7A1212", fontweight="bold",
                     arrowprops=dict(arrowstyle="->", color="#7A1212",
                                     lw=1.2))
         acc_idx = np.where(accept & (np.arange(n) != GHOST_IDX))[0]
@@ -93,29 +99,25 @@ def draw_panel(ax, accept, title, mode):
             ax.text((lo + hi) / 2, ymax * 0.38,
                     f"all {hi - lo + 1} accepted (no cascade)",
                     ha="center", va="bottom",
-                    fontsize=11, color="#0B3D6E", fontweight="bold")
+                    fontsize=7, color="#0B3D6E", fontweight="bold")
 
     ax.set_xticks(np.arange(0, n, 2))
     ax.set_xlim(-0.7, n - 0.3)
     ax.set_ylim(0, ymax)
-    ax.set_xlabel("Event index in window (file order)", fontsize=13)
-    ax.set_ylabel(r"$e_i = (p_i - p_{\rm SEC_1})\ \mathrm{mod}\ P_{\rm MOD}$"
-                  r"   [2$\mu$s ticks]", fontsize=12)
-    ax.set_title(title, fontsize=14, fontweight="bold", pad=10)
-    ax.tick_params(labelsize=11)
+    ax.set_xlabel("Event index in window (file order)")
+    ax.set_ylabel(r"$e_i$  [2 $\mu$s ticks]")
+    ax.text(0.02, 0.97, title, transform=ax.transAxes,
+            fontweight="bold", va="top", ha="left")
     ax.grid(alpha=0.18, axis="y", zorder=1)
     ax.set_axisbelow(True)
 
 
 def main():
-    fig, (axT, axB) = plt.subplots(2, 1, figsize=(9, 9), sharex=True,
-                                   gridspec_kw={"hspace": 0.22})
-    draw_panel(axT, accept_greedy,
-               "Greedy: ghost blocks all subsequent events in this window",
-               mode="greedy")
-    draw_panel(axB, accept_lis,
-               "LIS: ghost isolated as length-1; rest accepted",
-               mode="lis")
+    fig, (axT, axB) = plt.subplots(2, 1, figsize=(pubstyle.COL_W, 3.25),
+                                   sharex=True,
+                                   gridspec_kw={"hspace": 0.16})
+    draw_panel(axT, accept_greedy, "Greedy", mode="greedy")
+    draw_panel(axB, accept_lis, "LIS", mode="lis")
     axT.set_xlabel("")
 
     legend_elements = [
@@ -126,10 +128,10 @@ def main():
               label="ghost (CRC collision)"),
     ]
     fig.legend(handles=legend_elements, loc="upper center",
-               ncol=3, fontsize=12, frameon=False,
+               ncol=3, frameon=False,
                bbox_to_anchor=(0.5, 1.00))
 
-    fig.subplots_adjust(top=0.92, bottom=0.07, left=0.10, right=0.98)
+    fig.subplots_adjust(top=0.94, bottom=0.11, left=0.155, right=0.985)
     out_pdf = "/Users/skyair/Developer/ihep/paper-hxmt-saturation/figures/f3_lis_vs_greedy.pdf"
     out_png = "/Users/skyair/Developer/ihep/blink/plots/fig2_lis_vs_greedy_preview.png"
     plt.savefig(out_pdf)

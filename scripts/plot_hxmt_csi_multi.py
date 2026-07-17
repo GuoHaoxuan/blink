@@ -39,7 +39,7 @@ CONFIGS = {
         "csi_lut": "data/hxmt_aux/csi_ch2e_250919.npy",
         "bkg": [-30, -24, 112, 130], "scale_range": [-2, 15],
         "externals": [
-            {"type": "gbm", "color": "#e07a12", "label": "Fermi/GBM",
+            {"type": "gbm", "color": "#ff7f0e", "label": "Fermi/GBM n7+n8",
              "dir": "data/fermi_gbm/bn250919020", "trig": "bn250919020",
              "dets": ["n7", "n8"], "tmet": 779934537.28,
              "tutc": "2025-09-19T00:28:52.28"},
@@ -53,7 +53,7 @@ CONFIGS = {
         "csi_lut": "data/hxmt_aux/csi_ch2e_211211.npy",
         "bkg": [-40, -5, 70, 95], "scale_range": [12, 45],
         "externals": [
-            {"type": "gbm", "color": "#e07a12", "label": "Fermi/GBM",
+            {"type": "gbm", "color": "#ff7f0e", "label": "Fermi/GBM n2+na",
              "dir": "data/fermi_gbm/bn211211549", "trig": "bn211211549",
              "dets": ["n2", "na"], "tmet": 660921004.651,
              "tutc": "2021-12-11T13:09:59.651"},
@@ -65,7 +65,7 @@ CONFIGS = {
         "csi_lut": "data/hxmt_aux/csi_ch2e_260226.npy",
         "bkg": [-8, -3, 65, 80], "scale_range": [24, 44],
         "externals": [
-            {"type": "gbm", "color": "#e07a12", "label": "Fermi/GBM",
+            {"type": "gbm", "color": "#ff7f0e", "label": "Fermi/GBM n0+n3",
              "dir": "data/fermi_gbm/bn260226443", "trig": "bn260226443",
              "dets": ["n0", "n3"], "tmet": 793795080.95811,
              "tutc": "2026-02-26T10:37:55.958"},   # +2.958s vs T0 (cross-corr aligned)

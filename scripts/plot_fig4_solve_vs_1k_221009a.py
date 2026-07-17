@@ -22,6 +22,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from datetime import datetime, timezone
 
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import pubstyle  # noqa: E402
+pubstyle.apply()
+
 EPOCH    = "2022-10-09T13"
 TRIGGER  = "2022-10-09T13:17:00"
 BEFORE   = 10.0
@@ -74,7 +80,8 @@ def main():
     edges = np.arange(t_ref + ZOOM_LO, t_ref + ZOOM_HI + BIN / 2, BIN)
     x = edges[:-1] - t_ref
 
-    fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True,
+    fig, axes = plt.subplots(3, 1, figsize=(pubstyle.COL_W, 3.6),
+                             sharex=True,
                              gridspec_kw={"hspace": 0.10})
     colors_1b = {"A": "#1F4E9E", "B": "#E89028", "C": "#1B7837"}
     fill_1b   = {"A": "#A6C8E0", "B": "#F6CB8A", "C": "#A6D96A"}
@@ -100,35 +107,31 @@ def main():
                 label=f"1K standard pipeline ({len(win_1k):,})", zorder=2)
         ax.fill_between(x, r_1b, step="post", color=fill_1b[box],
                         alpha=0.45, edgecolor="none", zorder=3)
-        ax.step(x, r_1b, where="post", color=colors_1b[box], lw=1.3,
+        ax.step(x, r_1b, where="post", color=colors_1b[box], lw=1.1,
                 label=f"1B LIS reconstruction ({len(win_1b):,})", zorder=4)
 
-        ax.set_ylabel(f"Box {box}\nevt/s", fontsize=12)
-        ax.legend(loc="lower right", fontsize=10, framealpha=0.95)
+        ax.set_ylabel(f"Box {box}\ncounts/s")
+        ax.legend(loc="lower right")
         ax.grid(alpha=0.15)
-        ax.set_ylim(bottom=0, top=15500)
-        ax.tick_params(labelsize=10)
+        ax.set_ylim(bottom=0, top=16200)
 
         if box == "C":
-            ax.text((SHADE_C_LO + SHADE_C_HI) / 2, 14200,
-                    r"1K $=$ 0 evt/s for ${\sim}7$ s",
-                    ha="center", va="top", fontsize=11, color="#7A1212",
+            ax.text((SHADE_C_LO + SHADE_C_HI) / 2, 15500,
+                    r"1K $=$ 0 counts/s for ${\sim}7$ s",
+                    ha="center", va="top", fontsize=7, color="#7A1212",
                     fontweight="bold")
         if box == "A":
-            ax.text((SHADE_A_LO + SHADE_A_HI) / 2, 14200,
-                    r"1K $+1$ wrap shift" + "\n" + r"(${\sim}1.05$ s late)",
-                    ha="center", va="top", fontsize=9.5, color="#7A1212",
+            ax.text(SHADE_A_HI + 0.6, 15500,
+                    r"1K $+1$ wrap shift (${\sim}1.05$ s late)",
+                    ha="left", va="top", fontsize=7, color="#7A1212",
                     fontweight="bold")
 
     axes[-1].set_xlabel(
-        r"Time $-$ $T_0$ (s)    "
-        f"[$T_0=$ {TRIGGER} UTC; bin $=$ {BIN:.0f} s]",
-        fontsize=12)
+        r"Time $-$ $T_0$ (s)   "
+        f"[bin $=$ {BIN:.0f} s]")
     axes[0].set_xlim(ZOOM_LO, ZOOM_HI)
-    fig.suptitle("GRB 221009A: 1B LIS reconstruction vs 1K pipeline, "
-                 r"$T_0+%.0f$ to $T_0+%.0f$ s" % (ZOOM_LO, ZOOM_HI),
-                 fontsize=13, fontweight="bold", y=0.995)
-    plt.tight_layout()
+    axes[-1].xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(5))
+    fig.subplots_adjust(left=0.185, right=0.985, top=0.98, bottom=0.10)
     out_pdf = "/Users/skyair/Developer/ihep/paper-hxmt-saturation/figures/f4_solve_vs_1k_221009a.pdf"
     out_png = "/Users/skyair/Developer/ihep/blink/plots/fig4_solve_vs_1k_221009a_preview.png"
     plt.savefig(out_pdf)

@@ -24,6 +24,10 @@ import pandas as pd
 import pyarrow.parquet as pq
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pubstyle  # noqa: E402
+pubstyle.apply()
 from scipy.interpolate import RegularGridInterpolator
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -93,7 +97,7 @@ def plot_scatter(sci_s, rec_s, output, plot_lo=100.0, plot_hi=5000.0):
     sci_s/rec_s are a uniform random sample of the full population;
     plot_lo crops the sparsely populated lower-left corner.
     """
-    fig, ax1 = plt.subplots(figsize=(7.0, 5.8))
+    fig, ax1 = plt.subplots(figsize=(pubstyle.COL_W, 2.85))
     m = np.isfinite(sci_s) & np.isfinite(rec_s) & (sci_s > 0) & (rec_s > 0)
     sci_s, rec_s = sci_s[m], rec_s[m]
     # Local point density from a log-log 2D histogram lookup; draw
@@ -104,22 +108,21 @@ def plot_scatter(sci_s, rec_s, output, plot_lo=100.0, plot_hi=5000.0):
     iy = np.clip(np.searchsorted(ye, ly) - 1, 0, H.shape[1] - 1)
     dens = H[ix, iy]
     order = np.argsort(dens)
-    ax1.scatter(sci_s[order], rec_s[order], c=dens[order], s=2.2,
+    ax1.scatter(sci_s[order], rec_s[order], c=dens[order], s=1.2,
                 cmap="viridis", norm=LogNorm(vmin=1, vmax=dens.max()),
                 linewidths=0, rasterized=True, zorder=1)
     xx = np.logspace(np.log10(plot_lo), np.log10(plot_hi), 100)
-    ax1.plot(xx, xx, "r-", lw=1.6, zorder=3,
+    ax1.plot(xx, xx, "r-", lw=1.0, zorder=3,
              label=r"$y=x$ (perfect recovery)")
     ax1.set_xscale("log"); ax1.set_yscale("log")
     ax1.set_xlim(plot_lo, plot_hi); ax1.set_ylim(plot_lo, plot_hi)
-    ax1.set_xlabel(r"$\mathrm{Sci}_\mathrm{obs}$ observed (cnt/s)", fontsize=13)
-    ax1.set_ylabel(r"$\mathrm{Sci}_\mathrm{rec}$ recovered (cnt/s)", fontsize=13)
-    ax1.tick_params(labelsize=11)
-    ax1.legend(loc="lower right", fontsize=12)
+    ax1.set_xlabel(r"$\mathrm{Sci}_\mathrm{obs}$ observed (cnt/s)")
+    ax1.set_ylabel(r"$\mathrm{Sci}_\mathrm{rec}$ recovered (cnt/s)")
+    ax1.legend(loc="lower right")
     ax1.grid(True, alpha=0.25, which="both", zorder=0)
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
-    plt.savefig(output, dpi=200, bbox_inches="tight")
+    plt.savefig(output, dpi=300)
 
 
 def main() -> int:
