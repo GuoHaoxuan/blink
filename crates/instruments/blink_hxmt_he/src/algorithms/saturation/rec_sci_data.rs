@@ -495,6 +495,262 @@ pub fn reconstruct_with_wrap_tracking_labeled(
                 alive[valid_idx[0]] = true;
             }
         } else {
+            // ─── Δstime>1 大 gap：括号快速路径（PPS 失锁段） ───
+            //
+            // 2020 年起平台 GPS 退化，PPS 进入守时模式后锁存相位出现几十 ms 的
+            // 离散台阶（实测 ≤100ms，100ms 为守时量子）。失锁段 SEC 被全局相位
+            // 簇（正确地）拒绝，有效锚点间出现数百至上千秒的空洞；穷举分组 LIS
+            // 需物化 事件数×ds 个候选，单小时可达数百 GB。
+            //
+            // 快速路径原理：被拒 SEC 的 stime 是链验证过的精确整秒，FIFO 严格
+            // 保序 ⇒ 它们把 gap 切成 ≤~1s 的小窗，窗内每个事件的 wrap 整数被
+            // 钳死。事件时间仍完全由两端有效锚点 + ptime 计数器给出——被拒 SEC
+            // 的锁存漂移只参与整数判定（容差半圈 524ms ≫ 实测漂移），从不进入
+            // 时间值。逐链节残差断言 + 终端闭合校验：错一圈必不闭合 → 回退。
+            // 回退 = 下方原穷举路径，行为与旧版完全一致。
+            const BRACKET_MIN_DS: i64 = 60; // 只对大 gap 启用；小 gap 走原路径
+            const RUN_LINK_TOL: i64 = 200; // 链内相位容差（±0.4ms/s，随 dst 放大）
+            const RUN_MIN_LEN: usize = 3; // 链最短长度（幽灵 SEC 连环通过 ~1e-6）
+            const BRACKET_GUARD: i64 = 200_000; // 跨链/端点残差上限（400ms < 半圈）
+            const WINDOW_SLACK: i64 = 2_500; // 窗端漂移余量（5ms）
+
+            let mut bracketed_done = false;
+            if ds >= BRACKET_MIN_DS && std::env::var("BLINK_EXHAUSTIVE").is_err() {
+                'bracket: {
+                    // 1. 收集 gap 内全部 SEC 槽（流序），按逐秒相位一致性切 run
+                    #[derive(Clone, Copy)]
+                    struct BNode {
+                        pkt_idx: usize,
+                        local_idx: usize,
+                        pt: i64,
+                        stime: i64,
+                        elapsed: i64,
+                    }
+                    let mut runs: Vec<Vec<BNode>> = Vec::new();
+                    {
+                        let mut cur: Vec<BNode> = Vec::new();
+                        for pkt_idx in pkt_a..=pkt_b {
+                            let start = if pkt_idx == pkt_a { evt_a + 1 } else { 0 };
+                            let end = if pkt_idx == pkt_b { evt_b } else { parsed[pkt_idx].len() };
+                            for local_idx in start..end {
+                                let Some(st) = parsed[pkt_idx][local_idx].stime else {
+                                    continue;
+                                };
+                                let node = BNode {
+                                    pkt_idx,
+                                    local_idx,
+                                    pt: parsed[pkt_idx][local_idx].ptime as i64,
+                                    stime: st as i64,
+                                    elapsed: 0,
+                                };
+                                let linked = if let Some(last) = cur.last() {
+                                    let dst = node.stime - last.stime;
+                                    dst >= 1 && dst <= 30 && {
+                                        let dfwd = (node.pt - last.pt).rem_euclid(pmod);
+                                        let expect = (dst * TICKS_PER_SEC).rem_euclid(pmod);
+                                        let d = (dfwd - expect).rem_euclid(pmod);
+                                        d.min(pmod - d) <= RUN_LINK_TOL * dst
+                                    }
+                                } else {
+                                    true
+                                };
+                                if !linked {
+                                    runs.push(std::mem::take(&mut cur));
+                                }
+                                cur.push(node);
+                            }
+                        }
+                        if !cur.is_empty() {
+                            runs.push(cur);
+                        }
+                    }
+                    // 2. 只保留长 run（防幽灵成链），且 stime 全局严格递增
+                    let mut nodes: Vec<BNode> = Vec::new();
+                    nodes.push(BNode {
+                        pkt_idx: pkt_a,
+                        local_idx: evt_a,
+                        pt: pt1,
+                        stime: sec1.stime as i64,
+                        elapsed: 0,
+                    });
+                    for run in &runs {
+                        if run.len() < RUN_MIN_LEN {
+                            continue;
+                        }
+                        for n in run {
+                            let last_st = nodes.last().unwrap().stime;
+                            if n.stime > last_st && n.stime < sec2.stime as i64 {
+                                nodes.push(*n);
+                            }
+                        }
+                    }
+                    if nodes.len() < 2 {
+                        break 'bracket; // 无可用括号 → 穷举
+                    }
+                    // 3. 链节 elapsed 累计：wrap 整数由 stime 钳定，残差断言
+                    for i in 1..nodes.len() {
+                        let prev = nodes[i - 1];
+                        let dst = nodes[i].stime - prev.stime;
+                        let dfwd = (nodes[i].pt - prev.pt).rem_euclid(pmod);
+                        let nominal = dst * TICKS_PER_SEC;
+                        let w = ((nominal - dfwd) as f64 / pmod as f64).round() as i64;
+                        if w < 0 {
+                            break 'bracket;
+                        }
+                        let resid = nominal - (dfwd + w * pmod);
+                        if resid.abs() > BRACKET_GUARD {
+                            break 'bracket;
+                        }
+                        nodes[i].elapsed = prev.elapsed + dfwd + w * pmod;
+                    }
+                    // 4. 终端闭合：最后节点 → sec2，总 ticks 必须对上
+                    {
+                        let last = *nodes.last().unwrap();
+                        let dst = sec2.stime as i64 - last.stime;
+                        let dfwd = (sec2.ptime as i64 - last.pt).rem_euclid(pmod);
+                        let nominal = dst * TICKS_PER_SEC;
+                        let w = ((nominal - dfwd) as f64 / pmod as f64).round() as i64;
+                        if w < 0 {
+                            break 'bracket;
+                        }
+                        let resid = nominal - (dfwd + w * pmod);
+                        if resid.abs() > BRACKET_GUARD {
+                            break 'bracket;
+                        }
+                        let closure = last.elapsed + dfwd + w * pmod;
+                        if (closure - total_ticks).abs() > 2 * BRACKET_GUARD {
+                            break 'bracket;
+                        }
+                        nodes.push(BNode {
+                            pkt_idx: pkt_b,
+                            local_idx: evt_b,
+                            pt: sec2.ptime as i64,
+                            stime: sec2.stime as i64,
+                            elapsed: closure,
+                        });
+                    }
+                    // 5. 节点 SEC 本身赋 MET（两端锚点已在上游赋值）。
+                    //    注意：时间来自 met1/met2 双向平均——节点自己的
+                    //    stime+offset 从不作为时间值使用。
+                    for n in &nodes[1..nodes.len() - 1] {
+                        let met_fwd = met1 + n.elapsed as f64 * 2e-6;
+                        let met_bwd = met2 - (total_ticks - n.elapsed) as f64 * 2e-6;
+                        result[n.pkt_idx][n.local_idx] = (met_fwd + met_bwd) / 2.0;
+                        n_resolved += 1;
+                    }
+                    // 6. 逐窗解算：窗内 wrap 候选 ≤2-3 个，套用与穷举同款的
+                    //    降序分组 LIS；内存 O(窗内事件数)
+                    let mut ci = 0usize; // candidates 与 nodes 同为流序，双指针
+                    for wpair in nodes.windows(2) {
+                        let (a, b) = (wpair[0], wpair[1]);
+                        while ci < candidates.len() {
+                            let c = &candidates[ci];
+                            if (c.pkt_idx, c.local_idx) <= (a.pkt_idx, a.local_idx) {
+                                ci += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        let cstart = ci;
+                        while ci < candidates.len() {
+                            let c = &candidates[ci];
+                            if (c.pkt_idx, c.local_idx) < (b.pkt_idx, b.local_idx) {
+                                ci += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        let cend = ci;
+                        if cend == cstart {
+                            continue;
+                        }
+                        let a_efwd = (a.pt - pt1).rem_euclid(pmod);
+                        let limit = (b.elapsed - a.elapsed) + WINDOW_SLACK;
+                        let mut entries: Vec<(usize, i64)> = Vec::new();
+                        let mut tails: Vec<i64> = Vec::new();
+                        let mut tail_entry: Vec<usize> = Vec::new();
+                        let mut lis_parent: Vec<Option<usize>> = Vec::new();
+                        for cand_idx in cstart..cend {
+                            let c = &candidates[cand_idx];
+                            let efwd_local = (c.elapsed_fwd - a_efwd).rem_euclid(pmod);
+                            let mut w = (limit - efwd_local).div_euclid(pmod);
+                            let mut push_entry = |e: i64,
+                                                  entries: &mut Vec<(usize, i64)>,
+                                                  tails: &mut Vec<i64>,
+                                                  tail_entry: &mut Vec<usize>,
+                                                  lis_parent: &mut Vec<Option<usize>>| {
+                                let eidx = entries.len();
+                                entries.push((cand_idx, e));
+                                let pos = tails.partition_point(|&t| t < e);
+                                lis_parent.push(if pos > 0 { Some(tail_entry[pos - 1]) } else { None });
+                                if pos == tails.len() {
+                                    tails.push(e);
+                                    tail_entry.push(eidx);
+                                } else {
+                                    tails[pos] = e;
+                                    tail_entry[pos] = eidx;
+                                }
+                            };
+                            while w >= 0 {
+                                let e = efwd_local + w * pmod; // 降序
+                                push_entry(e, &mut entries, &mut tails, &mut tail_entry, &mut lis_parent);
+                                w -= 1;
+                            }
+                            // FIFO 写入竞争：事件在 PPS 前数 μs 触发、却排在 SEC 槽
+                            // 之后入流，efwd_local ≈ P−ε 会被 limit 误滤。解释为对
+                            // 窗口起点的小负偏移（正向候选 P−ε 早已被滤，无歧义），
+                            // met 仍由链 elapsed 给出。
+                            if efwd_local > pmod - WINDOW_SLACK {
+                                let e = efwd_local - pmod; // ∈ (−SLACK, 0)
+                                push_entry(e, &mut entries, &mut tails, &mut tail_entry, &mut lis_parent);
+                            }
+                        }
+                        if !tails.is_empty() {
+                            let mut idx = *tail_entry.last().unwrap();
+                            loop {
+                                let (cand_idx, e_local) = entries[idx];
+                                let c = &candidates[cand_idx];
+                                if result[c.pkt_idx][c.local_idx].is_nan() {
+                                    let eg = a.elapsed + e_local;
+                                    let met_fwd = met1 + eg as f64 * 2e-6;
+                                    let met_bwd = met2 - (total_ticks - eg) as f64 * 2e-6;
+                                    result[c.pkt_idx][c.local_idx] = (met_fwd + met_bwd) / 2.0;
+                                    n_resolved += 1;
+                                }
+                                match lis_parent[idx] {
+                                    Some(p) => idx = p,
+                                    None => break,
+                                }
+                            }
+                        }
+                        for cand_idx in cstart..cend {
+                            let c = &candidates[cand_idx];
+                            if result[c.pkt_idx][c.local_idx].is_nan() {
+                                let efwd_local = (c.elapsed_fwd - a_efwd).rem_euclid(pmod);
+                                if efwd_local <= limit || efwd_local > pmod - WINDOW_SLACK {
+                                    n_ghost_order += 1;
+                                } else {
+                                    n_ghost_deadzone += 1;
+                                }
+                            }
+                        }
+                    }
+                    if debug {
+                        eprintln!(
+                            "  BRACKET gap ds={}: engaged, {} nodes ({} runs)",
+                            ds,
+                            nodes.len(),
+                            runs.len()
+                        );
+                    }
+                    bracketed_done = true;
+                }
+                if debug && !bracketed_done {
+                    eprintln!("  BRACKET gap ds={}: fallback to exhaustive", ds);
+                }
+            }
+
+            if !bracketed_done {
             // ─── Δstime>1: 分组 LIS ───
             // 每个事件有 ds 个候选 elapsed = elapsed_fwd + w × PTIME_MOD, w ∈ [0, ds)
             // 全局求解：每个事件最多选一个候选，使选出的 elapsed 严格递增
@@ -557,6 +813,7 @@ pub fn reconstruct_with_wrap_tracking_labeled(
                     }
                 }
             }
+            } // if !bracketed_done（穷举回退路径结束）
         }
 
         // 赋值 MET
