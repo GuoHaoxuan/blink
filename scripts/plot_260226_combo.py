@@ -149,7 +149,8 @@ def main() -> int:
     ymax = np.nanmax(net_all[vis])
     ax.set_ylim(-0.05 * ymax, ymax * 1.10)
     ax.set_ylabel("net rate (counts/s)")
-    ax.text(0.02, 0.92, "all events", transform=ax.transAxes,
+    ax.text(0.02, 0.92, f"all events, {BIN * 1e3:.0f} ms bins",
+            transform=ax.transAxes,
             fontsize=8, fontweight="bold", va="top")
     ax.legend(loc="upper right")
 
@@ -195,7 +196,8 @@ def main() -> int:
         ax.set_ylim(min(-0.05 * ymx, 1.2 * n_a[vb].min()), ymx * 1.12)
         ax.set_ylabel("net rate (counts/s)")
         ax.text(0.02, 0.90,
-                f"{elo:.0f}–{ehi:.0f} keV (deposited)",
+                f"{elo:.0f}–{ehi:.0f} keV (deposited), "
+                f"{BIN * 1e3:.0f} ms bins",
                 transform=ax.transAxes, fontsize=8, fontweight="bold",
                 va="top")
         ax.legend(loc="upper right")
