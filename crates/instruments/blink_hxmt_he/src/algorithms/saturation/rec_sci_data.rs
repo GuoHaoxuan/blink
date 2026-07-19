@@ -297,6 +297,41 @@ pub fn reconstruct_with_wrap_tracking_labeled(
         is_valid[cluster_indices[0]] = true;
     }
 
+    // Phase 3: 绝对量级卫兵 —— stime 物理合理性
+    //
+    // 前两道检验都不看绝对量级:相位簇是配对自洽检验,随机 stime 以
+    // ~400/524288 的概率漏网;stime-LIS 只查相对顺序,而流末尾/开头的
+    // 荒谬值不违反单调性(实测:坏 SEC stime 跳 8-13 年、恰在小时末包,
+    // LIS 免费收下 → 假 gap 数亿秒 → 每事件数亿 wrap 候选 → OOM)。
+    // UTC 上界在 GPS 失效段又被 clamp 架空,三洞对齐即炸。
+    //
+    // 小时文件的真实 stime 跨度 ≤~4000 s(含前小时积压),偏离簇中位数
+    // 超过一天的 stime 物理上不可能 —— 直接拒。对健康数据零影响(裕度
+    // >20×)。星上秒计数器若真发生复位,复位后的 SEC 相位本就落在簇外,
+    // 行为与既有逻辑一致,本卫兵不改变该情形。
+    const STIME_SANITY_TOL: i64 = 86_400; // ±1 天
+    let mut n_stime_outlier = 0u32;
+    {
+        let mut valid_stimes: Vec<u64> = all_secs.iter()
+            .enumerate()
+            .filter(|&(i, _)| is_valid[i])
+            .map(|(_, s)| s.stime)
+            .collect();
+        if !valid_stimes.is_empty() {
+            valid_stimes.sort_unstable();
+            let median = valid_stimes[valid_stimes.len() / 2] as i64;
+            for (i, sec) in all_secs.iter().enumerate() {
+                if is_valid[i] && (sec.stime as i64 - median).abs() > STIME_SANITY_TOL {
+                    is_valid[i] = false;
+                    n_stime_outlier += 1;
+                }
+            }
+        }
+    }
+    if debug && n_stime_outlier > 0 {
+        eprintln!("STEP2.5 stime sanity guard: {} outlier(s) rejected", n_stime_outlier);
+    }
+
     // 收集有效 SEC
     let valid_secs: Vec<&SecEvent> = all_secs.iter()
         .enumerate()
